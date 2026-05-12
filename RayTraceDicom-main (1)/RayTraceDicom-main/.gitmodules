@@ -1,0 +1,4 @@
+[submodule "extern/dicom-interface"]
+	path = extern/dicom-interface
+	url = https://github.com/topasmc/dicom-interface
+	branch = master

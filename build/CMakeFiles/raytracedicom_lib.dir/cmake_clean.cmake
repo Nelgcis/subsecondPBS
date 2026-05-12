@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/complete_superposition.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/complete_superposition.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/convolution.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/convolution.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/cuda_final_dose.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/cuda_final_dose.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/idd_sigma.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/idd_sigma.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/prim_transf_kernel.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/prim_transf_kernel.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/superposition.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/superposition.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/transfer_param_helper.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/transfer_param_helper.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/transfer_param_struct_div3_impl.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/algorithms/transfer_param_struct_div3_impl.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/core/bev_ray_tracing.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/core/bev_ray_tracing.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/core/raytracedicom_wrapper.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/core/raytracedicom_wrapper.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/advanced_memory_pool.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/advanced_memory_pool.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/backward_compatibility.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/backward_compatibility.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/energy_reader.cpp.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/energy_reader.cpp.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/precompiled_texture_manager.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/precompiled_texture_manager.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/texture_ultra_optimized.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/texture_ultra_optimized.cu.o.d"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/utils.cu.o"
+  "CMakeFiles/raytracedicom_lib.dir/src/utils/utils.cu.o.d"
+  "lib/libraytracedicom_lib.a"
+  "lib/libraytracedicom_lib.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CUDA CXX)
+  include(CMakeFiles/raytracedicom_lib.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

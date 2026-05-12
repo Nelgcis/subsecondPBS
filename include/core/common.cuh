@@ -1,0 +1,734 @@
+//
+// Created by 王子路 on 2022/5/24.
+//
+
+#ifndef CUDACMC__COMMON_H_
+#define CUDACMC__COMMON_H_
+
+#ifdef __CUDACC__
+#include "cuda_runtime_api.h"
+#include "cuda_runtime.h"
+#include "vector_types.h"
+#include "device_launch_parameters.h"
+
+#define checkCudaErrors(val) do { \
+    cudaError_t error = val; \
+    if (error != cudaSuccess) { \
+        fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(error)); \
+        exit(1); \
+    } \
+} while(0)
+
+#else
+// For C++ compilation, provide minimal CUDA function declarations
+#include <cuda_runtime.h>
+#define checkCudaErrors(val) do { \
+    cudaError_t error = val; \
+    if (error != cudaSuccess) { \
+        fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(error)); \
+        exit(1); \
+    } \
+} while(0)
+#endif
+#include "iostream"
+#include "math.h"
+#include "cstring"
+#include "Macro.cuh"
+
+// Custom vector types to replace OWL dependencies
+struct vec3f {
+    float x, y, z;
+    __host__ __device__ vec3f() : x(0), y(0), z(0) {}
+    __host__ __device__ vec3f(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+    __host__ __device__ vec3f(float s) : x(s), y(s), z(s) {} // 单参数构造函数
+    __host__ __device__ vec3f operator+(const vec3f& other) const { return vec3f(x + other.x, y + other.y, z + other.z); }
+    __host__ __device__ vec3f operator-(const vec3f& other) const { return vec3f(x - other.x, y - other.y, z - other.z); }
+    __host__ __device__ vec3f operator*(float s) const { return vec3f(x * s, y * s, z * s); }
+    __host__ __device__ vec3f operator*(const vec3f& other) const { return vec3f(x * other.x, y * other.y, z * other.z); } // 逐元素乘法
+    __host__ __device__ vec3f operator/(float s) const { return vec3f(x / s, y / s, z / s); }
+    __host__ __device__ vec3f& operator+=(const vec3f& other) { x += other.x; y += other.y; z += other.z; return *this; }
+    __host__ __device__ vec3f& operator-=(const vec3f& other) { x -= other.x; y -= other.y; z -= other.z; return *this; }
+    __host__ __device__ vec3f& operator*=(float s) { x *= s; y *= s; z *= s; return *this; }
+    __host__ __device__ vec3f& operator/=(float s) { x /= s; y /= s; z /= s; return *this; }
+};
+
+struct vec3i {
+    int x, y, z;
+    __host__ __device__ vec3i() : x(0), y(0), z(0) {}
+    __host__ __device__ vec3i(int x_, int y_, int z_) : x(x_), y(y_), z(z_) {}
+    __host__ __device__ vec3i operator+(const vec3i& other) const { return vec3i(x + other.x, y + other.y, z + other.z); }
+    __host__ __device__ vec3i operator-(const vec3i& other) const { return vec3i(x - other.x, y - other.y, z - other.z); }
+    __host__ __device__ vec3i operator*(int s) const { return vec3i(x * s, y * s, z * s); }
+    __host__ __device__ vec3i& operator+=(const vec3i& other) { x += other.x; y += other.y; z += other.z; return *this; }
+    __host__ __device__ vec3i& operator-=(const vec3i& other) { x -= other.x; y -= other.y; z -= other.z; return *this; }
+};
+
+struct vec2f {
+    float x, y;
+    __host__ __device__ vec2f() : x(0), y(0) {}
+    __host__ __device__ vec2f(float x_, float y_) : x(x_), y(y_) {}
+    __host__ __device__ vec2f operator+(const vec2f& other) const { return vec2f(x + other.x, y + other.y); }
+    __host__ __device__ vec2f operator-(const vec2f& other) const { return vec2f(x - other.x, y - other.y); }
+    __host__ __device__ vec2f operator*(float s) const { return vec2f(x * s, y * s); }
+    __host__ __device__ vec2f operator/(float s) const { return vec2f(x / s, y / s); }
+    __host__ __device__ vec2f& operator+=(const vec2f& other) { x += other.x; y += other.y; return *this; }
+    __host__ __device__ vec2f& operator-=(const vec2f& other) { x -= other.x; y -= other.y; return *this; }
+    __host__ __device__ vec2f& operator*=(float s) { x *= s; y *= s; return *this; }
+    __host__ __device__ vec2f& operator/=(float s) { x /= s; y /= s; return *this; }
+};
+
+// Helper functions
+__host__ __device__ inline vec3f make_vec3f(float x, float y, float z) { return vec3f(x, y, z); }
+__host__ __device__ inline vec3i make_vec3i(int x, int y, int z) { return vec3i(x, y, z); }
+__host__ __device__ inline vec2f make_vec2f(float x, float y) { return vec2f(x, y); }
+
+#ifdef __CUDACC__
+// 浮点数原子操作函数 - 使用inline避免重复定义
+__device__ inline float atomicMinFloat(float* address, float val) {
+    int* address_as_i = (int*) address;
+    int old = *address_as_i, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_i, assumed,
+            __float_as_int(fminf(val, __int_as_float(assumed))));
+    } while (assumed != old);
+    return __int_as_float(old);
+}
+
+__device__ inline float atomicMaxFloat(float* address, float val) {
+    int* address_as_i = (int*) address;
+    int old = *address_as_i, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_i, assumed,
+            __float_as_int(fmaxf(val, __int_as_float(assumed))));
+    } while (assumed != old);
+    return __int_as_float(old);
+}
+#endif
+
+__host__ __device__ inline float dot(const vec3f& a, const vec3f& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+__host__ __device__ inline float dot(const vec2f& a, const vec2f& b) { return a.x * b.x + a.y * b.y; }
+__host__ __device__ inline vec3f cross(const vec3f& a, const vec3f& b) {
+    return vec3f(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+__host__ __device__ inline float length(const vec3f& v) { return sqrtf(dot(v, v)); }
+__host__ __device__ inline float length(const vec2f& v) { return sqrtf(dot(v, v)); }
+__host__ __device__ inline vec3f normalize(const vec3f& v) { float len = length(v); return len > 1e-6f ? v / len : vec3f(0, 0, 0); }
+__host__ __device__ inline vec2f normalize(const vec2f& v) { float len = length(v); return len > 1e-6f ? v / len : vec2f(0, 0); }
+
+// 调试宏定义
+#ifndef DEBUG_PRINT
+#ifdef DEBUG
+# define DEBUG_PRINT(x) printf x
+#else
+# define DEBUG_PRINT(x) do {} while (0)
+#endif
+#endif
+
+// 构造函数计时宏 (默认禁用，避免 device printf/性能问题)
+#ifdef __CUDACC__
+    #define CONSTRUCTOR_TIMER_START() do {} while(0)
+    #define CONSTRUCTOR_TIMER_END(name) do {} while(0)
+#else
+    #define CONSTRUCTOR_TIMER_START() do {} while(0)
+    #define CONSTRUCTOR_TIMER_END(name) do {} while(0)
+#endif
+
+
+#define BLOCKDIM 512
+#define GRIDDIM  256
+//# define EPSILON 1e-7
+typedef struct {
+    vec3f corner, resolution, upperCorner;
+    vec3i dims;
+} Grid;
+
+typedef struct {
+    vec3f sourcePos, isoPos, vsDirX;
+    float vSAD;
+} Source;
+
+typedef struct {
+    vec3f source, bmdir, bmxdir;
+    float ene, transCutoff, longitudalCutoff;
+    int eneIdx;
+} Beam;
+
+// Subspot information structure
+struct SubspotInfo {
+    float deltaX, deltaY, weight, sigmaX, sigmaY;
+    int eneIdx;
+    vec3f position, direction;
+    float effectiveSigma;
+    bool isValid;
+    
+    __host__ __device__ SubspotInfo() : deltaX(0), deltaY(0), weight(0), sigmaX(0), sigmaY(0), 
+                                       eneIdx(0), effectiveSigma(0), isValid(false) {
+    }
+    
+#ifdef __CUDACC__
+    __device__ SubspotInfo(cudaTextureObject_t subspotData, int subspotIdx, int eneIdx,
+                           vec3f beamDir, vec3f bmXDir, vec3f bmYDir,
+                           vec3f sourcePos, float sad, float refPlaneZ) {
+        // 修复纹理坐标映射：CUDA纹理使用0.5偏移来访问像素中心
+        // 纹理布局：width=5(channels), height=maxSubspotsPerLayer, depth=numLayers
+        deltaX = tex3D<float>(subspotData, 0.f, float(subspotIdx), float(eneIdx));
+        deltaY = tex3D<float>(subspotData, 1.f, float(subspotIdx), float(eneIdx));
+        weight = tex3D<float>(subspotData, 2.f, float(subspotIdx), float(eneIdx));
+        sigmaX = tex3D<float>(subspotData, 3.f, float(subspotIdx), float(eneIdx));
+        sigmaY = tex3D<float>(subspotData, 4.f, float(subspotIdx), float(eneIdx));
+        this->eneIdx = eneIdx;
+
+        // 计算subspot在参考平面上的位置
+        // 参考平面中心
+        vec3f refPlaneCenter = vec3f(sourcePos.x + beamDir.x * sad, 
+                                   sourcePos.y + beamDir.y * sad, 
+                                   sourcePos.z + beamDir.z * sad);
+        
+        // subspot在参考平面上的位置 = 中心 + X偏移 + Y偏移
+        position = refPlaneCenter + bmXDir * deltaX + bmYDir * deltaY;
+        
+        // 计算subspot方向（从源点到subspot位置）
+        vec3f subspotDirection = position - sourcePos;
+        float dirLength = sqrtf(dot(subspotDirection, subspotDirection));
+        if (dirLength > 1e-6f) {
+            direction = subspotDirection / dirLength;
+            calculateEffectiveSigma();
+            isValid = checkValidity();
+        } else {
+            isValid = false;
+            weight = 0.0f;
+        }
+    }
+#endif
+    
+    __host__ __device__ void calculateEffectiveSigma() {
+        effectiveSigma = sqrtf(sigmaX * sigmaX + sigmaY * sigmaY);
+    }
+    
+    __host__ __device__ bool checkValidity() const {
+        return (weight > WEIGHT_CUTOFF) && (sigmaX > 1e-6f) && (sigmaY > 1e-6f);
+    }
+};
+
+// CPB Grid structure
+struct CPBGrid {
+    vec3f corner, resolution;
+    vec3i dims;
+    int nLayers;
+    
+    __host__ __device__ CPBGrid() : nLayers(0) {}
+    __host__ __device__ CPBGrid(vec3f corner_, vec3f resolution_, vec3i dims_, int nLayers_) 
+        : corner(corner_), resolution(resolution_), dims(dims_), nLayers(nLayers_) {}
+};
+
+namespace weq {
+    enum sampler {
+        LINEAR, POINTS
+    };
+    enum channels {
+        R, RG, RGB, RGBA
+    };
+    typedef struct __align__(32) {
+        float x, y, z, w, o, k, m, n;
+    } float8;
+
+    inline __host__ __device__ float8
+    make_float8(float x, float y, float z, float w, float o, float k, float m, float n) {
+        float8 t;
+        t.x = x;
+        t.y = y;
+        t.z = z;
+        t.w = w;
+        t.o = o;
+        t.k = k;
+        t.m = m;
+        t.n = n;
+        return t;
+    }
+
+    inline __host__ __device__ float8 operator+(float8 a, float8 b) {
+        return make_float8(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w, a.o + b.o, a.k + b.k, a.m + b.m, a.n + b.n);
+    }
+
+    inline __host__ __device__ float8 operator-(float8 a, float8 b) {
+        return make_float8(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w, a.o - b.o, a.k - b.k, a.m - b.m, a.n - b.n);
+    }
+
+    inline __host__ __device__ float8 operator/(float8 a, float b) {
+        return make_float8(a.x / b, a.y / b, a.z / b, a.w / b, a.o / b, a.k / b, a.m / b, a.n / b);
+    }
+
+    inline __host__ __device__ void operator+=(float8 &a, float8 b) {
+        a.x += b.x;
+        a.y += b.y;
+        a.z += b.z;
+        a.w += b.w;
+        a.o += b.o;
+        a.k += b.k;
+        a.m += b.m;
+        a.n += b.n;
+    }
+
+    inline __host__ __device__ void operator/=(float8 &a, float b) {
+        a.x /= b;
+        a.y /= b;
+        a.z /= b;
+        a.w /= b;
+        a.o /= b;
+        a.k /= b;
+        a.m /= b;
+        a.n /= b;
+    }
+
+    inline __host__ __device__ float8 operator*(float8 a, float8 b) {
+        return make_float8(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w, a.o * b.o, a.k * b.k, a.m * b.m, a.n * b.n);
+    }
+
+    inline __host__ __device__ float8 operator*(float8 a, float b) {
+        return make_float8(a.x * b, a.y * b, a.z * b, a.w * b, a.o * b, a.k * b, a.m * b, a.n * b);
+    }
+
+    template<typename T>
+    __host__ void create3DTexture(T *hp,
+                                  cudaArray_t *cu_array_t,
+                                  cudaTextureObject_t *cuObj,
+                                  sampler s,
+                                  channels c,
+                                  size_t w,
+                                  size_t h,
+                                  size_t d,
+                                  int gpuId) {
+        cudaSetDevice(gpuId);
+        cudaChannelFormatDesc channelDesc;
+        if (sizeof(T) == 4 && c == R) {
+            channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 8 && c == RG) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 12 && c == RGB) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 16 && c == RGBA) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+        } else {
+            printf("not supported texture format!\n");
+            throw -1;
+        }
+
+        struct cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        struct cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.addressMode[0] = cudaAddressModeClamp;
+        texDesc.addressMode[1] = cudaAddressModeClamp;
+        texDesc.addressMode[2] = cudaAddressModeClamp;
+        switch (s) {
+            case LINEAR:
+                texDesc.filterMode = cudaFilterModeLinear;
+                break;
+            case POINTS:
+                texDesc.filterMode = cudaFilterModePoint;
+        }
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = 0;
+
+        checkCudaErrors(cudaMalloc3DArray(cu_array_t, &channelDesc, make_cudaExtent(w, h, d)));
+        cudaMemcpy3DParms myparms = {0};
+        myparms.srcPos = make_cudaPos(0, 0, 0);
+        myparms.dstPos = make_cudaPos(0, 0, 0);
+        myparms.srcPtr = make_cudaPitchedPtr(hp, w * sizeof(T), w, h);
+        myparms.dstArray = *cu_array_t;
+        myparms.extent = make_cudaExtent(w, h, d);
+        myparms.kind = cudaMemcpyHostToDevice;
+        checkCudaErrors(cudaMemcpy3D(&myparms));
+        resDesc.res.array.array = *cu_array_t;
+        checkCudaErrors(cudaCreateTextureObject(cuObj, &resDesc, &texDesc, NULL));
+    }
+
+    template<typename T>
+    __host__ void create3DTexture(T *hp,
+                                  cudaArray_t *cu_array_t,
+                                  cudaTextureObject_t *cuObj,
+                                  sampler s,
+                                  channels c,
+                                  size_t w,
+                                  size_t h,
+                                  size_t d,
+                                  bool type,
+                                  int gpuId) {
+        cudaSetDevice(gpuId);
+        cudaChannelFormatDesc channelDesc;
+        if (sizeof(T) == 4 && c == R) {
+            channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 8 && c == RG) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 12 && c == RGB) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 16 && c == RGBA) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+        } else {
+            printf("not supported texture format!\n");
+            throw -1;
+        }
+
+        struct cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        struct cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        if (type) {
+            texDesc.addressMode[0] = cudaAddressModeBorder;
+            texDesc.addressMode[1] = cudaAddressModeBorder;
+            texDesc.addressMode[2] = cudaAddressModeBorder;
+        } else {
+            texDesc.addressMode[0] = cudaAddressModeClamp;
+            texDesc.addressMode[1] = cudaAddressModeClamp;
+            texDesc.addressMode[2] = cudaAddressModeClamp;
+        }
+        switch (s) {
+            case LINEAR:
+                texDesc.filterMode = cudaFilterModeLinear;
+                break;
+            case POINTS:
+                texDesc.filterMode = cudaFilterModePoint;
+        }
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = 0;
+
+        checkCudaErrors(cudaMalloc3DArray(cu_array_t, &channelDesc, make_cudaExtent(w, h, d)));
+        cudaMemcpy3DParms myparms = {0};
+        myparms.srcPos = make_cudaPos(0, 0, 0);
+        myparms.dstPos = make_cudaPos(0, 0, 0);
+        myparms.srcPtr = make_cudaPitchedPtr(hp, w * sizeof(T), w, h);
+        myparms.dstArray = *cu_array_t;
+        myparms.extent = make_cudaExtent(w, h, d);
+        myparms.kind = cudaMemcpyHostToDevice;
+        checkCudaErrors(cudaMemcpy3D(&myparms));
+        resDesc.res.array.array = *cu_array_t;
+        checkCudaErrors(cudaCreateTextureObject(cuObj, &resDesc, &texDesc, NULL));
+    }
+
+    template<typename T>
+    __host__ void create3DTextureFromDevice(T *hp,
+                                            cudaArray_t *cu_array_t,
+                                            cudaTextureObject_t *cuObj,
+                                            sampler s,
+                                            channels c,
+                                            size_t w,
+                                            size_t h,
+                                            size_t d,
+                                            int gpuId) {
+        cudaSetDevice(gpuId);
+        cudaChannelFormatDesc channelDesc;
+        if (sizeof(T) == 4 && c == R) {
+            channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 8 && c == RG) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 12 && c == RGB) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 16 && c == RGBA) {
+            channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+        } else {
+            printf("not supported texture format!\n");
+            throw -1;
+        }
+
+        struct cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        struct cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.addressMode[0] = cudaAddressModeClamp;
+        texDesc.addressMode[1] = cudaAddressModeClamp;
+        texDesc.addressMode[2] = cudaAddressModeClamp;
+        switch (s) {
+            case LINEAR:
+                texDesc.filterMode = cudaFilterModeLinear;
+                break;
+            case POINTS:
+                texDesc.filterMode = cudaFilterModePoint;
+        }
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = 0;
+
+        checkCudaErrors(cudaMalloc3DArray(cu_array_t, &channelDesc, make_cudaExtent(w, h, d)));
+        cudaMemcpy3DParms myparms = {0};
+        myparms.srcPos = make_cudaPos(0, 0, 0);
+        myparms.dstPos = make_cudaPos(0, 0, 0);
+        myparms.srcPtr = make_cudaPitchedPtr(hp, w * sizeof(T), w, h);
+        myparms.dstArray = *cu_array_t;
+        myparms.extent = make_cudaExtent(w, h, d);
+        myparms.kind = cudaMemcpyDeviceToDevice;
+        checkCudaErrors(cudaMemcpy3D(&myparms));
+        resDesc.res.array.array = *cu_array_t;
+        checkCudaErrors(cudaCreateTextureObject(cuObj, &resDesc, &texDesc, NULL));
+    }
+
+
+    template<typename T>
+    __host__ void create2DTexture(T *hP,
+                                  cudaArray_t *cu_array_t,
+                                  cudaTextureObject_t *cuObj,
+                                  sampler s,
+                                  channels c,
+                                  size_t w,
+                                  size_t h,
+                                  int gpuId) {
+        cudaSetDevice(gpuId);
+        cudaChannelFormatDesc cuChannelFormatDesc;
+        if (sizeof(T) == 4 && c == R) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 8 && c == RG) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 12 && c == RGB) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 32, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 16 && c == RGBA) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+        } else {
+            printf("not supported texture format!\n");
+            throw -1;
+        }
+        struct cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        const int spitch = w * sizeof(T);
+        struct cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.addressMode[0] = cudaAddressModeClamp;
+        texDesc.addressMode[1] = cudaAddressModeClamp;
+        switch (s) {
+            case LINEAR:
+                texDesc.filterMode = cudaFilterModeLinear;
+                break;
+            case POINTS:
+                texDesc.filterMode = cudaFilterModePoint;
+        }
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = 0;
+
+        checkCudaErrors(cudaMallocArray(cu_array_t, &cuChannelFormatDesc, w, h));
+        checkCudaErrors(cudaMemcpy2DToArray(*cu_array_t,
+                                            0,
+                                            0,
+                                            hP,
+                                            spitch,
+                                            w * sizeof(T),
+                                            h,
+                                            cudaMemcpyHostToDevice));
+        resDesc.res.array.array = *cu_array_t;
+        checkCudaErrors(cudaCreateTextureObject(cuObj, &resDesc, &texDesc, NULL));
+    }
+
+    template<typename T>
+    __host__ void create2DTexture(T *hP,
+                                  cudaArray_t *cu_array_t,
+                                  cudaTextureObject_t *cuObj,
+                                  sampler s,
+                                  channels c,
+                                  size_t w,
+                                  size_t h,
+                                  int type,
+                                  int gpuId) {
+        cudaSetDevice(gpuId);
+        cudaChannelFormatDesc cuChannelFormatDesc;
+        if (sizeof(T) == 4 && c == R) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 8 && c == RG) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 12 && c == RGB) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 32, 0, cudaChannelFormatKindFloat);
+        } else if (sizeof(T) == 16 && c == RGBA) {
+            cuChannelFormatDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+        } else {
+            printf("not supported texture format!\n");
+            throw -1;
+        }
+        struct cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        const int spitch = w * sizeof(T);
+        struct cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        if(type) {
+            texDesc.addressMode[0] = cudaAddressModeBorder;
+            texDesc.addressMode[1] = cudaAddressModeBorder;
+        } else {
+            texDesc.addressMode[0] = cudaAddressModeClamp;
+            texDesc.addressMode[1] = cudaAddressModeClamp;
+        }
+        switch (s) {
+            case LINEAR:
+                texDesc.filterMode = cudaFilterModeLinear;
+                break;
+            case POINTS:
+                texDesc.filterMode = cudaFilterModePoint;
+        }
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = 0;
+
+        checkCudaErrors(cudaMallocArray(cu_array_t, &cuChannelFormatDesc, w, h));
+        checkCudaErrors(cudaMemcpy2DToArray(*cu_array_t,
+                                            0,
+                                            0,
+                                            hP,
+                                            spitch,
+                                            w * sizeof(T),
+                                            h,
+                                            cudaMemcpyHostToDevice));
+        resDesc.res.array.array = *cu_array_t;
+        checkCudaErrors(cudaCreateTextureObject(cuObj, &resDesc, &texDesc, NULL));
+    }
+
+}
+
+
+struct float3_affine_test {
+    // Row-major 3x4 affine [ R | t ]
+    float m[3][4];
+
+	__host__ __device__ float3 transformPoint(const float3 p) const {
+        float3 r;
+        r.x = m[0][0]*p.x + m[0][1]*p.y + m[0][2]*p.z + m[0][3];
+        r.y = m[1][0]*p.x + m[1][1]*p.y + m[1][2]*p.z + m[1][3];
+        r.z = m[2][0]*p.x + m[2][1]*p.y + m[2][2]*p.z + m[2][3];
+        return r;
+    }
+
+	__host__ __device__ float3_affine_test inverse() const {
+        // Compute inverse of 3x4 affine [R|t] with 3x3 R invertible
+		// Small, explicit adjugate-based inverse for stability in this context
+        float a = m[0][0], b = m[0][1], c = m[0][2];
+        float d = m[1][0], e = m[1][1], f = m[1][2];
+        float g = m[2][0], h = m[2][1], i = m[2][2];
+        float det = a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);
+        float invDet = 1.0f / det;
+		float3_affine_test inv;
+        inv.m[0][0] =  (e*i - f*h) * invDet;
+        inv.m[0][1] = -(b*i - c*h) * invDet;
+        inv.m[0][2] =  (b*f - c*e) * invDet;
+        inv.m[1][0] = -(d*i - f*g) * invDet;
+        inv.m[1][1] =  (a*i - c*g) * invDet;
+        inv.m[1][2] = -(a*f - c*d) * invDet;
+        inv.m[2][0] =  (d*h - e*g) * invDet;
+        inv.m[2][1] = -(a*h - b*g) * invDet;
+        inv.m[2][2] =  (a*e - b*d) * invDet;
+        // translation
+        float3 t = make_float3(m[0][3], m[1][3], m[2][3]);
+        float3 it;
+        it.x = -(inv.m[0][0]*t.x + inv.m[0][1]*t.y + inv.m[0][2]*t.z);
+        it.y = -(inv.m[1][0]*t.x + inv.m[1][1]*t.y + inv.m[1][2]*t.z);
+        it.z = -(inv.m[2][0]*t.x + inv.m[2][1]*t.y + inv.m[2][2]*t.z);
+        inv.m[0][3] = it.x;
+        inv.m[1][3] = it.y;
+        inv.m[2][3] = it.z;
+        return inv;
+    }
+};
+
+
+
+
+
+// inline __device__ void transform(vec3f *dir, float theta, float phi) {
+//
+//   float temp = 1.0 - 1e-7;
+//   if ((*dir).z * (*dir).z >= temp) {
+// 	if ((*dir).z > 0) {
+// 	  (*dir).x = sinf(theta) * cosf(phi);
+// 	  (*dir).y = sinf(theta) * sinf(phi);
+// 	  (*dir).z = cosf(theta);
+// 	} else {
+// 	  (*dir).x = -sinf(theta) * cosf(phi);
+// 	  (*dir).y = -sinf(theta) * sinf(phi);
+// 	  (*dir).z = -cosf(theta);
+// 	}
+//   } else {
+// 	float u, v, w;
+// 	u = (*dir).x * cosf(theta)
+// 		+ sinf(theta) * ((*dir).x * (*dir).z * cosf(phi) - (*dir).y * sinf(phi)) / sqrtf(1.0 - (*dir).z * (*dir).z);
+// 	v = (*dir).y * cosf(theta)
+// 		+ sinf(theta) * ((*dir).y * (*dir).z * cosf(phi) + (*dir).x * sinf(phi)) / sqrtf(1.0 - (*dir).z * (*dir).z);
+// 	w = (*dir).z * cosf(theta) - sqrtf(1.0f - (*dir).z * (*dir).z) * sinf(theta) * cosf(phi);
+//
+// 	(*dir).x = u;
+// 	(*dir).y = v;
+// 	(*dir).z = w;
+//   }
+//   *dir = normalize(*dir);
+// }
+
+template<typename T>
+__host__ void queryDimGrid(T *f, dim3 &dimGrid) {
+    int numBlocksPerSm = 0;
+    int numThreads = BLOCKDIM;
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, f, numThreads, 0);
+    dimGrid.x = deviceProp.multiProcessorCount * numBlocksPerSm;
+    dimGrid.y = 1;
+    dimGrid.z = 1;
+}
+
+
+template<typename T>
+__host__ int queryBatchSize(T *f, int gpuId) {
+    cudaSetDevice(gpuId);
+    int numBlocksPerSm = 0;
+    int numThreads = BLOCKDIM;
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, gpuId);
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, f, numThreads, 0);
+    return numThreads * deviceProp.multiProcessorCount * numBlocksPerSm;
+}
+
+template<typename T>
+void launchCudaKernel(T *f, size_t batchSize, void *args[]) {
+    int numThreads = BLOCKDIM;
+    dim3 dimBlock(numThreads, 1, 1);
+    dim3 dimGrid((int) ceil((float) batchSize / (float) numThreads), 1, 1);
+    cudaLaunchKernel((void *)f, dimGrid, dimBlock, args);
+//    cudaLaunchCooperativeKernel((void *) f, dimGrid, dimBlock, args, 0, 0);
+    cudaDeviceSynchronize();
+}
+
+template<typename T>
+void launchCudaKernel2D(T *f, size_t batchSize, void *args[]) {
+//  int numThreads = BLOCKDIM;
+  int sizeX      = sqrt(batchSize);
+    dim3 dimBlock(16, 32, 1);
+    dim3 dimGrid(int(sizeX / 16), int(sizeX / 32), 1);
+    cudaLaunchKernel((void *)f, dimGrid, dimBlock, args);
+//    cudaLaunchCooperativeKernel((void *) f, dimGrid, dimBlock, args, 0, 0);
+    cudaDeviceSynchronize();
+}
+
+inline size_t cuMemQueryRemain(int gid) {
+    checkCudaErrors(cudaSetDevice(gid));
+    size_t free, total;
+    //get gpu memory info
+    cudaError_t error = cudaMemGetInfo(&free, &total);
+    if (error != cudaSuccess) {
+        return 0;
+    }
+    return free;
+}
+
+inline int cuMemTestAlloc(unsigned long long size, int gid) {
+    float *gpu_dosemap;
+    checkCudaErrors(cudaSetDevice(gid));
+    //allocate gpu memory
+    cudaError_t error = cudaMalloc((void **) &gpu_dosemap, size * sizeof(char));
+    if (error != cudaSuccess) {
+        return -1;
+    }
+    // printf("gpu memory alloc done\n");
+    checkCudaErrors(cudaFree(gpu_dosemap));
+    return 1;
+}
+
+#endif //CUDACMC__COMMON_H_
