@@ -1,0 +1,74 @@
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <cuda_runtime.h>
+#include <cuda.h>
+
+// Include necessary headers
+#include "core/common.cuh"
+#include "algorithms/convolution.h"
+
+// Simple test for CPB to Ray mapping
+int main() {
+    std::cout << "=== Simple CPB to Ray Mapping Test ===" << std::endl;
+    
+    // Initialize CUDA
+    cudaSetDevice(0);
+    
+    // Create simple test data
+    vec3i cpbDims = make_vec3i(10, 10, 1);
+    vec3f cpbCorner = make_vec3f(-5.0f, -5.0f, 0.0f);
+    vec3f cpbResolution = make_vec3f(1.0f, 1.0f, 1.0f);
+    
+    vec3i rayDims = make_vec3i(5, 5, 1);
+    // Ray grid covers the same physical extent as CPB grid in this test
+    vec3f rayCorner = cpbCorner;
+    vec3f rayResolution = make_vec3f(2.0f, 2.0f, 1.0f);
+    
+    // Create simple CPB weights (all zeros except center)
+    std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z, 0.0f);
+    cpbWeights[5 * cpbDims.x + 5] = 1.0f; // Center point
+    
+    std::vector<float> rayWeights(rayDims.x * rayDims.y * rayDims.z, 0.0f);
+    
+    std::cout << "CPB Grid: " << cpbDims.x << "x" << cpbDims.y << "x" << cpbDims.z << std::endl;
+    std::cout << "Ray Grid: " << rayDims.x << "x" << rayDims.y << "x" << rayDims.z << std::endl;
+    
+    try {
+        // Test the mapping function
+        performCPBToRayWeightMapping(
+            cpbWeights.data(), cpbDims, cpbCorner, cpbResolution,
+            rayWeights.data(), rayDims,
+            rayCorner, rayResolution,
+            0,  // layerIdx
+            make_vec3f(0.0f, 0.0f, 1.0f),  // beamDirection
+            make_vec3f(1.0f, 0.0f, 0.0f),  // bmXDirection
+            make_vec3f(0.0f, 1.0f, 0.0f),  // bmYDirection
+            make_vec3f(0.0f, 0.0f, -100.0f), // sourcePosition
+            100.0f,  // sad
+            0.0f     // refPlaneZ
+        );
+        
+        std::cout << "Mapping completed successfully!" << std::endl;
+        
+        // Check results
+        float totalRayWeight = 0.0f;
+        int nonZeroCount = 0;
+        for (float weight : rayWeights) {
+            if (weight > 1e-6f) {
+                nonZeroCount++;
+                totalRayWeight += weight;
+            }
+        }
+        
+        std::cout << "Ray Weight Results:" << std::endl;
+        std::cout << "  Total weight: " << totalRayWeight << std::endl;
+        std::cout << "  Non-zero elements: " << nonZeroCount << "/" << rayWeights.size() << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    
+    return 0;
+}

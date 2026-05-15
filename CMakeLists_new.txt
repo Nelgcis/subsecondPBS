@@ -1,0 +1,95 @@
+cmake_minimum_required(VERSION 3.10)
+project(RayTraceDicomIntegration)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find CUDA
+find_package(CUDA REQUIRED)
+enable_language(CUDA)
+
+# Set CUDA properties
+set_property(TARGET ${PROJECT_NAME} PROPERTY CUDA_ARCHITECTURES 60 70 75 80 86)
+
+# Include directories
+include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/include/core)
+include_directories(${CMAKE_SOURCE_DIR}/include/algorithms)
+include_directories(${CMAKE_SOURCE_DIR}/include/utils)
+
+# Core source files
+set(CORE_SOURCES
+    src/core/raytracedicom_wrapper.cu
+    src/core/ray_tracing.cu
+    src/core/bev_ray_tracing.cu
+)
+
+# Algorithm source files
+set(ALGORITHM_SOURCES
+    src/algorithms/convolution.cu
+    src/algorithms/superposition.cu
+    src/algorithms/idd_sigma.cu
+)
+
+# Utility source files
+set(UTILITY_SOURCES
+    src/utils/utils.cu
+    src/utils/energy_reader.cpp
+    src/utils/cuda_diagnostic.cu
+)
+
+# Test source files
+set(TEST_SOURCES
+    src/tests/complete_dose_debug.cu
+    src/tests/dose_debug_detailed.cu
+)
+
+# All source files
+set(ALL_SOURCES
+    ${CORE_SOURCES}
+    ${ALGORITHM_SOURCES}
+    ${UTILITY_SOURCES}
+)
+
+# Create main library
+add_library(raytracedicom_lib ${ALL_SOURCES})
+
+# Set CUDA properties for the library
+set_property(TARGET raytracedicom_lib PROPERTY CUDA_ARCHITECTURES 60 70 75 80 86)
+set_property(TARGET raytracedicom_lib PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+
+# Link CUDA libraries
+target_link_libraries(raytracedicom_lib ${CUDA_LIBRARIES})
+
+# Create test executable
+add_executable(raytracedicom_test ${TEST_SOURCES})
+target_link_libraries(raytracedicom_test raytracedicom_lib)
+
+# Set output directories
+set_target_properties(raytracedicom_lib raytracedicom_test
+    PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+)
+
+# Compiler-specific options
+if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+    target_compile_options(raytracedicom_lib PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:
+        -O3
+        -use_fast_math
+        -Xcompiler -Wall
+        >
+    )
+endif()
+
+# Print configuration summary
+message(STATUS "RayTraceDicom Integration Configuration:")
+message(STATUS "  CUDA Version: ${CUDA_VERSION}")
+message(STATUS "  CUDA Toolkit: ${CUDA_TOOLKIT_ROOT_DIR}")
+message(STATUS "  Core Sources: ${CORE_SOURCES}")
+message(STATUS "  Algorithm Sources: ${ALGORITHM_SOURCES}")
+message(STATUS "  Utility Sources: ${UTILITY_SOURCES}")
+message(STATUS "  Test Sources: ${TEST_SOURCES}")

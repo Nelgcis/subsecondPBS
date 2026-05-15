@@ -1,0 +1,68 @@
+/**
+ * \file
+ * \brief CUDA Final Dose Calculation Header
+ */
+
+#ifndef CUDA_FINAL_DOSE_H
+#define CUDA_FINAL_DOSE_H
+
+#include <cuda_runtime.h>
+#include <texture_types.h>
+#include "../core/common.cuh"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * \brief Main CUDA final dose calculation function
+ * 
+ * This function implements the complete dose calculation workflow:
+ * 1. Calculate ROI range with margin
+ * 2. Check beam-ROI intersection
+ * 3. Create CPB grid based on ROI
+ * 4. Perform subspot to CPB convolution
+ * 5. Calculate sigma textures
+ * 6. Initialize final dose array
+ * 
+ * \param subspotData Input subspot data texture
+ * \param roiIndices Input ROI indices array
+ * \param numROIIndices Number of ROI indices
+ * \param doseGridResolution Dose grid resolution
+ * \param doseGridCorner Dose grid corner
+ * \param beamDirection Beam direction (ref plane normal)
+ * \param sourcePosition Source position
+ * \param sad Source-to-axis distance
+ * \param refPlaneZ Reference plane Z coordinate
+ * \param numLayers Number of energy layers
+ * \param maxSubspotsPerLayer Max subspots per layer
+ * \param finalDose Output final dose array
+ * \param doseGridDims Dose grid dimensions
+ */
+void cudaFinalDose(
+    cudaTextureObject_t subspotData,
+    const vec3i* roiIndices,
+    int numROIIndices,
+    vec3f doseGridResolution,
+    vec3f doseGridCorner,
+    vec3f beamDirection,
+    vec3f sourcePosition,
+    float sad,
+    float refPlaneZ,
+    int numLayers,
+    int maxSubspotsPerLayer,
+    float* finalDose,
+    vec3i doseGridDims
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // CUDA_FINAL_DOSE_H
+
+
+
+
+
+

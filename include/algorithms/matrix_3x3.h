@@ -1,0 +1,105 @@
+/**
+ * \file
+ * \brief Matrix3x3 (ported from RayTraceDicom-main)
+ *
+ * The reference project implements all geometry in terms of CUDA float3.
+ * This integration layer uses vec3f (see include/core/common.cuh). The
+ * formulas and semantics are kept identical.
+ */
+
+#ifndef MATRIX_3X3_H
+#define MATRIX_3X3_H
+
+#include "common.cuh"
+#include "Macro.cuh"
+
+/**
+ * \brief 3x3 matrix of floats (row-major)
+ */
+struct Matrix3x3 {
+private:
+    vec3f r0; ///< Row 0
+    vec3f r1; ///< Row 1
+    vec3f r2; ///< Row 2
+
+public:
+    // ------------------------------------------------------------------
+    // Constructors
+    // ------------------------------------------------------------------
+    CUDA_CALLABLE_MEMBER Matrix3x3() : r0(1.0f, 0.0f, 0.0f), r1(0.0f, 1.0f, 0.0f), r2(0.0f, 0.0f, 1.0f) {}
+
+    CUDA_CALLABLE_MEMBER Matrix3x3(const vec3f a0, const vec3f a1, const vec3f a2) : r0(a0), r1(a1), r2(a2) {}
+
+    CUDA_CALLABLE_MEMBER Matrix3x3(const float s00, const float s01, const float s02,
+                                   const float s10, const float s11, const float s12,
+                                   const float s20, const float s21, const float s22)
+        : r0(s00, s01, s02), r1(s10, s11, s12), r2(s20, s21, s22) {}
+
+    // Diagonal matrix
+    CUDA_CALLABLE_MEMBER Matrix3x3(const float s00, const float s11, const float s22)
+        : r0(s00, 0.0f, 0.0f), r1(0.0f, s11, 0.0f), r2(0.0f, 0.0f, s22) {}
+
+    CUDA_CALLABLE_MEMBER Matrix3x3(const vec3f diag) : Matrix3x3(diag.x, diag.y, diag.z) {}
+
+    // Scalar*I
+    CUDA_CALLABLE_MEMBER Matrix3x3(const float s) : Matrix3x3(s, s, s) {}
+
+    // Construct from raw pointer (9 floats, row-major)
+    CUDA_CALLABLE_MEMBER explicit Matrix3x3(const float* ptr)
+        : Matrix3x3(ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7], ptr[8]) {}
+
+    // ------------------------------------------------------------------
+    // Basic accessors
+    // ------------------------------------------------------------------
+    CUDA_CALLABLE_MEMBER vec3f row0() const { return r0; }
+    CUDA_CALLABLE_MEMBER vec3f row1() const { return r1; }
+    CUDA_CALLABLE_MEMBER vec3f row2() const { return r2; }
+
+    // ------------------------------------------------------------------
+    // Operators
+    // ------------------------------------------------------------------
+    CUDA_CALLABLE_MEMBER vec3f operator*(const vec3f a) const {
+        return make_vec3f(dot(r0, a), dot(r1, a), dot(r2, a));
+    }
+
+    CUDA_CALLABLE_MEMBER Matrix3x3 operator*(const Matrix3x3 m) const {
+        // Same implementation strategy as reference: transpose RHS and dot rows.
+        const Matrix3x3 m1 = *this;
+        const Matrix3x3 m2 = m.transpose();
+        return Matrix3x3(
+            dot(m1.row0(), m2.row0()), dot(m1.row0(), m2.row1()), dot(m1.row0(), m2.row2()),
+            dot(m1.row1(), m2.row0()), dot(m1.row1(), m2.row1()), dot(m1.row1(), m2.row2()),
+            dot(m1.row2(), m2.row0()), dot(m1.row2(), m2.row1()), dot(m1.row2(), m2.row2())
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Linear algebra
+    // ------------------------------------------------------------------
+    CUDA_CALLABLE_MEMBER float det() const {
+        return (r0.x * (r1.y * r2.z - r1.z * r2.y)
+              - r0.y * (r1.x * r2.z - r1.z * r2.x)
+              + r0.z * (r1.x * r2.y - r1.y * r2.x));
+    }
+
+    CUDA_CALLABLE_MEMBER Matrix3x3 inverse() const {
+        const float d = det();
+        const float oneOverDet = 1.0f / d;
+        // Adjoint * (1/det). Keep identical layout to reference.
+        return Matrix3x3(
+            r1.y * r2.z - r1.z * r2.y,  r0.z * r2.y - r0.y * r2.z,  r0.y * r1.z - r0.z * r1.y,
+            r1.z * r2.x - r1.x * r2.z,  r0.x * r2.z - r0.z * r2.x,  r0.z * r1.x - r0.x * r1.z,
+            r1.x * r2.y - r1.y * r2.x,  r0.y * r2.x - r0.x * r2.y,  r0.x * r1.y - r0.y * r1.x
+        ) * Matrix3x3(oneOverDet); // scalar multiplication via (s*I)
+    }
+
+    CUDA_CALLABLE_MEMBER Matrix3x3 transpose() const {
+        return Matrix3x3(
+            r0.x, r1.x, r2.x,
+            r0.y, r1.y, r2.y,
+            r0.z, r1.z, r2.z
+        );
+    }
+};
+
+#endif // MATRIX_3X3_H
