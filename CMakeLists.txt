@@ -23,7 +23,7 @@ add_compile_definitions(SOUKUP=0)
 add_compile_definitions(FLUKA=1)
 add_compile_definitions(GAUSS_FIT=2)
 
-set(NUCLEAR_CORR "OFF" CACHE STRING "Build halo / nuclear correction mode (OFF, SOUKUP, FLUKA, GAUSS_FIT)")
+set(NUCLEAR_CORR "GAUSS_FIT" CACHE STRING "Build halo / nuclear correction mode (OFF, SOUKUP, FLUKA, GAUSS_FIT)")
 set_property(CACHE NUCLEAR_CORR PROPERTY STRINGS "OFF" "SOUKUP" "FLUKA" "GAUSS_FIT")
 if(NUCLEAR_CORR STREQUAL "SOUKUP")
     add_compile_definitions(NUCLEAR_CORR=SOUKUP)

@@ -12,10 +12,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -264,6 +267,389 @@ static bool rtd_input_audit_enabled() {
     if (!v) return false;
     const std::string s(v);
     return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
+}
+
+static bool rtd_pybind_audit_enabled() {
+    if (rtd_input_audit_enabled()) return true;
+    const char* v = std::getenv("RTD_PYBIND_AUDIT");
+    if (!v) return false;
+    const std::string s(v);
+    return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
+}
+
+static std::string shape_to_string(const py::buffer_info& info) {
+    std::ostringstream os;
+    os << "(";
+    for (ssize_t i = 0; i < info.ndim; ++i) {
+        if (i) os << ",";
+        os << info.shape[i];
+    }
+    os << ")";
+    return os.str();
+}
+
+static std::string strides_to_string(const py::buffer_info& info) {
+    std::ostringstream os;
+    os << "(";
+    for (ssize_t i = 0; i < info.ndim; ++i) {
+        if (i) os << ",";
+        os << info.strides[i];
+    }
+    os << ")";
+    return os.str();
+}
+
+static void print_float_sample_values(const float* ptr, size_t n, size_t max_values = 6) {
+    std::cout << "[";
+    const size_t show = std::min(n, max_values);
+    for (size_t i = 0; i < show; ++i) {
+        if (i) std::cout << ",";
+        std::cout << ptr[i];
+    }
+    if (n > show) {
+        std::cout << " ... ";
+        const size_t tail = std::min<size_t>(3, n - show);
+        for (size_t i = n - tail; i < n; ++i) {
+            if (i != n - tail) std::cout << ",";
+            std::cout << ptr[i];
+        }
+    }
+    std::cout << "]";
+}
+
+static void print_int_sample_values(const int* ptr, size_t n, size_t max_values = 6) {
+    std::cout << "[";
+    const size_t show = std::min(n, max_values);
+    for (size_t i = 0; i < show; ++i) {
+        if (i) std::cout << ",";
+        std::cout << ptr[i];
+    }
+    if (n > show) {
+        std::cout << " ... ";
+        const size_t tail = std::min<size_t>(3, n - show);
+        for (size_t i = n - tail; i < n; ++i) {
+            if (i != n - tail) std::cout << ",";
+            std::cout << ptr[i];
+        }
+    }
+    std::cout << "]";
+}
+
+static void print_float_vector_audit(const std::string& name, const std::vector<float>& v) {
+    if (!rtd_pybind_audit_enabled()) return;
+    int finite = 0;
+    int positive = 0;
+    int zeros = 0;
+    int nan = 0;
+    int inf = 0;
+    double sum = 0.0;
+    float min_v = std::numeric_limits<float>::infinity();
+    float max_v = -std::numeric_limits<float>::infinity();
+    for (float x : v) {
+        if (std::isnan(x)) {
+            ++nan;
+            continue;
+        }
+        if (!std::isfinite(x)) {
+            ++inf;
+            continue;
+        }
+        ++finite;
+        if (x > 0.0f) ++positive;
+        if (x == 0.0f) ++zeros;
+        sum += static_cast<double>(x);
+        min_v = std::min(min_v, x);
+        max_v = std::max(max_v, x);
+    }
+    std::cout << "[PYBIND_AUDIT] " << name
+              << " len=" << v.size()
+              << " finite=" << finite
+              << " nan=" << nan
+              << " inf=" << inf
+              << " positive=" << positive
+              << " zero=" << zeros;
+    if (finite > 0) {
+        std::cout << " min=" << min_v << " max=" << max_v << " sum=" << sum;
+    }
+    if (!v.empty()) {
+        std::cout << " sample=";
+        print_float_sample_values(v.data(), v.size());
+    }
+    std::cout << std::endl;
+}
+
+static void print_int_vector_audit(const std::string& name, const std::vector<int>& v) {
+    if (!rtd_pybind_audit_enabled()) return;
+    long long sum = 0;
+    int positive = 0;
+    int zeros = 0;
+    int min_v = std::numeric_limits<int>::max();
+    int max_v = std::numeric_limits<int>::min();
+    for (int x : v) {
+        sum += x;
+        if (x > 0) ++positive;
+        if (x == 0) ++zeros;
+        min_v = std::min(min_v, x);
+        max_v = std::max(max_v, x);
+    }
+    std::cout << "[PYBIND_AUDIT] " << name
+              << " len=" << v.size()
+              << " positive=" << positive
+              << " zero=" << zeros;
+    if (!v.empty()) {
+        std::cout << " min=" << min_v << " max=" << max_v << " sum=" << sum << " sample=";
+        print_int_sample_values(v.data(), v.size());
+    }
+    std::cout << std::endl;
+}
+
+static void print_py_array_audit(const std::string& name, const py::array& arr) {
+    if (!rtd_pybind_audit_enabled()) return;
+    py::buffer_info info = arr.request();
+    std::cout << "[PYBIND_AUDIT] " << name
+              << " raw dtype=" << py::str(arr.dtype())
+              << " ndim=" << info.ndim
+              << " shape=" << shape_to_string(info)
+              << " strides=" << strides_to_string(info)
+              << " itemsize=" << info.itemsize
+              << " size=" << info.size
+              << " ptr=" << info.ptr
+              << std::endl;
+
+    try {
+        py::array_t<float, py::array::c_style | py::array::forcecast> cast_arr = py::cast<py::array>(arr);
+        py::buffer_info cast_info = cast_arr.request();
+        const float* ptr = static_cast<const float*>(cast_info.ptr);
+        std::vector<float> v(ptr, ptr + static_cast<size_t>(cast_info.size));
+        print_float_vector_audit(name + " cast<float32>", v);
+    } catch (const std::exception& e) {
+        std::cout << "[PYBIND_AUDIT] " << name << " cast<float32> failed: " << e.what() << std::endl;
+    }
+}
+
+static void print_weq_contract_audit(const std::string& name, const std::vector<float>& weq) {
+    if (!rtd_pybind_audit_enabled()) return;
+    std::cout << "[PYBIND_AUDIT] " << name
+              << " totalLen=" << weq.size();
+    if (weq.size() < 9u) {
+        std::cout << " missingHeader=1" << std::endl;
+        return;
+    }
+    const int depth_n = static_cast<int>(std::lround(weq[2]));
+    const int y_n = static_cast<int>(std::lround(weq[5]));
+    const int x_n = static_cast<int>(std::lround(weq[8]));
+    const size_t expected_body =
+        (depth_n > 0 && y_n > 0 && x_n > 0)
+            ? static_cast<size_t>(depth_n) * static_cast<size_t>(y_n) * static_cast<size_t>(x_n)
+            : 0u;
+    const size_t actual_body = weq.size() - 9u;
+    std::cout << " header=(depth0=" << weq[0]
+              << ",depthStep=" << weq[1]
+              << ",depthN=" << depth_n
+              << ",y0=" << weq[3]
+              << ",yStep=" << weq[4]
+              << ",yN=" << y_n
+              << ",x0=" << weq[6]
+              << ",xStep=" << weq[7]
+              << ",xN=" << x_n
+              << ") expectedBody=" << expected_body
+              << " actualBody=" << actual_body
+              << " bodyMatches=" << (expected_body == actual_body ? 1 : 0)
+              << std::endl;
+}
+
+static void print_carbonpbs_input_crosscheck(const RTDBeamSettings& beam,
+                                             const std::vector<float>& all_spot_energies,
+                                             int lut_layers,
+                                             int max_subspots,
+                                             int profile_rows,
+                                             int profile_depth_n,
+                                             int profile_channels) {
+    if (!rtd_pybind_audit_enabled()) return;
+    const int total_spots = std::accumulate(beam.layerSpotCounts.begin(), beam.layerSpotCounts.end(), 0);
+    const int spot_pos_rows = static_cast<int>(beam.spotPositions.size() / 2u);
+    const int spot_dir_rows = static_cast<int>(beam.spotBeamDirections.size() / 3u);
+    const size_t expected_subspot =
+        beam.energies.size() * static_cast<size_t>(std::max(max_subspots, 0)) * 5ull;
+
+    std::cout << "[PYBIND_AUDIT] CarbonPBS crosscheck"
+              << " layers=" << beam.energies.size()
+              << " layerSpotCounts=" << beam.layerSpotCounts.size()
+              << " totalSpots=" << total_spots
+              << " allEnergies=" << all_spot_energies.size()
+              << " nPar=" << beam.spotWeights.size()
+              << " idbeamxyRows=" << spot_pos_rows
+              << " beamDirRows=" << spot_dir_rows
+              << " lutLayers=" << lut_layers
+              << " maxSubspots=" << max_subspots
+              << " subspotExpectedAfterMap=" << expected_subspot
+              << " subspotActual=" << beam.subspotData.size()
+              << " profileRawShape=(" << profile_rows << "," << profile_depth_n << "," << profile_channels << ")"
+              << " profileData=" << beam.profileData.size()
+              << " profileSetting=" << beam.profileSetting.size()
+              << " beamParaRows=" << (beam.beamParaData.size() / 3ull)
+              << " cutoffs=" << beam.layerLongitudinalCutoffs.size()
+              << " roiLinear=" << beam.roiLinearIndices.size()
+              << std::endl;
+
+    if (total_spots != static_cast<int>(beam.spotWeights.size())) {
+        std::cout << "[PYBIND_AUDIT] WARNING sum(layerInfo)=" << total_spots
+                  << " but nPar.size=" << beam.spotWeights.size() << std::endl;
+    }
+    if (!all_spot_energies.empty() && all_spot_energies.size() != beam.spotWeights.size()) {
+        std::cout << "[PYBIND_AUDIT] WARNING all_energies.size=" << all_spot_energies.size()
+                  << " but nPar.size=" << beam.spotWeights.size() << std::endl;
+    }
+    if (spot_pos_rows != static_cast<int>(beam.spotWeights.size())) {
+        std::cout << "[PYBIND_AUDIT] WARNING idbeamxy rows=" << spot_pos_rows
+                  << " but nPar.size=" << beam.spotWeights.size() << std::endl;
+    }
+    if (spot_dir_rows != static_cast<int>(beam.spotWeights.size())) {
+        std::cout << "[PYBIND_AUDIT] WARNING tmpBeamDir rows=" << spot_dir_rows
+                  << " but nPar.size=" << beam.spotWeights.size() << std::endl;
+    }
+    if (expected_subspot != beam.subspotData.size()) {
+        std::cout << "[PYBIND_AUDIT] WARNING subspot data size expected after mapping="
+                  << expected_subspot << " actual=" << beam.subspotData.size() << std::endl;
+    }
+}
+
+static std::vector<float> spacing_values_or_throw(const py::object& obj,
+                                                  const std::string& name,
+                                                  size_t total_spots) {
+    if (obj.is_none()) {
+        throw std::runtime_error(name + " is required when parsing explicit spot spacing");
+    }
+    std::vector<float> values = to_float_vector(py::cast<py::array>(obj));
+    print_float_vector_audit(name + " converted", values);
+    if (values.size() != 1u && values.size() != total_spots) {
+        throw std::runtime_error(
+            name + " length must be 1 or total spot count; got length " +
+            std::to_string(values.size()) + " totalSpots=" + std::to_string(total_spots)
+        );
+    }
+    for (float v : values) {
+        if (!std::isfinite(v)) {
+            throw std::runtime_error(name + " contains NaN/Inf");
+        }
+        if (!(v > 0.0f)) {
+            throw std::runtime_error(name + " must contain only positive physical PB spacing values");
+        }
+    }
+    if (values.size() == 1u && total_spots > 1u) {
+        values.assign(total_spots, values.front());
+    }
+    return values;
+}
+
+static float require_uniform_layer_spacing(const std::vector<float>& values,
+                                           int offset,
+                                           int count,
+                                           int layer,
+                                           const std::string& name) {
+    if (count <= 0) {
+        throw std::runtime_error(name + " cannot derive layer spacing from an empty layer " + std::to_string(layer));
+    }
+    const float ref = values[static_cast<size_t>(offset)];
+    float min_v = ref;
+    float max_v = ref;
+    const float abs_tol = 1.0e-3f;
+    const float rel_tol = 1.0e-3f;
+    for (int i = 0; i < count; ++i) {
+        const float v = values[static_cast<size_t>(offset + i)];
+        min_v = std::min(min_v, v);
+        max_v = std::max(max_v, v);
+    }
+    const float tol = std::max(abs_tol, std::fabs(ref) * rel_tol);
+    if ((max_v - min_v) > tol) {
+        std::ostringstream oss;
+        oss << name << " is not uniform within layer=" << layer
+            << " count=" << count
+            << " min=" << min_v
+            << " max=" << max_v
+            << " tol=" << tol
+            << " sample=[";
+        const int sample_n = std::min(count, 6);
+        for (int i = 0; i < sample_n; ++i) {
+            if (i) oss << ",";
+            oss << values[static_cast<size_t>(offset + i)];
+        }
+        oss << "]";
+        throw std::runtime_error(oss.str());
+    }
+    return ref;
+}
+
+static void apply_explicit_spot_spacing_if_present(RTDBeamSettings& beam,
+                                                   const py::object& spotSpacingX_obj,
+                                                   const py::object& spotSpacingZ_obj,
+                                                   const char* tag) {
+    const bool has_x = !spotSpacingX_obj.is_none();
+    const bool has_z = !spotSpacingZ_obj.is_none();
+    if (!has_x && !has_z) return;
+    if (has_x != has_z) {
+        throw std::runtime_error("spotSpacingX and spotSpacingZ must be provided together");
+    }
+
+    const int total_spots = std::accumulate(beam.layerSpotCounts.begin(), beam.layerSpotCounts.end(), 0);
+    if (total_spots <= 0) {
+        throw std::runtime_error("spot spacing cannot be applied before layerSpotCounts define a positive total spot count");
+    }
+
+    if (beam.layerSpotCounts.empty()) {
+        throw std::runtime_error("spot spacing cannot be applied before layerSpotCounts is populated");
+    }
+    const std::vector<float> x_values =
+        spacing_values_or_throw(spotSpacingX_obj, "spotSpacingX", static_cast<size_t>(total_spots));
+    const std::vector<float> z_values =
+        spacing_values_or_throw(spotSpacingZ_obj, "spotSpacingZ", static_cast<size_t>(total_spots));
+
+    beam.layerSpotDeltas.clear();
+    beam.layerSpotDeltas.reserve(beam.layerSpotCounts.size());
+    int offset = 0;
+    for (size_t layer = 0; layer < beam.layerSpotCounts.size(); ++layer) {
+        const int count = beam.layerSpotCounts[layer];
+        const float dx = require_uniform_layer_spacing(x_values, offset, count, static_cast<int>(layer), "spotSpacingX");
+        const float dz = require_uniform_layer_spacing(z_values, offset, count, static_cast<int>(layer), "spotSpacingZ");
+        if (beam.raySpacing.x > 0.0f && dx < beam.raySpacing.x * 1.5f) {
+            throw std::runtime_error(
+                "spotSpacingX is too small for nuclear halo spacing at layer=" +
+                std::to_string(layer) + ": value=" + std::to_string(dx) +
+                " raySpacing.x=" + std::to_string(beam.raySpacing.x) +
+                " required>=1.5*raySpacing"
+            );
+        }
+        if (beam.raySpacing.y > 0.0f && dz < beam.raySpacing.y * 1.5f) {
+            throw std::runtime_error(
+                "spotSpacingZ is too small for nuclear halo spacing at layer=" +
+                std::to_string(layer) + ": value=" + std::to_string(dz) +
+                " raySpacing.y=" + std::to_string(beam.raySpacing.y) +
+                " required>=1.5*raySpacing"
+            );
+        }
+        beam.layerSpotDeltas.push_back(make_float2(dx, dz));
+        offset += count;
+    }
+
+    if (!beam.layerSpotDeltas.empty()) {
+        beam.spotDelta = make_float3(beam.layerSpotDeltas.front().x, beam.layerSpotDeltas.front().y, 0.0f);
+    }
+    if (rtd_input_audit_enabled() || rtd_pybind_audit_enabled()) {
+        std::cout << "[INPUT_AUDIT][" << tag << "] explicit physical PB spacing"
+                  << " spotDelta=(" << beam.spotDelta.x << "," << beam.spotDelta.y << "," << beam.spotDelta.z << ")"
+                  << " layerDeltas=" << beam.layerSpotDeltas.size();
+        if (!beam.layerSpotDeltas.empty()) {
+            const float2 first = beam.layerSpotDeltas.front();
+            const float2 last = beam.layerSpotDeltas.back();
+            std::cout << " first=(" << first.x << "," << first.y << ")"
+                      << " last=(" << last.x << "," << last.y << ")";
+        }
+        std::cout
+                  << " source=(spotSpacingX,spotSpacingZ)"
+                  << " totalSpots=" << total_spots
+                  << " raySpacing=(" << beam.raySpacing.x << "," << beam.raySpacing.y << ")"
+                  << std::endl;
+    }
 }
 
 enum class SliceMode {
@@ -1144,10 +1530,14 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     const py::array& nPar,
     py::object sadObj,
     py::object beamParaPos_obj,
+    py::object spotSpacingX_obj,
+    py::object spotSpacingZ_obj,
     std::string tables_dir,
     bool debug = false
 ) {
-    std::cerr << "[DEBUG][cuFinalDose] build_carbonpbs_context entry debug=" << (debug ? 1 : 0) << std::endl;
+    if (debug || rtd_pybind_audit_enabled()) {
+        std::cerr << "[DEBUG][cuFinalDose] build_carbonpbs_context entry debug=" << (debug ? 1 : 0) << std::endl;
+    }
     if (debug) {
         std::cerr << "[DEBUG][cuFinalDose] build_carbonpbs_context start" << std::endl;
     }
@@ -1158,8 +1548,10 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         std::cout << "[DEBUG][cuFinalDose] build_carbonpbs_context parse dims/corner/resolution" << std::endl;
     }
     const std::vector<int> dims_vec = to_int_vector(dims);
+    print_py_array_audit("dims", dims);
+    print_int_vector_audit("dims converted", dims_vec);
     if (dims_vec.size() != 3) {
-        throw std::runtime_error("dims must contain exactly 3 integers");
+        throw std::runtime_error("dims must contain exactly 3 integers; got length " + std::to_string(dims_vec.size()));
     }
     ctx.dims = {dims_vec[0], dims_vec[1], dims_vec[2]};
     if (debug) {
@@ -1168,8 +1560,15 @@ static CarbonPBSDoseContext build_carbonpbs_context(
 
     ctx.corner = to_float_vector(corner);
     ctx.resolution = to_float_vector(resolution);
+    print_py_array_audit("corner", corner);
+    print_float_vector_audit("corner converted", ctx.corner);
+    print_py_array_audit("resolution", resolution);
+    print_float_vector_audit("resolution converted", ctx.resolution);
     if (ctx.corner.size() != 3 || ctx.resolution.size() != 3) {
-        throw std::runtime_error("corner and resolution must contain exactly 3 floats");
+        throw std::runtime_error(
+            "corner and resolution must contain exactly 3 floats; got corner length " +
+            std::to_string(ctx.corner.size()) + " resolution length " + std::to_string(ctx.resolution.size())
+        );
     }
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] corner=(" << ctx.corner[0] << "," << ctx.corner[1] << "," << ctx.corner[2] << ")" << std::endl;
@@ -1178,12 +1577,19 @@ static CarbonPBSDoseContext build_carbonpbs_context(
 
     const std::vector<float> all_spot_energies = to_float_vector(all_energies);
     const std::vector<float> lut_energies = to_float_vector(enelist);
+    print_float_vector_audit("all_energies converted", all_spot_energies);
+    print_float_vector_audit("enelist converted", lut_energies);
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] build_carbonpbs_context parse rayweq" << std::endl;
     }
     ctx.beamSettings.waterEquivalence = flatten_float_array(rayweq);
+    print_py_array_audit("rayweq", rayweq);
+    print_weq_contract_audit("rayweq converted", ctx.beamSettings.waterEquivalence);
     if (ctx.beamSettings.waterEquivalence.size() < 9) {
-        throw std::runtime_error("rayweq must include the 9-value CarbonPBS header");
+        throw std::runtime_error(
+            "rayweq must include the 9-value CarbonPBS header; got flattened length " +
+            std::to_string(ctx.beamSettings.waterEquivalence.size())
+        );
     }
     ctx.beamSettings.rayWeqHeader.assign(
         ctx.beamSettings.waterEquivalence.begin(),
@@ -1209,6 +1615,8 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         std::cout << "[DEBUG][cuFinalDose] build_carbonpbs_context parse ROI/spot/energy data" << std::endl;
     }
     ctx.beamSettings.roiLinearIndices = to_roi_linear_indices(roiIdx, ctx.dims);
+    print_py_array_audit("roiIdx", roiIdx);
+    print_int_vector_audit("roiIdx linear converted", ctx.beamSettings.roiLinearIndices);
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] roiLinearIndices.size=" << ctx.beamSettings.roiLinearIndices.size() << std::endl;
         if (!ctx.beamSettings.roiLinearIndices.empty()) {
@@ -1219,17 +1627,28 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     ctx.beamSettings.energies = to_float_vector(layerEnergy);
     ctx.beamSettings.layerSpotCounts = to_int_vector(layerInfo);
     ctx.beamSettings.spotWeights = to_float_vector(nPar);
+    print_float_vector_audit("layerEnergy converted", ctx.beamSettings.energies);
+    print_int_vector_audit("layerInfo converted", ctx.beamSettings.layerSpotCounts);
+    print_float_vector_audit("nPar converted", ctx.beamSettings.spotWeights);
     if (!all_spot_energies.empty() && all_spot_energies.size() != ctx.beamSettings.spotWeights.size()) {
-        throw std::runtime_error("all_energies length must match nPar length");
+        throw std::runtime_error(
+            "all_energies length must match nPar length; got all_energies=" +
+            std::to_string(all_spot_energies.size()) + " nPar=" + std::to_string(ctx.beamSettings.spotWeights.size())
+        );
     }
     ctx.beamSettings.spotPositions = to_float2_columns(idbeamxy, ctx.beamSettings.spotWeights.size());
     ctx.beamSettings.spotPositionsAreIndices = true;
+    apply_explicit_spot_spacing_if_present(ctx.beamSettings, spotSpacingX_obj, spotSpacingZ_obj, "PYBIND");
+    print_py_array_audit("idbeamxy", idbeamxy);
+    print_float_vector_audit("idbeamxy converted", ctx.beamSettings.spotPositions);
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] spotPositions.count=" << (ctx.beamSettings.spotPositions.size() / 2u)
                   << " expected=" << ctx.beamSettings.spotWeights.size() << std::endl;
     }
     ctx.beamSettings.spotBeamDirections = to_float3_columns(tmpBeamDir, ctx.beamSettings.spotWeights.size());
     ctx.beamSettings.beamDirection = normalized_mean_direction(ctx.beamSettings.spotBeamDirections);
+    print_py_array_audit("tmpBeamDir", tmpBeamDir);
+    print_float_vector_audit("tmpBeamDir converted", ctx.beamSettings.spotBeamDirections);
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] spotBeamDirections.count=" << (ctx.beamSettings.spotBeamDirections.size() / 3u)
                   << " beamDirection=(" << ctx.beamSettings.beamDirection.x << ","
@@ -1239,10 +1658,14 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     ctx.beamSettings.bmXDirection = to_float3_from_seq(bmxdir);
     ctx.beamSettings.bmYDirection = to_float3_from_seq(bmydir);
     ctx.beamSettings.sourcePosition = first_float3_from_columns(sourcePos);
+    print_py_array_audit("bmxdir", bmxdir);
+    print_py_array_audit("bmydir", bmydir);
+    print_py_array_audit("sourcePos", sourcePos);
     ctx.beamSettings.refPlaneZ = 0.0f;
 
     if (py::isinstance<py::array>(sadObj)) {
         const std::vector<float> sad_values = to_float_vector(sadObj);
+        print_float_vector_audit("sad converted", sad_values);
         if (sad_values.empty()) {
             throw std::runtime_error("sad array must not be empty");
         }
@@ -1254,6 +1677,7 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     ctx.beamSettings.spotOffset = make_float3(0.0f, 0.0f, 0.0f);
     if (!longitudalCutoff_obj.is_none()) {
         const std::vector<float> per_spot_cutoffs = to_float_vector(py::cast<py::array>(longitudalCutoff_obj));
+        print_float_vector_audit("longitudalCutoff converted", per_spot_cutoffs);
         const int total_spots = std::accumulate(
             ctx.beamSettings.layerSpotCounts.begin(),
             ctx.beamSettings.layerSpotCounts.end(),
@@ -1261,7 +1685,10 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         );
         if (!per_spot_cutoffs.empty()) {
             if (static_cast<int>(per_spot_cutoffs.size()) != total_spots) {
-                throw std::runtime_error("longitudal_cutoff length must match total spot count");
+                throw std::runtime_error(
+                    "longitudal_cutoff length must match total spot count; got length " +
+                    std::to_string(per_spot_cutoffs.size()) + " total_spots=" + std::to_string(total_spots)
+                );
             }
             ctx.beamSettings.layerLongitudinalCutoffs =
                 derive_layer_longitudinal_cutoffs(per_spot_cutoffs, ctx.beamSettings.layerSpotCounts);
@@ -1274,12 +1701,15 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         py::array_t<float, py::array::forcecast> profile_arr = py::cast<py::array>(profiledata_obj);
         py::buffer_info profile_info = profile_arr.request();
         ctx.beamSettings.profileData = flatten_float_array(py::cast<py::array>(profiledata_obj));
+        print_py_array_audit("profiledata", profile_arr);
+        print_float_vector_audit("profiledata converted", ctx.beamSettings.profileData);
         if (profile_info.ndim >= 1) profile_rows = static_cast<int>(profile_info.shape[0]);
         if (profile_info.ndim >= 2) profile_depth_n = static_cast<int>(profile_info.shape[1]);
         if (profile_info.ndim >= 3) profile_channels = static_cast<int>(profile_info.shape[2]);
     }
     if (!profilesetting_obj.is_none()) {
         ctx.beamSettings.profileSetting = to_float_vector(py::cast<py::array>(profilesetting_obj));
+        print_float_vector_audit("profilesetting converted", ctx.beamSettings.profileSetting);
         if (ctx.beamSettings.profileSetting.size() >= 3u && profile_depth_n > 0) {
             const int logical_depth_n = std::max(0, static_cast<int>(std::lround(ctx.beamSettings.profileSetting[2])));
             if (logical_depth_n > profile_depth_n) {
@@ -1295,6 +1725,7 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     }
     if (!beamparadata_obj.is_none()) {
         ctx.beamSettings.beamParaData = flatten_float_array(py::cast<py::array>(beamparadata_obj));
+        print_float_vector_audit("beamparadata converted", ctx.beamSettings.beamParaData);
         if (debug) {
             std::cout << "[DEBUG][cuFinalDose] beamParaData.size=" << ctx.beamSettings.beamParaData.size() << std::endl;
         }
@@ -1308,13 +1739,21 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     }
     py::array_t<float, py::array::c_style | py::array::forcecast> subspot_arr = py::cast<py::array>(subspotdata);
     py::buffer_info subspot_info = subspot_arr.request();
+    print_py_array_audit("subspotdata", subspot_arr);
     if (subspot_info.ndim != 3 || subspot_info.shape[2] != 5) {
-        throw std::runtime_error("subspotdata must have shape (num_layers, max_subspots_per_layer, 5)");
+        throw std::runtime_error(
+            "subspotdata must have shape (num_layers, max_subspots_per_layer, 5); got shape " +
+            shape_to_string(subspot_info)
+        );
     }
     const int lut_layers = static_cast<int>(subspot_info.shape[0]);
     const int max_subspots = static_cast<int>(subspot_info.shape[1]);
     if (static_cast<int>(ctx.beamSettings.layerSpotCounts.size()) != static_cast<int>(ctx.beamSettings.energies.size())) {
-        throw std::runtime_error("layerEnergy/layerInfo size mismatch");
+        throw std::runtime_error(
+            "layerEnergy/layerInfo size mismatch; layerEnergy=" +
+            std::to_string(ctx.beamSettings.energies.size()) + " layerInfo=" +
+            std::to_string(ctx.beamSettings.layerSpotCounts.size())
+        );
     }
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] lut_layers=" << lut_layers
@@ -1329,6 +1768,7 @@ static CarbonPBSDoseContext build_carbonpbs_context(
                   << " nEnergySamples=" << ctx.energyData.nEnergySamples << std::endl;
     }
     const std::vector<float> lut_subspot_data(subspot_ptr, subspot_ptr + static_cast<size_t>(subspot_info.size));
+    print_float_vector_audit("subspotdata LUT converted", lut_subspot_data);
     const std::vector<float2> lut_spot_sigmas = derive_layer_sigmas_from_subspots(lut_subspot_data, lut_layers, max_subspots);
 
     if (debug) {
@@ -1367,6 +1807,15 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         print_energy_audit("PYBIND", ctx.beamSettings, ctx.energyData);
         print_profile_audit("PYBIND", ctx.beamSettings);
     }
+    print_carbonpbs_input_crosscheck(
+        ctx.beamSettings,
+        all_spot_energies,
+        lut_layers,
+        max_subspots,
+        profile_rows,
+        profile_depth_n,
+        profile_channels
+    );
     if (debug) {
         std::cout << "[DEBUG][cuFinalDose] build_carbonpbs_context complete" << std::endl;
     }
@@ -1398,6 +1847,8 @@ static py::dict debug_build_carbonpbs_context(
     const py::array& nPar,
     py::object sadObj,
     py::object beamParaPos_obj,
+    py::object spotSpacingX_obj = py::none(),
+    py::object spotSpacingZ_obj = py::none(),
     std::string tables_dir = std::string("tables/")
 ) {
     CarbonPBSDoseContext ctx = build_carbonpbs_context(
@@ -1425,6 +1876,8 @@ static py::dict debug_build_carbonpbs_context(
         nPar,
         sadObj,
         beamParaPos_obj,
+        spotSpacingX_obj,
+        spotSpacingZ_obj,
         tables_dir,
         true
     );
@@ -1459,6 +1912,7 @@ static py::dict debug_build_carbonpbs_context(
     }
     result["sourcePosition"] = py::cast(std::vector<float>{ctx.beamSettings.sourcePosition.x, ctx.beamSettings.sourcePosition.y, ctx.beamSettings.sourcePosition.z});
     result["sad"] = ctx.beamSettings.sad;
+    result["spotDelta"] = py::cast(std::vector<float>{ctx.beamSettings.spotDelta.x, ctx.beamSettings.spotDelta.y, ctx.beamSettings.spotDelta.z});
     result["profileSettingSize"] = static_cast<int>(ctx.beamSettings.profileSetting.size());
     result["beamParaDataSize"] = static_cast<int>(ctx.beamSettings.beamParaData.size());
     result["energyData_nEnergies"] = ctx.energyData.nEnergies;
@@ -1498,6 +1952,8 @@ static py::object run_carbonpbs_final_dose(
     bool nuclear_correction,
     int verbose,
     bool debug,
+    py::object spotSpacingX_obj,
+    py::object spotSpacingZ_obj,
     std::string tables_dir
 ) {
     if (debug) {
@@ -1559,6 +2015,8 @@ static py::object run_carbonpbs_final_dose(
         nPar,
         sadObj,
         beamParaPos_obj,
+        spotSpacingX_obj,
+        spotSpacingZ_obj,
         tables_dir,
         debug
     );
@@ -1693,12 +2151,24 @@ py::array_t<float> raytracedicom_wrapper_py(
     std::string tables_dir
 ) {
     // Force float32 contiguous.
+    if (rtd_pybind_audit_enabled()) {
+        std::cout << "[PYBIND_AUDIT] raytracedicom_wrapper entry"
+                  << " gpu_id=" << gpu_id
+                  << " nuclear_correction=" << (nuclear_correction ? 1 : 0)
+                  << " verbose=" << verbose
+                  << " tables_dir=" << tables_dir
+                  << std::endl;
+        print_py_array_audit("ct", py::cast<py::array>(ct));
+    }
     py::array_t<float, py::array::c_style | py::array::forcecast> ct_arr = py::cast<py::array>(ct);
     py::buffer_info ct_info = ct_arr.request();
 
     const size_t ct_size_expected = static_cast<size_t>(ct_dims[0]) * ct_dims[1] * ct_dims[2];
     if (static_cast<size_t>(ct_info.size) != ct_size_expected) {
-        throw std::runtime_error("ct buffer size does not match ct_dims");
+        throw std::runtime_error(
+            "ct buffer size does not match ct_dims; got size " + std::to_string(ct_info.size) +
+            " expected " + std::to_string(ct_size_expected)
+        );
     }
 
     // Allocate output dose array with shape (Z,Y,X) for natural linear indexing.
@@ -1713,6 +2183,16 @@ py::array_t<float> raytracedicom_wrapper_py(
     RTDBeamSettings beamSettings;
     beamSettings.energies = to_float_vector(beam["energies"]);
     beamSettings.spotSigmas = to_float2_vector_from_nx2(beam["spot_sigmas"]);
+    print_float_vector_audit("beam.energies converted", beamSettings.energies);
+    if (rtd_pybind_audit_enabled()) {
+        std::vector<float> sigmas_flat;
+        sigmas_flat.reserve(beamSettings.spotSigmas.size() * 2u);
+        for (const float2& s : beamSettings.spotSigmas) {
+            sigmas_flat.push_back(s.x);
+            sigmas_flat.push_back(s.y);
+        }
+        print_float_vector_audit("beam.spot_sigmas converted", sigmas_flat);
+    }
 
     if (beam.contains("ray_spacing")) {
         beamSettings.raySpacing = to_float2_from_seq(beam["ray_spacing"]);
@@ -1767,6 +2247,8 @@ py::array_t<float> raytracedicom_wrapper_py(
     }
     if (beam.contains("water_equivalence")) {
         beamSettings.waterEquivalence = to_float_vector(beam["water_equivalence"]);
+        print_float_vector_audit("beam.water_equivalence converted", beamSettings.waterEquivalence);
+        print_weq_contract_audit("beam.water_equivalence", beamSettings.waterEquivalence);
         if (beamSettings.waterEquivalence.size() >= 9) {
             beamSettings.rayWeqHeader.assign(
                 beamSettings.waterEquivalence.begin(),
@@ -1776,21 +2258,26 @@ py::array_t<float> raytracedicom_wrapper_py(
     }
     if (beam.contains("ray_weq_header")) {
         beamSettings.rayWeqHeader = py::cast<std::vector<float>>(beam["ray_weq_header"]);
+        print_float_vector_audit("beam.ray_weq_header converted", beamSettings.rayWeqHeader);
         if (beamSettings.waterEquivalence.size() < 9 && beamSettings.rayWeqHeader.size() >= 9) {
             beamSettings.waterEquivalence = beamSettings.rayWeqHeader;
         }
     }
     if (beam.contains("profile_data")) {
         beamSettings.profileData = flatten_float_array(py::cast<py::array>(beam["profile_data"]));
+        print_float_vector_audit("beam.profile_data converted", beamSettings.profileData);
     }
     if (beam.contains("profile_energies")) {
         beamSettings.profileEnergies = to_float_vector(py::cast<py::array>(beam["profile_energies"]));
+        print_float_vector_audit("beam.profile_energies converted", beamSettings.profileEnergies);
     }
     if (beam.contains("profile_setting")) {
         beamSettings.profileSetting = to_float_vector(py::cast<py::array>(beam["profile_setting"]));
+        print_float_vector_audit("beam.profile_setting converted", beamSettings.profileSetting);
     }
     if (beam.contains("beam_para_data")) {
         beamSettings.beamParaData = flatten_float_array(py::cast<py::array>(beam["beam_para_data"]));
+        print_float_vector_audit("beam.beam_para_data converted", beamSettings.beamParaData);
     }
     if (beam.contains("beam_para_pos")) {
         beamSettings.beamParaPos = beam["beam_para_pos"].cast<float>();
@@ -1799,8 +2286,12 @@ py::array_t<float> raytracedicom_wrapper_py(
     // Subspot data
     py::array_t<float, py::array::c_style | py::array::forcecast> subspot = py::cast<py::array>(beam["subspot_data"]);
     py::buffer_info ss_info = subspot.request();
+    print_py_array_audit("beam.subspot_data", subspot);
     if (ss_info.ndim != 3 || ss_info.shape[2] != 5) {
-        throw std::runtime_error("subspot_data must have shape (num_layers, max_subspots_per_layer, 5)");
+        throw std::runtime_error(
+            "subspot_data must have shape (num_layers, max_subspots_per_layer, 5); got shape " +
+            shape_to_string(ss_info)
+        );
     }
     const int num_layers = static_cast<int>(ss_info.shape[0]);
     const int max_subspots = static_cast<int>(ss_info.shape[1]);
@@ -1808,17 +2299,28 @@ py::array_t<float> raytracedicom_wrapper_py(
     beamSettings.maxSubspotsPerLayer = max_subspots;
     const float* ss_ptr = static_cast<const float*>(ss_info.ptr);
     beamSettings.subspotData.assign(ss_ptr, ss_ptr + static_cast<size_t>(ss_info.size));
+    print_float_vector_audit("beam.subspot_data converted", beamSettings.subspotData);
 
     // Optional: validate energy layer size
     if (static_cast<int>(beamSettings.energies.size()) != num_layers) {
-        throw std::runtime_error("beam.energies length must equal subspot_data.shape[0] (num_layers)");
+        throw std::runtime_error(
+            "beam.energies length must equal subspot_data.shape[0] (num_layers); got energies=" +
+            std::to_string(beamSettings.energies.size()) + " num_layers=" + std::to_string(num_layers)
+        );
     }
     if (static_cast<int>(beamSettings.spotSigmas.size()) != num_layers) {
-        throw std::runtime_error("beam.spot_sigmas length must equal num_layers");
+        throw std::runtime_error(
+            "beam.spot_sigmas length must equal num_layers; got spot_sigmas=" +
+            std::to_string(beamSettings.spotSigmas.size()) + " num_layers=" + std::to_string(num_layers)
+        );
     }
     if (!beamSettings.layerLongitudinalCutoffs.empty() &&
         static_cast<int>(beamSettings.layerLongitudinalCutoffs.size()) != num_layers) {
-        throw std::runtime_error("beam.layer_longitudinal_cutoffs length must equal num_layers");
+        throw std::runtime_error(
+            "beam.layer_longitudinal_cutoffs length must equal num_layers; got cutoffs=" +
+            std::to_string(beamSettings.layerLongitudinalCutoffs.size()) +
+            " num_layers=" + std::to_string(num_layers)
+        );
     }
 
     // Build energy struct
@@ -1829,19 +2331,31 @@ py::array_t<float> raytracedicom_wrapper_py(
     energyData.energiesPerU = to_float_vector(energy["energies_per_u"]);
     energyData.peakDepths = to_float_vector(energy["peak_depths"]);
     energyData.scaleFacts = to_float_vector(energy["scale_facts"]);
+    print_float_vector_audit("energy.energies_per_u converted", energyData.energiesPerU);
+    print_float_vector_audit("energy.peak_depths converted", energyData.peakDepths);
+    print_float_vector_audit("energy.scale_facts converted", energyData.scaleFacts);
 
     // cidd_matrix
     py::array_t<float, py::array::c_style | py::array::forcecast> cidd = py::cast<py::array>(energy["cidd_matrix"]);
     py::buffer_info cidd_info = cidd.request();
+    print_py_array_audit("energy.cidd_matrix", cidd);
     if (cidd_info.ndim != 2) {
-        throw std::runtime_error("cidd_matrix must be 2D (n_energies, n_energy_samples)");
+        throw std::runtime_error(
+            "cidd_matrix must be 2D (n_energies, n_energy_samples); got shape " +
+            shape_to_string(cidd_info)
+        );
     }
     if (static_cast<int>(cidd_info.shape[0]) != energyData.nEnergies ||
         static_cast<int>(cidd_info.shape[1]) != energyData.nEnergySamples) {
-        throw std::runtime_error("cidd_matrix shape mismatch with n_energies/n_energy_samples");
+        throw std::runtime_error(
+            "cidd_matrix shape mismatch with n_energies/n_energy_samples; got shape " +
+            shape_to_string(cidd_info) + " expected=(" + std::to_string(energyData.nEnergies) +
+            "," + std::to_string(energyData.nEnergySamples) + ")"
+        );
     }
     const float* cidd_ptr = static_cast<const float*>(cidd_info.ptr);
     energyData.ciddMatrix.assign(cidd_ptr, cidd_ptr + static_cast<size_t>(cidd_info.size));
+    print_float_vector_audit("energy.cidd_matrix converted", energyData.ciddMatrix);
 
     // Density/SP/RRL LUTs
     maybe_fill_density_sp_rrl(energyData, energy, tables_dir);
@@ -1902,6 +2416,8 @@ py::object cu_final_dose_py(
     bool nuclear_correction,
     int verbose,
     bool debug,
+    py::object spotSpacingX_obj,
+    py::object spotSpacingZ_obj,
     std::string tables_dir = std::string("tables/")
 ) {
     CPU_TIMER_START_SUMMARY();
@@ -1947,6 +2463,8 @@ py::object cu_final_dose_py(
         nuclear_correction,
         verbose,
         debug,
+        spotSpacingX_obj,
+        spotSpacingZ_obj,
         tables_dir
     );
     CPU_TIMER_END_SUMMARY("cuFinalDose");
@@ -2040,6 +2558,8 @@ py::object cu_cal_dose3_py(
         nuclear_correction,
         verbose,
         false,
+        py::none(),
+        py::none(),
         tables_dir
     );
 
@@ -2052,8 +2572,51 @@ py::object cu_cal_dose3_py(
     return result;
 }
 
+static const char* compiled_nuclear_mode_name() {
+#ifdef NUCLEAR_CORR
+#if NUCLEAR_CORR == SOUKUP
+    return "SOUKUP";
+#elif NUCLEAR_CORR == FLUKA
+    return "FLUKA";
+#elif NUCLEAR_CORR == GAUSS_FIT
+    return "GAUSS_FIT";
+#else
+    return "UNKNOWN";
+#endif
+#else
+    return "OFF";
+#endif
+}
+
+static py::dict rtd_support_matrix_py() {
+    py::dict result;
+    const std::string nuclear_mode = compiled_nuclear_mode_name();
+    result["nuclear_corr_compiled"] = nuclear_mode != "OFF";
+    result["nuclear_corr_mode"] = nuclear_mode;
+    result["runtime_nuclear_correction_arg"] = "nuclear_correction";
+    result["pybind_audit_env"] = "RTD_PYBIND_AUDIT";
+    result["input_audit_env"] = "RTD_INPUT_AUDIT";
+    result["superposition_overflow_debug_env"] = "RTD_SUPERP_OVERFLOW_DEBUG";
+    result["perf_profile_env"] = "RTD_PERF_PROFILE";
+    result["note"] =
+        "NUCLEAR_CORR is a compile-time CMake option. Python can only enable an already-compiled halo path "
+        "with nuclear_correction=True; rebuild with -DNUCLEAR_CORR=GAUSS_FIT/SOUKUP/FLUKA to change the macro.";
+    return result;
+}
+
 PYBIND11_MODULE(cudaCalDoseRTD, m) {
     m.doc() = "RayTraceDicom (CUDA) dose calculation wrapper (pybind11)";
+
+    m.def(
+        "rtdSupportMatrix",
+        &rtd_support_matrix_py,
+        R"pbdoc(
+Return compile-time and runtime feature switches for the RTD pybind module.
+
+Use this from Python to confirm whether NUCLEAR_CORR was compiled in and which
+environment variables control runtime diagnostics.
+)pbdoc"
+    );
 
     m.def(
         "raytracedicom_wrapper",
@@ -2068,7 +2631,7 @@ PYBIND11_MODULE(cudaCalDoseRTD, m) {
         py::arg("beam"),
         py::arg("energy"),
         py::arg("gpu_id") = 0,
-        py::arg("nuclear_correction") = false,
+        py::arg("nuclear_correction") = true,
         py::arg("verbose") = 0,
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
@@ -2116,9 +2679,11 @@ np.ndarray
         py::arg("cutoff") = py::none(),
         py::arg("beamParaPos") = py::none(),
         py::arg("gpuId") = 0,
-        py::arg("nuclear_correction") = false,
+        py::arg("nuclear_correction") = true,
         py::arg("verbose") = 0,
         py::arg("debug") = false,
+        py::arg("spotSpacingX") = py::none(),
+        py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
 Compute the full dose distribution in-place into `dose_grid`.
@@ -2168,7 +2733,7 @@ verbose : int, optional
         py::arg("beam_para_pos"),
         py::arg("python_nnz_size"),
         py::arg("gpu_id") = 0,
-        py::arg("nuclear_correction") = false,
+        py::arg("nuclear_correction") = true,
         py::arg("verbose") = 0,
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
@@ -2216,9 +2781,11 @@ verbose : int, optional
         py::arg("cutoff") = py::none(),
         py::arg("beamParaPos") = py::none(),
         py::arg("gpuId") = 0,
-        py::arg("nuclear_correction") = false,
+        py::arg("nuclear_correction") = true,
         py::arg("verbose") = 0,
         py::arg("debug") = false,
+        py::arg("spotSpacingX") = py::none(),
+        py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
 CarbonPBS-style compatibility alias for the wrapper-backed RTD final-dose path.
@@ -2263,9 +2830,11 @@ verbose : int, optional
         py::arg("cutoff") = py::none(),
         py::arg("beamParaPos") = py::none(),
         py::arg("gpuId") = 0,
-        py::arg("nuclear_correction") = false,
+        py::arg("nuclear_correction") = true,
         py::arg("verbose") = 0,
         py::arg("debug") = false,
+        py::arg("spotSpacingX") = py::none(),
+        py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
 CarbonPBS-style compatibility wrapper for the RTD final-dose pipeline.
@@ -2303,6 +2872,8 @@ the current RTD wrapper-backed final-dose implementation.
         py::arg("nPar"),
         py::arg("sad"),
         py::arg("beamParaPos") = py::none(),
+        py::arg("spotSpacingX") = py::none(),
+        py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
         R"pbdoc(
 Build and inspect the CarbonPBSDoseContext without executing the GPU wrapper.

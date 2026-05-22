@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''
+"""
 版权说明：
     版权所有（c）2025，国科离子医疗科技有限公司，保留所有权利
 
@@ -16,42 +16,66 @@
     2025/03/17 - 李晶 - feat: 用HU和frac对voxel聚类，优化过程降维
     2025/03/21 - 李鸿飞 - feat: 【算】软件加密, 注释问题函数
     2025/04/30 - 李晶 李鸿飞 - feat: 优化过程降维 - 将计算矩阵二范数集成进剂量引擎
-'''
+"""
 
+import gc
+import csv
+import os
+import sys
+import time
+from concurrent.futures import (
+    ALL_COMPLETED,
+    ThreadPoolExecutor,
+    as_completed,
+    wait,
+)
+from itertools import groupby
 from tkinter import NS
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.sparse import csc_matrix, coo_matrix
+from scipy.sparse import coo_matrix, csc_matrix
 from scipy.sparse import hstack as csc_stack
-from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED, as_completed
-import os
-import time
-import gc
-from itertools import groupby
 
-import sys
 from content.bm_operator.beamModel import BEAM_MODEL
 
-sys.path.append('..')
-sys.path.append('../..')
+sys.path.append("..")
+sys.path.append("../..")
 
-from content.geo_operator.grid import GRID
-from content.base_operator.base_operator import BASE
-from content.geo_operator.geometry import addMargin_GPU, getRotateMat, resample, ifAInB
-from content.tools.network.cashim_net import NetWork
-from content.tools.math_tools import calGaussiantwoRs
-from scipy.interpolate import interpn
+from content.tools.cudaPKG.cudaCalDose1 import (
+    cuCalDose3,
+    cuCalDoseNorm,
+    cuFinalDoseAndRBEMap,
+    cuRotate3DArray,
+)
 
-from content.tools.cudaPKG.cudaCalWEQ import cuCalWEQ, cuWeqToPhysPos, cuGetWeqForRegion
-from content.tools.cudaPKG.cudaMemUtils import cuMemTestAlloc
+from content.tools.cudaPKG.cudaCalDoseRTD import (
+    cuFinalDose,
+)
+
+from content.tools.cudaPKG.cudaCalWEQ import (
+    cuCalWEQ,
+    cuGetWeqForRegion,
+    cuWeqToPhysPos,
+)
 from content.tools.cudaPKG.cudaGeometry import cuCalMinDisToRay
+from content.tools.cudaPKG.cudaMemUtils import cuMemTestAlloc
+
 # from content.tools.cudaPKG.cudaCalDose import cuCalDose
 from content.tools.newcudaPKG.cudaCalDose import cuCalDose, cuPrepareWEQ
-from content.tools.cudaPKG.cudaCalDose1 import cuRotate3DArray, cuFinalDoseAndRBEMap, cuCalDose3
-from content.tools.cudaPKG.cudaCalDose1 import cuCalDoseNorm
-from content.tools.cudaPKG.cudaCalDoseRTD import cuFinalDose, rtdSupportMatrix
+from scipy.interpolate import interpn
 
+from content.base_operator.base_operator import BASE
+from content.bm_operator.commissionTypes import PtclType
+from content.geo_operator.geometry import (
+    addMargin_GPU,
+    getRotateMat,
+    ifAInB,
+    resample,
+)
+from content.geo_operator.grid import GRID
+from content.tools.math_tools import calGaussiantwoRs
+from content.tools.network.cashim_net import NetWork
 
 # def setOrder(tmpidx, jj, indices, indptr):
 #     j0 = indptr[jj]
@@ -59,8 +83,9 @@ from content.tools.cudaPKG.cudaCalDoseRTD import cuFinalDose, rtdSupportMatrix
 #     # print("j0 ", j0)
 #     tmpidx[j0:j1] = np.argsort(indices[j0:j1])+j0
 
+
 class DOSECAL(BASE):
-    '''
+    """
     本py文件解决所有
         给定CT(density and stopping power weighted)
             grid类, 距离约化因子的值和此grid的空间朝向
@@ -85,16 +110,18 @@ class DOSECAL(BASE):
             nBeamSpot是所有射野集的布点数目
         生物剂量: RBE map numpy array, dimension same as grid (TODO, now in rbecal.py)
         alpha, beta map numpy array, dimension same as grid
-    '''
+    """
 
     def __init__(self, serviceMode=False, infoFirst=False) -> None:
         super(DOSECAL, self).__init__(name="DOSECAL")
-        if (infoFirst):
-            self.logger.info("\n\
+        if infoFirst:
+            self.logger.info(
+                "\n\
                 ***********************\n\
                 ALL units of angle are radiant\n\
                 All units of distance, resolution are millimeter!!!\n\
-                ***********************\n")
+                ***********************\n"
+            )
         self.serviceMode = serviceMode
         self.task_id = "123"
         self.doseGridPosition = "HFS"
@@ -113,118 +140,14 @@ class DOSECAL(BASE):
         #                                 self.doseGrid.orientation)
         self.doseGrid.data = resample(self.doseGrid, ct)
 
-    def _dose_grid_contract_summary(self):
-        dims = np.asarray(self.doseGrid.dims, dtype=np.int64).reshape(-1)
-        corner = np.asarray(self.doseGrid.corner, dtype=np.float32).reshape(-1)
-        resolution = np.asarray(self.doseGrid.resolution, dtype=np.float32).reshape(-1)
-        return "doseGrid(dims={}, corner={}, resolution={})".format(
-            tuple(int(v) for v in dims[:3]),
-            tuple(float(v) for v in corner[:3]),
-            tuple(float(v) for v in resolution[:3]),
-        )
-
-    def _normalize_linear_indices(self, name, linear_indices, default_full_grid=False):
-        dims = np.asarray(self.doseGrid.dims, dtype=np.int64).reshape(-1)
-        if dims.size != 3:
-            raise RuntimeError("doseGrid.dims must contain exactly 3 values")
-        total_voxels = int(np.prod(dims, dtype=np.int64))
-        if total_voxels <= 0:
-            raise RuntimeError("doseGrid has invalid dimensions: {}".format(tuple(int(v) for v in dims[:3])))
-
-        if linear_indices is None:
-            if default_full_grid:
-                return np.arange(total_voxels, dtype=np.int64)
-            raise RuntimeError("{} is required".format(name))
-
-        arr = np.asarray(linear_indices)
-        if arr.size == 0:
-            return np.zeros((0,), dtype=np.int64)
-
-        arr = np.squeeze(arr)
-        if arr.ndim == 0:
-            arr = arr.reshape(1)
-        if arr.ndim > 1:
-            raise RuntimeError("{} must be a 1D array of linear voxel indices".format(name))
-
-        if arr.dtype.kind in ("f", "c"):
-            if not np.all(np.isfinite(arr)):
-                raise RuntimeError("{} contains non-finite values".format(name))
-            rounded = np.rint(arr)
-            if not np.allclose(arr, rounded):
-                raise RuntimeError("{} must contain integer-valued linear voxel indices".format(name))
-            arr = rounded.astype(np.int64)
-        else:
-            arr = arr.astype(np.int64, copy=False)
-
-        arr = np.ascontiguousarray(arr.reshape(-1))
-        bad_mask = np.logical_or(arr < 0, arr >= total_voxels)
-        if np.any(bad_mask):
-            bad_vals = arr[bad_mask][: min(5, int(np.count_nonzero(bad_mask)))]
-            raise RuntimeError(
-                "{} contains out-of-range linear voxel indices for the current dose grid: "
-                "min={}, max={}, total_voxels={}, bad_examples={}, {}. "
-                "This usually means the linear ROI indices were generated on a different doseGrid and must be regenerated."
-                .format(
-                    name,
-                    int(arr.min()),
-                    int(arr.max()),
-                    total_voxels,
-                    bad_vals.tolist(),
-                    self._dose_grid_contract_summary(),
-                )
-            )
-        return arr
-
-    def _coerce_bool_flag(self, name, value):
-        if isinstance(value, (bool, np.bool_)):
-            return bool(value)
-        if isinstance(value, (int, np.integer)):
-            return bool(value)
-        if isinstance(value, str):
-            s = value.strip().lower()
-            if s in ("1", "true", "yes", "on"):
-                return True
-            if s in ("0", "false", "no", "off", ""):
-                return False
-        raise RuntimeError("{} must be a boolean-like value, got {!r}".format(name, value))
-
-    def _resolve_rtd_nuclear_correction(self, requested, calType):
-        enabled = self._coerce_bool_flag("nuclear_correction", requested)
-        if not enabled:
-            return False
-
-        if calType not in ['Dose', 'QA', 'Scale', 'DoseRecalculation']:
-            raise RuntimeError(
-                "nuclear_correction=True is only exposed on the RTD final-dose path. "
-                "Current calculation_type='{}' uses the optimization/operator path instead."
-                .format(calType)
-            )
-
-        support = rtdSupportMatrix()
-        final_support = dict(support.get("cuFinalDose", {}))
-        build_mode = str(final_support.get("nuclear_correction_build_mode", "OFF"))
-        runtime_state = str(final_support.get("nuclear_correction_runtime", "unavailable"))
-        detail = str(final_support.get("nuclear_correction_detail", ""))
-
-        if build_mode == "OFF":
-            raise RuntimeError(
-                "nuclear_correction=True was requested, but cudaCalDoseRTD reports "
-                "NUCLEAR_CORR=OFF. Rebuild the RTD module with -DNUCLEAR_CORR=SOUKUP, FLUKA, or GAUSS_FIT."
-            )
-
-        if runtime_state not in ("experimental", "implemented"):
-            raise RuntimeError(
-                "nuclear_correction=True was requested, but cudaCalDoseRTD reports cuFinalDose "
-                "runtime state '{}' ({})".format(runtime_state, detail)
-            )
-
-        self.logger.warning(
-            "RTD nuclear_correction is enabled on the final-dose path with build mode {}. {}"
-            .format(build_mode, detail)
-        )
-        return True
-
-    def setGeometry(self, gantryAngle, couchAngle, translation, isocenter=[0, 0, 0], sad=6632):
+    def setGeometry(
+        self,
+        gantryAngle,
+        couchAngle,
+        translation,
+        isocenter=[0, 0, 0],
+        sad=6632,
+    ):
         # self.infoFirst("geometry", "Angle in degree and distance in mm")
         self.gantryAngle = gantryAngle * 0.0174533
         self.couchAngle = np.array(couchAngle) * 0.0174533
@@ -246,11 +169,11 @@ class DOSECAL(BASE):
 
         # 2 rotate couch
         # couchAngle in dicom y x z
-        R1 = getRotateMat(-self.couchAngle[0], 'y')  # Yaw
+        R1 = getRotateMat(-self.couchAngle[0], "y")  # Yaw
         # dicom y
-        R2 = getRotateMat(self.couchAngle[1], 'x')  # Pitch
+        R2 = getRotateMat(self.couchAngle[1], "x")  # Pitch
         # dicom x
-        R3 = getRotateMat(self.couchAngle[2], 'z')  # Roll
+        R3 = getRotateMat(self.couchAngle[2], "z")  # Roll
         # dicom z
 
         # Note, rotation is applied on couch. Effect on beam was reversed --> R.T
@@ -264,13 +187,29 @@ class DOSECAL(BASE):
         bmxdir = np.dot(R, bmxdir)
 
         # difference between doseGrid orientation and gridPosition
-        rotateMat = getRotateMat(0, 'z')
-        if (self.doseGridPosition == "HFP"):
-            rotateMat = getRotateMat(np.pi, 'z')
-        if (self.doseGridPosition == "FFS"):
-            rotateMat = getRotateMat(np.pi, 'y')
-        if (self.doseGridPosition == "FFP"):
-            rotateMat = getRotateMat(np.pi, 'x')
+        rotateMat = getRotateMat(0, "z")
+        if self.doseGridPosition == "HFS":
+            rotateMat = getRotateMat(0, "z")
+        elif self.doseGridPosition == "HFP":
+            rotateMat = getRotateMat(np.pi, "z")
+        elif self.doseGridPosition == "FFS":
+            rotateMat = getRotateMat(np.pi, "y")
+        elif self.doseGridPosition == "FFP":
+            rotateMat = getRotateMat(np.pi, "x")
+        elif self.doseGridPosition == "HFDR":
+            rotateMat = getRotateMat(-np.pi / 2, "z").T
+        elif self.doseGridPosition == "HFDL":
+            rotateMat = getRotateMat(np.pi / 2, "z").T
+        elif self.doseGridPosition == "FFDR":
+            rotateMat = (getRotateMat(np.pi, "y") @ getRotateMat(-np.pi / 2, "z")).T
+        elif self.doseGridPosition == "FFDL":
+            rotateMat = (getRotateMat(np.pi, "y") @ getRotateMat(np.pi / 2, "z")).T
+        else:
+            raise RuntimeError(
+                f"Import failed due to an unsupported patient \
+                               position({self.doseGridPosition}). Only HFP, HFS, \
+                               FFP, FFS, HFDR, HFDL, FFDR or FFDL is supported."
+            )
         self.bmdir = np.dot(rotateMat, bmdir)
         self.bmxdir = np.dot(rotateMat, bmxdir)
 
@@ -291,27 +230,52 @@ class DOSECAL(BASE):
 
     def getThetaMax(self, roiIndex, margin=5):
         # should be done with GPU later
-        if (np.size(margin) == 1):
+        if np.size(margin) == 1:
             margin = np.ones((3, 1)) * margin
         newRegion = addMargin_GPU(margin, roiIndex, self.doseGrid)
-        newRegion = self._normalize_linear_indices("newRegion", newRegion)
 
-        index = np.unravel_index(newRegion, self.doseGrid.data.shape, order='C')
+        index = np.unravel_index(newRegion, self.doseGrid.data.shape, order="C")
         nPos = np.size(index) // 3
         index = np.reshape(np.array(index), (3, nPos))
         pos = self.doseGrid.getPos(index)
 
         relativePos = pos - self.source
-        length = np.sqrt(np.sum(relativePos ** 2, 0, keepdims=True)).T
+        length = np.sqrt(np.sum(relativePos**2, 0, keepdims=True)).T
 
         halfVoxel = np.sqrt(np.sum(np.square(self.doseGrid.resolution))) * 0.5
         crossProduct = np.sqrt(
-            np.sum(np.square(np.cross(relativePos, self.bmdir, axisa=0, axisb=0)), axis=1, keepdims=True))
+            np.sum(
+                np.square(np.cross(relativePos, self.bmdir, axisa=0, axisb=0)),
+                axis=1,
+                keepdims=True,
+            )
+        )
         dum = (crossProduct + halfVoxel) / length
         dum[np.where(dum > 1)] = 1
         theta = np.arcsin(dum)
 
         return np.max(theta)
+
+    def getRangeInBeamCoor(self, roiIndex, margin=5):
+        if np.size(margin) == 1:
+            margin = np.ones((3, 1)) * margin
+        newRegion = addMargin_GPU(margin, roiIndex, self.doseGrid)
+
+        index = np.unravel_index(newRegion, self.doseGrid.data.shape, order="C")
+        nPos = np.size(index) // 3
+        index = np.reshape(np.array(index), (3, nPos))
+        pos = self.doseGrid.getPos(index)
+
+        relativePos = pos - self.source
+
+        xrange = np.dot(relativePos.T, np.reshape(self.bmxdir, (3,)))
+        yrange = np.dot(relativePos.T, np.reshape(self.bmydir, (3,)))
+        return np.array(
+            [
+                [np.min(xrange), np.min(yrange)],
+                [np.max(xrange), np.max(yrange)],
+            ]
+        )
 
     def getWEQBetweenTwoPos(self, source, target, mode="value", minDis=6000, step=0.1):
         # mode: value or 0 means return weq value between source and target
@@ -319,16 +283,16 @@ class DOSECAL(BASE):
         source = np.reshape(source, (3, 1))
         target = np.reshape(target, (3, 1))
         length = np.sqrt(np.sum((target - source) ** 2))
-        if (length == 0):
-            if (mode == 'value' or mode == 0):
+        if length == 0:
+            if mode == "value" or mode == 0:
                 return 0
-            elif (mode == 'array' or mode == 1):
+            elif mode == "array" or mode == 1:
                 return np.array([0])
             else:
                 self.logger.error("getWEQBetweenTwoPos error mode")
                 return 0
 
-        if (length < minDis):
+        if length < minDis:
             # self.infoFirst("minDis", "consider reduce minDis")
             minDis = 0
         tmpDir = (target - source) / length
@@ -340,13 +304,13 @@ class DOSECAL(BASE):
         density = self.doseGrid.getData(iPos)
 
         weq = 0
-        if (mode == 'value' or mode == 0):
+        if mode == "value" or mode == 0:
             weq = np.sum(density) * step
-            if (nSample != 0):
+            if nSample != 0:
                 weq += density[-1] * (length - minDis - step * nSample)
-        elif (mode == 'array' or mode == 1):
+        elif mode == "array" or mode == 1:
             weq = np.cumsum(density) * step
-            if (nSample == 0):
+            if nSample == 0:
                 weq = np.array([0])
         else:
             self.logger.error("getWEQBetweenTwoPos error mode")
@@ -368,12 +332,18 @@ class DOSECAL(BASE):
             neighbors = []
 
             # 获取相邻的 4 个格子，确保不越界
-            if x > 0: neighbors.append(self.doseGrid.data[x - 1, y, z])  # 前一个
-            if x < shape[0] - 1: neighbors.append(self.doseGrid.data[x + 1, y, z])  # 后一个
-            if y > 0: neighbors.append(self.doseGrid.data[x, y - 1, z])  # 上一个
-            if y < shape[1] - 1: neighbors.append(self.doseGrid.data[x, y + 1, z])  # 下一个
-            if z > 0: neighbors.append(self.doseGrid.data[x, y, z - 1])  # 左一个
-            if z < shape[2] - 1: neighbors.append(self.doseGrid.data[x, y, z + 1])  # 右一个
+            if x > 0:
+                neighbors.append(self.doseGrid.data[x - 1, y, z])  # 前一个
+            if x < shape[0] - 1:
+                neighbors.append(self.doseGrid.data[x + 1, y, z])  # 后一个
+            if y > 0:
+                neighbors.append(self.doseGrid.data[x, y - 1, z])  # 上一个
+            if y < shape[1] - 1:
+                neighbors.append(self.doseGrid.data[x, y + 1, z])  # 下一个
+            if z > 0:
+                neighbors.append(self.doseGrid.data[x, y, z - 1])  # 左一个
+            if z < shape[2] - 1:
+                neighbors.append(self.doseGrid.data[x, y, z + 1])  # 右一个
 
             # 过滤掉 inf 值的邻居
             neighbors = [n for n in neighbors if not np.isinf(n)]
@@ -384,14 +354,11 @@ class DOSECAL(BASE):
             else:
                 self.doseGrid.data[x, y, z] = 0  # 如果没有有效邻居，就设为 0
 
-
-
         roiIndex = addMargin_GPU(margin, roiIndex, self.doseGrid)
-        roiIndex = self._normalize_linear_indices("roiIndex", roiIndex)
-        index = np.unravel_index(roiIndex, self.doseGrid.data.shape, order='C')
-        nPos  = np.size(index) // 3
+        index = np.unravel_index(roiIndex, self.doseGrid.data.shape, order="C")
+        nPos = np.size(index) // 3
         index = np.reshape(np.array(index), (3, nPos))
-        pos   = self.doseGrid.getPos(index)  # pos in x y z
+        pos = self.doseGrid.getPos(index)  # pos in x y z
         # nBeam = np.size(roiIndex)
         #
         # tmpDir = pos - self.source
@@ -419,11 +386,19 @@ class DOSECAL(BASE):
         #     result.append(np.interp(ind[i], cols, weq[i,:]))
         # return np.array(result)
 
-        pos = pos.flatten(order='F')
+        pos = pos.flatten(order="F")
         #
         weq = np.zeros((np.size(roiIndex),), dtype=np.float32)
-        cuGetWeqForRegion(weq, pos, self.source, self.doseGrid.data, \
-                          self.doseGrid.corner, self.doseGrid.resolution, self.doseGrid.dims, 0)
+        cuGetWeqForRegion(
+            weq,
+            pos,
+            self.source,
+            self.doseGrid.data,
+            self.doseGrid.corner,
+            self.doseGrid.resolution,
+            self.doseGrid.dims,
+            0,
+        )
 
         # weq[np.isinf(weq)] = 0
         # weq[np.isnan(weq)] = 0
@@ -516,14 +491,22 @@ class DOSECAL(BASE):
         # NOTE, in this setting, phi start from dicom x,
         # positive angle means x->-z, namely HFS head to left
 
-        localDir = [np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]
+        localDir = [
+            np.sin(theta) * np.cos(phi),
+            np.sin(theta) * np.sin(phi),
+            np.cos(theta),
+        ]
         localDir = np.reshape(np.array(localDir), (3, np.size(theta)))
         localDir = np.matmul(R, np.array(localDir))
         #  x y z
-        if (mode == "z"):
+        if mode == "z":
             return localDir
         else:
-            localXDir = [np.cos(theta) * np.cos(phi), np.cos(theta) * np.sin(phi), -np.sin(theta)]
+            localXDir = [
+                np.cos(theta) * np.cos(phi),
+                np.cos(theta) * np.sin(phi),
+                -np.sin(theta),
+            ]
             localXDir = np.reshape(np.array(localXDir), (3, np.size(theta)))
             localXDir = np.matmul(R, np.array(localXDir))
 
@@ -548,15 +531,33 @@ class DOSECAL(BASE):
         localDir = localDir.T.flatten()
         weq[weq < 0] = 0
         physPos = -100 * np.ones((np.size(theta), 3), dtype=np.float32)
-        cuWeqToPhysPos(physPos, weq, localDir, self.source, self.doseGrid.data,
-                       self.doseGrid.corner, self.doseGrid.resolution, self.doseGrid.dims,
-                       step, 0)
+        cuWeqToPhysPos(
+            physPos,
+            weq,
+            localDir,
+            self.source,
+            self.doseGrid.data,
+            self.doseGrid.corner,
+            self.doseGrid.resolution,
+            self.doseGrid.dims,
+            step,
+            0,
+        )
         physPos = physPos.T
         return physPos
 
-    def hitTargetFlag(self, weq, theta, phi, roiIndex, disThres=5, backEneThres=0, forwardEneThres=0):
+    def hitTargetFlag(
+        self,
+        weq,
+        theta,
+        phi,
+        roiIndex,
+        disThres=5,
+        backEneThres=0,
+        forwardEneThres=0,
+    ):
         self.logger.info("hit:Theta phi should be in unit of radiant")
-        if (np.size(disThres) == 3):
+        if np.size(disThres) == 3:
             disThres = np.reshape(disThres, (3, 1))
         weq = np.array(weq)
         theta = np.array(theta)
@@ -566,8 +567,7 @@ class DOSECAL(BASE):
         physPos1 = self.weqToPhysPos_GPU(weq + forwardEneThres, theta, phi)
         nStep = (np.max(np.sqrt(np.sum(np.square(physPos1 - physPos0), axis=0))) // 2).astype(int)
 
-        roiIndex = self._normalize_linear_indices("roiIndex", roiIndex)
-        index = np.unravel_index(roiIndex, self.doseGrid.data.shape, order='C')
+        index = np.unravel_index(roiIndex, self.doseGrid.data.shape, order="C")
         index = np.squeeze(np.array(index))
         pos = self.doseGrid.getPos(index)  # pos in x y z
 
@@ -578,17 +578,23 @@ class DOSECAL(BASE):
             hitFlag = np.logical_or(hitFlag, tmpflag)
         return hitFlag
 
-    def getRayAccumulatedWEQ(self, theta, phi, extcontour_linear=None, \
-                             transverseCutoff=10, crossStep=0.2, parallelStep=0.5):
+    def getRayAccumulatedWEQ(
+        self,
+        theta,
+        phi,
+        extcontour_linear=None,
+        transverseCutoff=10,
+        crossStep=0.2,
+        parallelStep=0.5,
+    ):
         # theta, phi, ray direction relative to beam direction
         # extcontour_linear. linear index in grid
         nBeam = np.size(theta)
-        extcontour_linear = self._normalize_linear_indices(
-            "extcontour_linear", extcontour_linear, default_full_grid=True
-        )
+        if (extcontour_linear == None).any():
+            extcontour_linear = np.arange(np.size(self.doseGrid.data))
         nPos = np.size(extcontour_linear)
 
-        index = np.unravel_index(extcontour_linear, self.doseGrid.data.shape, order='C')
+        index = np.unravel_index(extcontour_linear, self.doseGrid.data.shape, order="C")
         index = np.squeeze(np.array(index))
         pos = self.doseGrid.getPos(index)  # pos in x y z
 
@@ -605,12 +611,11 @@ class DOSECAL(BASE):
             for iPos in range(nPos):
                 crossDis = self.getWEQBetweenTwoPos(target[:, iPos], pos[:, iPos], "value", 0, crossStep)
                 # crossDis = np.sqrt(np.sum(np.square(target[:,iPos]-pos[:,iPos])))
-                if (crossDis > transverseCutoff):
+                if crossDis > transverseCutoff:
                     continue
                 tmpCrossBeamWEQ[iPos, 0] = crossDis
                 # tmpCrossBeamWEQ[iPos,0] = self.getWEQBetweenTwoPos(target[:,iPos], pos[:,iPos], "value", 0, crossStep)
-                tmpAlongBeamWEQ[iPos, 0] = self.getWEQBetweenTwoPos(self.source, target[:, iPos], "value", 6000,
-                                                                    parallelStep)
+                tmpAlongBeamWEQ[iPos, 0] = self.getWEQBetweenTwoPos(self.source, target[:, iPos], "value", 6000, parallelStep)
             alongBeamWEQ = csc_stack((alongBeamWEQ, csc_matrix(tmpAlongBeamWEQ, (nPos, 1))))
             crossBeamWEQ = csc_stack((crossBeamWEQ, csc_matrix(tmpCrossBeamWEQ, (nPos, 1))))
 
@@ -620,16 +625,26 @@ class DOSECAL(BASE):
         nBeam = np.size(rayDir) // 3
         minDis = np.zeros(nBeam, dtype=np.float32)
 
-        if (np.size(minLongitudalDis) == 1):
-            minLongitudalDis = np.ones(nBeam, ) * minLongitudalDis
-        elif (np.size(minLongitudalDis) != nBeam):
+        if np.size(minLongitudalDis) == 1:
+            minLongitudalDis = (
+                np.ones(
+                    nBeam,
+                )
+                * minLongitudalDis
+            )
+        elif np.size(minLongitudalDis) != nBeam:
             raise RuntimeError("Dimension mismatch.")
         else:
             minLongitudalDis = np.array(minLongitudalDis)
 
-        if (np.size(maxLongitudalDis) == 1):
-            maxLongitudalDis = np.ones(nBeam, ) * maxLongitudalDis
-        elif (np.size(maxLongitudalDis) != nBeam):
+        if np.size(maxLongitudalDis) == 1:
+            maxLongitudalDis = (
+                np.ones(
+                    nBeam,
+                )
+                * maxLongitudalDis
+            )
+        elif np.size(maxLongitudalDis) != nBeam:
             raise RuntimeError("Dimension mismatch.")
         else:
             maxLongitudalDis = np.array(maxLongitudalDis)
@@ -640,25 +655,51 @@ class DOSECAL(BASE):
         cuCalMinDisToRay(minDis, source, rayDir, pos, minLongitudalDis, maxLongitudalDis, 0)
         return minDis
 
-    def getRayAccumulatedWEQ_GPU(self, theta, phi, extcontour_linear=None, \
-                                 transverseCutoff=10, crossStep=0.2, parallelStep=0.5, ene=None, longitudalCutoff=1000,
-                                 startProgress=0, endProgress=1):
+    def getRayAccumulatedWEQ_GPU(
+        self,
+        theta,
+        phi,
+        extcontour_linear=None,
+        transverseCutoff=10,
+        crossStep=0.2,
+        parallelStep=0.5,
+        ene=None,
+        longitudalCutoff=1000,
+        startProgress=0.0,
+        endProgress=1.0,
+    ):
         # GPU version of calculating weq
         localDir = self.getBeamDir(theta, phi)
-        extcontour_linear = self._normalize_linear_indices(
-            "extcontour_linear", extcontour_linear, default_full_grid=True
+        if (extcontour_linear == None).any():
+            extcontour_linear = np.arange(np.size(self.doseGrid.data))
+        alongBeamWEQ, crossBeamWEQ = self.getAccumulatedWEQFromDir_GPU(
+            localDir,
+            extcontour_linear,
+            transverseCutoff,
+            crossStep,
+            parallelStep,
+            np.array(ene),
+            longitudalCutoff,
+            startProgress,
+            endProgress,
         )
-        alongBeamWEQ, crossBeamWEQ = self.getAccumulatedWEQFromDir_GPU(localDir, extcontour_linear, transverseCutoff,
-                                                                       crossStep, parallelStep, np.array(ene),
-                                                                       longitudalCutoff, startProgress, endProgress)
 
         return alongBeamWEQ, crossBeamWEQ
 
-    def getAccumulatedWEQFromDir_GPU(self, localDir, extcontour_linear, transverseCutoff=20, crossStep=0.2,
-                                     parallelStep=0.5, ene=None, longitudalCutoff=1000, startProgress=-1, endProgress=1,
-                                     orderFlag=True):
-        extcontour_linear = self._normalize_linear_indices("extcontour_linear", extcontour_linear)
-        index = np.unravel_index(extcontour_linear, self.doseGrid.data.shape, order='C')
+    def getAccumulatedWEQFromDir_GPU(
+        self,
+        localDir,
+        extcontour_linear,
+        transverseCutoff=20,
+        crossStep=0.2,
+        parallelStep=0.5,
+        ene=None,
+        longitudalCutoff=1000,
+        startProgress=-1.0,
+        endProgress=1.0,
+        orderFlag=True,
+    ):
+        index = np.unravel_index(extcontour_linear, self.doseGrid.data.shape, order="C")
         index = np.squeeze(np.array(index))
         index = index.T.flatten()
 
@@ -666,8 +707,8 @@ class DOSECAL(BASE):
         localDir = localDir.flatten(order="F")
 
         preCutoff = np.array([20, 30, 35, 40, 50])  # 200, 250, 300, 350, 400
-        if (transverseCutoff < 0):
-            if (ene is None or np.size(ene) != nBeam):
+        if transverseCutoff < 0:
+            if ene is None or np.size(ene) != nBeam:
                 raise RuntimeError("Provided parameters for cal WEQ WRONG!!!")
             else:
                 # idx = np.ceil((ene-200)/50.0).astype(np.int)
@@ -677,9 +718,9 @@ class DOSECAL(BASE):
         else:
             transverseCutoff = transverseCutoff * np.ones(nBeam)
 
-        if (np.size(longitudalCutoff) == 1):
+        if np.size(longitudalCutoff) == 1:
             longitudalCutoff = longitudalCutoff * np.ones(nBeam)
-        if (np.size(longitudalCutoff) != nBeam):
+        if np.size(longitudalCutoff) != nBeam:
             raise RuntimeError("WRONG parameter for longitudal cutoff!")
         # divide into batches
         nCalVoxels = np.size(extcontour_linear)
@@ -688,35 +729,40 @@ class DOSECAL(BASE):
         self.logger.info("voxels {} calvoxes {}".format(nVoxels, nCalVoxels))
         requireMem = 18 * 1024 * 1024 * 1024  # 18 G GPU memory
         status = cuMemTestAlloc(requireMem, 0)  # only one card is visible now
-        while (status == -1):
+        while status == -1:
             requireMem /= 1.2
             status = cuMemTestAlloc(np.uint64(requireMem), 0)
-            if (np.uint64(requireMem) < 256 * 1024 * 1024):  # 256 MB
+            if np.uint64(requireMem) < 256 * 1024 * 1024:  # 256 MB
                 self.logger.error("NOT enough memory")
                 raise RuntimeError("Not enough GPU resourses! please WAIT!")
         excessRatio = 0.1
-        if (np.max(transverseCutoff) > 40):
+        if np.max(transverseCutoff) > 40:
             excessRatio = 0.2
         num_per_group = np.int((requireMem / 4 / (1 + excessRatio) - nVoxels) / nCalVoxels / 2)
-        if (nCalVoxels * num_per_group > 2 ** 31):
-            num_per_group = 2 ** 31 // nCalVoxels
-        if (num_per_group < 1):
-            raise RuntimeError("ROI voxels is too many!!! \
-                Consider use smaller ROI or larger dose grid resolution!!!")
+        if nCalVoxels * num_per_group > 2**31:
+            num_per_group = 2**31 // nCalVoxels
+        if num_per_group < 1:
+            raise RuntimeError(
+                "ROI voxels is too many!!! \
+                Consider use smaller ROI or larger dose grid resolution!!!"
+            )
         requireMem = (2 * num_per_group * nCalVoxels + nVoxels) * 4 * (1 + excessRatio)
         self.logger.info(
-            "num spots per group {}, memory pressure {} MB, {} groups".format(num_per_group, requireMem // (1024 ** 2),
-                                                                              int(nBeam / num_per_group) + 1))
+            "num spots per group {}, memory pressure {} MB, {} groups".format(
+                num_per_group,
+                requireMem // (1024**2),
+                int(nBeam / num_per_group) + 1,
+            )
+        )
 
-        totalEstNNZ = 2.5 * np.sum(4 * (transverseCutoff + np.max(self.doseGrid.resolution) * 3) ** 2 * (
-                    longitudalCutoff + 3 * np.max(self.doseGrid.resolution))) / self.doseGrid.voxSize
-        if (totalEstNNZ < 1e7):
+        totalEstNNZ = 2.5 * np.sum(4 * (transverseCutoff + np.max(self.doseGrid.resolution) * 3) ** 2 * (longitudalCutoff + 3 * np.max(self.doseGrid.resolution))) / self.doseGrid.voxSize
+        if totalEstNNZ < 1e7:
             totalEstNNZ = 1e7
         maxCPUMem = 100  # GB
-        maxEstNNZ = np.int(maxCPUMem * 1024 ** 3 / 8 / 2 / 1.5 / 4)
-        if (maxEstNNZ > 2 ** 31):
-            maxEstNNZ = 2 ** 31
-        if (totalEstNNZ > maxEstNNZ):
+        maxEstNNZ = np.int(maxCPUMem * 1024**3 / 8 / 2 / 1.5 / 4)
+        if maxEstNNZ > 2**31:
+            maxEstNNZ = 2**31
+        if totalEstNNZ > maxEstNNZ:
             transverseCutoff = transverseCutoff * np.sqrt(maxEstNNZ / totalEstNNZ)
             self.logger.info("squeeze ratio {}".format(np.sqrt(maxEstNNZ / totalEstNNZ)))
             totalEstNNZ = maxEstNNZ
@@ -732,48 +778,54 @@ class DOSECAL(BASE):
         _total_batch = int(nBeam / num_per_group) + 1
         for i in range(_total_batch):
             self.logger.info("calculating the {}th batch".format(i))
-            if (self.serviceMode and startProgress > 0):
-                NetWork.sendStatus(None, self.task_id, "Calculating the {}th / {} batch".format(i, str(_total_batch)),
-                                   startProgress + i * (endProgress - startProgress) * 0.78 / (
-                                               int(nBeam / num_per_group) + 1))
+            if self.serviceMode and startProgress > 0:
+                NetWork.sendStatus(
+                    None,
+                    self.task_id,
+                    "Calculating the {}th / {} batch".format(i, str(_total_batch)),
+                    startProgress + i * (endProgress - startProgress) * 0.78 / (int(nBeam / num_per_group) + 1),
+                )
             remainder = nBeam - i * num_per_group
-            if (remainder <= 0):
+            if remainder <= 0:
                 break
-            if (remainder > num_per_group):
+            if remainder > num_per_group:
                 remainder = num_per_group
-            dosemap1, sparse_ind1, dosemap2, sparse_ind2 = self.getRayAccumulatedWEQ_GPU_Batch(nCalVoxels, remainder, \
-                                                                                               localDir[
-                                                                                               3 * i * num_per_group:3 * (
-                                                                                                           i * num_per_group + remainder)],
-                                                                                               index, \
-                                                                                               self.doseGrid,
-                                                                                               transverseCutoff[
-                                                                                               i * num_per_group:(
-                                                                                                           i * num_per_group + remainder)],
-                                                                                               longitudalCutoff[
-                                                                                               i * num_per_group:(
-                                                                                                           i * num_per_group + remainder)],
-                                                                                               crossStep, parallelStep,
-                                                                                               orderFlag, 0)
+            dosemap1, sparse_ind1, dosemap2, sparse_ind2 = self.getRayAccumulatedWEQ_GPU_Batch(
+                nCalVoxels,
+                remainder,
+                localDir[3 * i * num_per_group : 3 * (i * num_per_group + remainder)],
+                index,
+                self.doseGrid,
+                transverseCutoff[i * num_per_group : (i * num_per_group + remainder)],
+                longitudalCutoff[i * num_per_group : (i * num_per_group + remainder)],
+                crossStep,
+                parallelStep,
+                orderFlag,
+                0,
+            )
             nnz = sparse_ind1[0]
-            alongBeamWEQData[currentNNZ:currentNNZ + nnz] = dosemap1[0:nnz]
-            alongBeamWEQIndices[currentNNZ:currentNNZ + nnz] = sparse_ind1[1:1 + nnz]
-            alongBeamWEQIndptr[i * num_per_group + 1:1 + i * num_per_group + remainder] = currentNNZ + sparse_ind1[
-                                                                                                       2 + nnz:1 + nnz + remainder + 1]
+            alongBeamWEQData[currentNNZ : currentNNZ + nnz] = dosemap1[0:nnz]
+            alongBeamWEQIndices[currentNNZ : currentNNZ + nnz] = sparse_ind1[1 : 1 + nnz]
+            alongBeamWEQIndptr[i * num_per_group + 1 : 1 + i * num_per_group + remainder] = currentNNZ + sparse_ind1[2 + nnz : 1 + nnz + remainder + 1]
             del dosemap1, sparse_ind1
 
-            crossBeamWEQData[currentNNZ:currentNNZ + nnz] = dosemap2[0:nnz]
-            crossBeamWEQIndices[currentNNZ:currentNNZ + nnz] = sparse_ind2[1:1 + nnz]
-            crossBeamWEQIndptr[i * num_per_group + 1:1 + i * num_per_group + remainder] = currentNNZ + sparse_ind2[
-                                                                                                       2 + nnz:1 + nnz + remainder + 1]
+            crossBeamWEQData[currentNNZ : currentNNZ + nnz] = dosemap2[0:nnz]
+            crossBeamWEQIndices[currentNNZ : currentNNZ + nnz] = sparse_ind2[1 : 1 + nnz]
+            crossBeamWEQIndptr[i * num_per_group + 1 : 1 + i * num_per_group + remainder] = currentNNZ + sparse_ind2[2 + nnz : 1 + nnz + remainder + 1]
             del dosemap2, sparse_ind2
             currentNNZ += nnz
         alongBeamWEQIndptr[nBeam] = currentNNZ
         crossBeamWEQIndptr[nBeam] = currentNNZ
 
-        alongBeamWEQ = csc_matrix((alongBeamWEQData, alongBeamWEQIndices, alongBeamWEQIndptr), (nCalVoxels, nBeam))
+        alongBeamWEQ = csc_matrix(
+            (alongBeamWEQData, alongBeamWEQIndices, alongBeamWEQIndptr),
+            (nCalVoxels, nBeam),
+        )
         del alongBeamWEQData, alongBeamWEQIndices, alongBeamWEQIndptr
-        crossBeamWEQ = csc_matrix((crossBeamWEQData, crossBeamWEQIndices, crossBeamWEQIndptr), (nCalVoxels, nBeam))
+        crossBeamWEQ = csc_matrix(
+            (crossBeamWEQData, crossBeamWEQIndices, crossBeamWEQIndptr),
+            (nCalVoxels, nBeam),
+        )
         del crossBeamWEQData, crossBeamWEQIndices, crossBeamWEQIndptr
         return alongBeamWEQ, crossBeamWEQ
 
@@ -815,13 +867,24 @@ class DOSECAL(BASE):
         # self.logger.info("===== Order matrix done ======= {}".format(currentNNZ))
         # return alongBeamWEQ, crossBeamWEQ
 
-    def getRayAccumulatedWEQ_GPU_Batch(self, nPos, nBeam, localDir, index, doseGrid: GRID, \
-                                       transverseCutoff, longitudalCutoff, crossStep=0.2, parallelStep=0.5,
-                                       orderFlag=True, gpuid=0):
+    def getRayAccumulatedWEQ_GPU_Batch(
+        self,
+        nPos,
+        nBeam,
+        localDir,
+        index,
+        doseGrid: GRID,
+        transverseCutoff,
+        longitudalCutoff,
+        crossStep=0.2,
+        parallelStep=0.5,
+        orderFlag=True,
+        gpuid=0,
+    ):
         sparsity = 0.1
-        if (np.max(transverseCutoff) >= 40):
+        if np.max(transverseCutoff) >= 40:
             sparsity = 0.2
-        while (True):
+        while True:
             guessNum = int(nBeam * nPos * sparsity)
             dosemap1 = np.zeros((guessNum), dtype=np.float32)
             sparse_ind1 = np.zeros((1 + guessNum + nBeam + 1), dtype=np.int32)
@@ -829,20 +892,36 @@ class DOSECAL(BASE):
             sparse_ind2 = np.zeros((1 + guessNum + nBeam + 1), dtype=np.int32)
 
             status = 1
-            status = cuCalWEQ(dosemap1, sparse_ind1, dosemap2, sparse_ind2,
-                              self.source, localDir, doseGrid.data, \
-                              doseGrid.corner, doseGrid.resolution, doseGrid.dims, \
-                              np.hstack((doseGrid.orientation, doseGrid.translation)), \
-                              index, transverseCutoff, longitudalCutoff, crossStep, parallelStep, 0.5, orderFlag, gpuid)
+            status = cuCalWEQ(
+                dosemap1,
+                sparse_ind1,
+                dosemap2,
+                sparse_ind2,
+                self.source,
+                localDir,
+                doseGrid.data,
+                doseGrid.corner,
+                doseGrid.resolution,
+                doseGrid.dims,
+                np.hstack((doseGrid.orientation, doseGrid.translation)),
+                index,
+                transverseCutoff,
+                longitudalCutoff,
+                crossStep,
+                parallelStep,
+                0.5,
+                orderFlag,
+                gpuid,
+            )
 
-            if (status is not None):
+            if status is not None:
                 raise RuntimeError("cal weq error")
 
             nnz1 = sparse_ind1[0]
             nnz2 = sparse_ind2[0]
             self.logger.info("nnz is {:d} and {:d}".format(nnz1, nnz2))
 
-            if (nnz1 < 0 or nnz2 < 0):
+            if nnz1 < 0 or nnz2 < 0:
                 del dosemap1, dosemap2, sparse_ind1, sparse_ind2
                 sparsity += 0.1
                 self.logger.info("sparsity is too low, increased by 0.1. Now {:.2f}".format(sparsity))
@@ -857,41 +936,49 @@ class DOSECAL(BASE):
         (wed_min, wed_max) = (wed_bound[0], wed_bound[1])
         data = bm.triGaussian
         iddDepth = data["IDDDepth"]
-        available_energy = np.array(data['meaEneList']).astype('float32')  # list of available energies in beam model.
+        available_energy = np.array(data["meaEneList"]).astype("float32")  # list of available energies in beam model.
         available_range = np.array(data["R80"]).astype("float32")  # already in water
         # # 减去机头水等效。
         # nozzle_rs =  bm.getRS(available_energy)
         # available_range = available_range - nozzle_rs
 
         if (available_range < wed_min).all():
-            self.logger.error('[Func selectEnergies] Available ranges in beam model are all shorter than wed_min.')
+            self.logger.error("[Func selectEnergies] Available ranges in beam model are all shorter than wed_min.")
             self.logger.warning("Did you use correct machine and ROI?")
             _msg = """Target position is too deep. Minimum target WED is {} mm. Maximum energy {} MeV/u has range {} mm.
-            Please choose other beam angles or extend energy range.""".format(str(np.round(wed_min, 1)),
-                                                                              str(np.max(available_energy)),
-                                                                              str(np.max(available_range)))
+            Please choose other beam angles or extend energy range.""".format(
+                str(np.round(wed_min, 1)),
+                str(np.max(available_energy)),
+                str(np.max(available_range)),
+            )
             return_message = _msg
             raise RuntimeError(_msg)
 
         if (available_range > wed_max).all():
-            self.logger.error('[Func selectEnergies] Available ranges in beam model are all longer than wed_max.')
+            self.logger.error("[Func selectEnergies] Available ranges in beam model are all longer than wed_max.")
             self.logger.warning("Did you forget adding range shifter?")
             _msg = """Target position is too shallow. Maximum target WED is {} mm. Minimum energy {} MeV/u has range {} mm.
-            Please choose other beam angles or extend energy range.""".format(str(np.round(wed_max, 1)),
-                                                                              str(np.min(available_energy)),
-                                                                              str(np.min(available_range)))
+            Please choose other beam angles or extend energy range.""".format(
+                str(np.round(wed_max, 1)),
+                str(np.min(available_energy)),
+                str(np.min(available_range)),
+            )
             return_message = _msg
             raise RuntimeError(_msg)
 
         # add warning for request
-        if (np.max(available_range) < wed_max or np.min(available_range) > wed_min):
+        if np.max(available_range) < wed_max or np.min(available_range) > wed_min:
             return_message = "Some parts of the target are not covered. "
-            if (np.max(available_range) < wed_max):
+            if np.max(available_range) < wed_max:
                 return_message = return_message + "Target is too deep: maximum target WED is {} mm, maximum energy has range {} mm.".format(
-                    str(np.round(wed_max, 1)), str(np.round(np.max(available_range), 1)))
-            if (np.min(available_range) > wed_min):
+                    str(np.round(wed_max, 1)),
+                    str(np.round(np.max(available_range), 1)),
+                )
+            if np.min(available_range) > wed_min:
                 return_message = return_message + "Target is too shallow: minimum target WED is {} mm, minimum energy has range {} mm.".format(
-                    str(np.round(wed_min, 1)), str(np.round(np.min(available_range), 1)))
+                    str(np.round(wed_min, 1)),
+                    str(np.round(np.min(available_range), 1)),
+                )
             return_message = return_message + " Please confirm before dose optimization."
             self.logger.warning("Part of the ROI will be missed!!! Confirm it before opt!!")
             self.logger.info("available max {:.2f} wanted max {:.2f}".format(np.max(available_range), wed_max))
@@ -900,21 +987,26 @@ class DOSECAL(BASE):
         energy_max_idx = np.argmin(abs(available_range - wed_max))
         # 最高能量的range要比 wed_max 长，为了包住布点区域。
         # correct possible boundary issues
-        if (energy_max_idx < np.size(available_energy) - 1 and available_range[energy_max_idx] < wed_max):
+        if energy_max_idx < np.size(available_energy) - 1 and available_range[energy_max_idx] < wed_max:
             self.logger.info(
-                'Max energy selected {} MeV/u has shorter range {} mm than wed_max {} mm. Add 1 to index.'.format(
-                    str(available_energy[energy_max_idx]), \
-                    str(available_range[energy_max_idx]), \
-                    str(wed_max)))
+                "Max energy selected {} MeV/u has shorter range {} mm than wed_max {} mm. Add 1 to index.".format(
+                    str(available_energy[energy_max_idx]),
+                    str(available_range[energy_max_idx]),
+                    str(wed_max),
+                )
+            )
             energy_max_idx += 1
-        self.logger.info('Max energy selected is {} MeV/u, with range in water {} mm. wed_max {} mm.'.format(
-            str(available_energy[energy_max_idx]), \
-            str(available_range[energy_max_idx]), \
-            str(wed_max)))
+        self.logger.info(
+            "Max energy selected is {} MeV/u, with range in water {} mm. wed_max {} mm.".format(
+                str(available_energy[energy_max_idx]),
+                str(available_range[energy_max_idx]),
+                str(wed_max),
+            )
+        )
 
         selected_energy = [available_energy[energy_max_idx]]
         selected_idx = [energy_max_idx]
-        if energy_option[0] == 'fixed':
+        if energy_option[0] == "fixed":
             energy_spacing = energy_option[1]  # energy spacing in water equivalent mm.
             assert wed_max > energy_spacing > 0
             energy_idx = energy_max_idx
@@ -937,16 +1029,16 @@ class DOSECAL(BASE):
                 # 如果当前选能的 range 比 wed_min 短，结束选能。
                 if available_range[energy_idx] < wed_min:
                     break
-        elif energy_option[0] == 'auto':
+        elif energy_option[0] == "auto":
             energy_spacing = energy_option[1]  # energy spacing in % Bragg peak of the higher energy.
             if energy_spacing != 1:
                 assert 1 > energy_spacing > 0
                 energy_idx = energy_max_idx
                 for i in range(energy_max_idx):
-                    tmpidd = data['dose'][energy_idx, :]
+                    tmpidd = data["dose"][energy_idx, :]
                     peak_idx = np.argmax(tmpidd)  # range of the previous higher energy.
                     peak80_mag = tmpidd[peak_idx] * energy_spacing
-                    __idx = np.argmin(abs(tmpidd[0:peak_idx + 1] - peak80_mag))
+                    __idx = np.argmin(abs(tmpidd[0 : peak_idx + 1] - peak80_mag))
                     assert __idx <= peak_idx
                     energy_idx = np.argmin(abs(available_range - iddDepth[__idx]))
 
@@ -968,7 +1060,7 @@ class DOSECAL(BASE):
                         break
             else:
                 energy_min_idx = np.where((available_range < wed_min) == True)[0][-1]
-                selected_energy = (available_energy[energy_min_idx:energy_max_idx + 1])[::-1]
+                selected_energy = (available_energy[energy_min_idx : energy_max_idx + 1])[::-1]
                 selected_idx = np.arange(energy_max_idx, energy_min_idx, -1).astype(int)
 
         self.logger.info("Selected energies {} MeV".format(str(selected_energy)))
@@ -977,7 +1069,15 @@ class DOSECAL(BASE):
 
         return available_energy, selected_idx, return_message
 
-    def rayTracingSetPoint(self, wed_bound, thetamax, bm: BEAM_MODEL, SAD, energy_option, spot_option):  # by yunzhou
+    def rayTracingSetPoint(
+        self,
+        wed_bound,
+        thetamax,
+        bm: BEAM_MODEL,
+        SAD,
+        energy_option,
+        spot_option,
+    ):  # by yunzhou
         # bm： beam model。python 字典。
         # wed_bound: 布点区域最大最小水等效 （water equivalent mm）。[wed_min, wed_max] array or list.
         # thetamax：布点区域横向 theta 最大值（radian）。float.
@@ -988,12 +1088,11 @@ class DOSECAL(BASE):
         # 存每个点的 theta 和 phi，用来raytrace 判断每个点有没有hit到布点区域。以及 isocenter 平面里每个扫描点的 X，Z坐标。
 
         # 根据最大最小水等效选能。
-        available_energy, selected_index, returnMessage = self.selectEnergies(wed_bound=wed_bound, bm=bm,
-                                                                              energy_option=energy_option)
+        available_energy, selected_index, returnMessage = self.selectEnergies(wed_bound=wed_bound, bm=bm, energy_option=energy_option)
 
         r_max = SAD * np.squeeze(np.tan(thetamax))  # thetamax is given is radian.
         MAXFIELD = 110  # 22x22 cm^2 field
-        if (r_max > MAXFIELD):
+        if r_max > MAXFIELD:
             self.logger.info("thetamax too large! please check isocenter position!")
             self.logger.info("fix field size to {:d} mm".format(2 * MAXFIELD))
             r_max = MAXFIELD
@@ -1003,15 +1102,16 @@ class DOSECAL(BASE):
             scan_points[__selected_index] = dict()
             # self.logger.info('Energy {} MeV has sigma1 {}mm, sigma2 {}mm, sigma3 {}mm.'.format(str(selected_energy[__selected_index]),\
             #                                                                         str(spot_size1), str(spot_size2), str(spot_size3)))
-            if spot_option[0] == 'auto':
+            if spot_option[0] == "auto":
                 # max_idx      = np.where(bm.triGaussian['dose'][__selected_index] == np.amax(bm.triGaussian['dose'][__selected_index]))[0]
                 # sigma_interp = np.interp(np.arange(0, 4000, 1), np.arange(0, 4000, 20), bm.triGaussian['sigma1'][__selected_index])  # TODO:间隔暂时写死。
                 # spot_size1   = sigma_interp[max_idx]
-                spot_size_x, spot_size_z = bm.getSpotSize(ene=available_energy[__selected_index],
-                                                          depth=bm.getPeakPos(available_energy[__selected_index],
-                                                                              "peak"), \
-                                                          nozzleRS=bm.getRS(available_energy[__selected_index]),
-                                                          nGauss=bm.triGaussian["nGauss"])
+                spot_size_x, spot_size_z = bm.getSpotSize(
+                    ene=available_energy[__selected_index],
+                    depth=bm.getPeakPos(available_energy[__selected_index], "peak"),
+                    nozzleRS=bm.getRS(available_energy[__selected_index]),
+                    nGauss=bm.triGaussian["nGauss"],
+                )
 
                 FWHM_x = 2.35 * spot_size_x
                 FWHM_z = 2.35 * spot_size_z
@@ -1019,12 +1119,16 @@ class DOSECAL(BASE):
                 # spot_spacing_z = FWHM * 2 / 3
                 spot_spacing_x = FWHM_x * spot_option[1][0]  # automatic spot spacing = 2/3 * spot size.
                 spot_spacing_z = FWHM_z * spot_option[1][1]
-            elif spot_option[0] == 'fixed':
+            elif spot_option[0] == "fixed":
                 spot_spacing_x = spot_option[1][0]
                 spot_spacing_z = spot_option[1][1]
-            self.logger.info("Energy {}MeV, spot spacing x {}mm, spot spacing z {}mm.".format(
-                str(available_energy[__selected_index]), \
-                str(spot_spacing_x), str(spot_spacing_z)))
+            self.logger.info(
+                "Energy {}MeV, spot spacing x {}mm, spot spacing z {}mm.".format(
+                    str(available_energy[__selected_index]),
+                    str(spot_spacing_x),
+                    str(spot_spacing_z),
+                )
+            )
             # 以 r_max 画外接正方形。
             halfgrid = r_max // spot_spacing_x
             spot_position_grid_x = (np.arange(halfgrid * 2 + 1) - halfgrid) * spot_spacing_x
@@ -1032,7 +1136,7 @@ class DOSECAL(BASE):
             spot_position_grid_z = (np.arange(halfgrid * 2 + 1) - halfgrid) * spot_spacing_z
             xv, zv = np.meshgrid(spot_position_grid_x, spot_position_grid_z)
 
-            theta = np.arctan((np.sqrt(xv ** 2 + zv ** 2)) / SAD)
+            theta = np.arctan((np.sqrt(xv**2 + zv**2)) / SAD)
             assert 0.5 * np.pi > theta.all() >= 0
             phi = np.arctan2(zv, xv)
             assert np.pi >= phi.all() >= -1 * np.pi
@@ -1043,24 +1147,38 @@ class DOSECAL(BASE):
             spot_x = xv[__dum_ind]
             spot_z = zv[__dum_ind]
 
-            scan_points[__selected_index]['theta'] = theta
-            scan_points[__selected_index]['phi'] = phi
-            scan_points[__selected_index]['x'] = spot_x
-            scan_points[__selected_index]['z'] = spot_z
+            scan_points[__selected_index]["theta"] = theta
+            scan_points[__selected_index]["phi"] = phi
+            scan_points[__selected_index]["x"] = spot_x
+            scan_points[__selected_index]["z"] = spot_z
             nSpot = np.size(theta)
-            scan_points[__selected_index]['energy'] = np.ones(nSpot, ) * available_energy[__selected_index]
-            scan_points[__selected_index]['scaleFactor'] = bm.getnPerMUInterp(scan_points[__selected_index]['energy'])
-            scan_points[__selected_index]['range'] = np.ones(nSpot, ) * \
-                                                     bm.getPeakPos(available_energy[__selected_index], "R80") - \
-                                                     bm.getRS(scan_points[__selected_index]['energy'])
-            scan_points[__selected_index]['spotId'] = np.arange(nSpot).astype('int16')
-            scan_points[__selected_index]['spot_spacing_x'] = np.ones(nSpot) * spot_spacing_x
-            scan_points[__selected_index]['spot_spacing_z'] = np.ones(nSpot) * spot_spacing_z
+            scan_points[__selected_index]["energy"] = (
+                np.ones(
+                    nSpot,
+                )
+                * available_energy[__selected_index]
+            )
+            scan_points[__selected_index]["scaleFactor"] = bm.getnPerMUInterp(scan_points[__selected_index]["energy"])
+            scan_points[__selected_index]["range"] = np.ones(
+                nSpot,
+            ) * bm.getPeakPos(available_energy[__selected_index], "R80") - bm.getRS(scan_points[__selected_index]["energy"])
+            scan_points[__selected_index]["spotId"] = np.arange(nSpot).astype("int16")
+            scan_points[__selected_index]["spot_spacing_x"] = np.ones(nSpot) * spot_spacing_x
+            scan_points[__selected_index]["spot_spacing_z"] = np.ones(nSpot) * spot_spacing_z
 
         return scan_points, returnMessage
 
-    def caldose_raytrace(self, bm: BEAM_MODEL, scan_points, alongBeamWEQ, crossBeamWEQ, rs=0, mode="Coarse",
-                         startProgress=-1, endProgress=1):
+    def caldose_raytrace(
+        self,
+        bm: BEAM_MODEL,
+        scan_points,
+        alongBeamWEQ,
+        crossBeamWEQ,
+        rs=0,
+        mode="Coarse",
+        startProgress=-1,
+        endProgress=1,
+    ):
         # bm: beam model.
         # scan_points: 根据raytrace 后筛选的能够hit target 的spots，包含每个能量的 theta, phi, x, z.
         # alongBeamWEQ: spot 入射轴的水等效。M * N. M = number of voxels in external_contour_linear. N = Number of spots.
@@ -1068,9 +1186,9 @@ class DOSECAL(BASE):
 
         # return: fluence_mat in sparse matrix
 
-        if (mode == "Fine"):
+        if mode == "Fine":
             cutoff = 0.00005
-        elif (mode == "Coarse"):
+        elif mode == "Coarse":
             cutoff = 0.0004
         else:
             cutoff = 0.001
@@ -1079,18 +1197,26 @@ class DOSECAL(BASE):
         fluence_data = np.zeros((alongBeamWEQ.nnz,), dtype=np.float32)
 
         # 算剂量。
-        available_energy = np.array(bm.triGaussian['meaEneList']).astype('float32')
+        available_energy = np.array(bm.triGaussian["meaEneList"]).astype("float32")
         energy_idx_list = np.sort(list(scan_points.keys()))[::-1]  # make sure descending order
         alongBeamWEQ.data = alongBeamWEQ.data + rs
         self.logger.info("Start")
         deltaP = (endProgress - startProgress) / len(energy_idx_list)
         iSpot = 0
         for energy_idx in energy_idx_list:
-            nSpot = len(scan_points[energy_idx]['theta'])
+            nSpot = len(scan_points[energy_idx]["theta"])
             for jj in range(iSpot, iSpot + nSpot):
                 if alongBeamWEQ.indptr[jj + 1] - alongBeamWEQ.indptr[jj] > 1:
-                    bm.caldose2(fluence_data, alongBeamWEQ.indptr, jj, available_energy[energy_idx], alongBeamWEQ.data,
-                                crossBeamWEQ.data, 5, cutoff)
+                    bm.caldose2(
+                        fluence_data,
+                        alongBeamWEQ.indptr,
+                        jj,
+                        available_energy[energy_idx],
+                        alongBeamWEQ.data,
+                        crossBeamWEQ.data,
+                        5,
+                        cutoff,
+                    )
 
             # wait(allTask, return_when=ALL_COMPLETED)
             # NetWork.sendStatus(None, self.task_id, "Calculating the dose map.", startProgress+deltaP)
@@ -1127,10 +1253,12 @@ class DOSECAL(BASE):
         #         self.logger.info("dose for {} MeV/u done".format(available_energy[energy_idx]))
 
         self.logger.info("Done")
-        fluence_mat = csc_matrix((fluence_data, alongBeamWEQ.indices, alongBeamWEQ.indptr), shape=alongBeamWEQ.shape)
+        fluence_mat = csc_matrix(
+            (fluence_data, alongBeamWEQ.indices, alongBeamWEQ.indptr),
+            shape=alongBeamWEQ.shape,
+        )
         fluence_mat.eliminate_zeros()
-        self.logger.info(
-            "nnz number after eliminating small dose regions {} max {}".format(fluence_mat.nnz, np.max(fluence_data)))
+        self.logger.info("nnz number after eliminating small dose regions {} max {}".format(fluence_mat.nnz, np.max(fluence_data)))
         return fluence_mat
 
     def split_subspot(self, bm: BEAM_MODEL, beamparadata, enelist, sigmaThreshold=2):
@@ -1138,8 +1266,19 @@ class DOSECAL(BASE):
         If sigma at iso > 2 mm, split subspot.
         """
         num_energy = len(enelist)
-        profilePara = np.vstack((enelist, np.ones(num_energy, ), np.ones(num_energy, ),
-                                 np.sqrt(beamparadata[:, 0] / 2), np.sqrt(beamparadata[:, 0] / 2))).transpose()
+        profilePara = np.vstack(
+            (
+                enelist,
+                np.ones(
+                    num_energy,
+                ),
+                np.ones(
+                    num_energy,
+                ),
+                np.sqrt(beamparadata[:, 0] / 2),
+                np.sqrt(beamparadata[:, 0] / 2),
+            )
+        ).transpose()
 
         # split_flag = np.zeros((np.shape(profilePara)[0],))
         # for Ei in range(np.shape(beamparadata)[0]):
@@ -1148,8 +1287,12 @@ class DOSECAL(BASE):
         # split_flag = np.where(split_flag)[0]
         split_flag = np.sqrt(beamparadata[:, 0] / 2) >= sigmaThreshold
 
-        __subspotdata = bm.splitSubSpots(profilePara=profilePara[split_flag, :], precision=5, nGauss=1,
-                                         subspot_type="square")
+        __subspotdata = bm.splitSubSpots(
+            profilePara=profilePara[split_flag, :],
+            precision=5,
+            nGauss=1,
+            subspot_type="square",
+        )
         subspotdata = np.zeros((num_energy, __subspotdata.shape[1], __subspotdata.shape[2]))
         subspotdata[split_flag] = __subspotdata
         subspotdata[~split_flag, 0, 2] = 1
@@ -1162,7 +1305,12 @@ class DOSECAL(BASE):
         measEneList = bm.triGaussian["meaEneList"]
         subspotData = bm.triGaussian["subspotData"]
         subspotDataInterp = np.zeros(
-            (len(enelist), bm.triGaussian["subspotData"].shape[1], bm.triGaussian["subspotData"].shape[2]))
+            (
+                len(enelist),
+                bm.triGaussian["subspotData"].shape[1],
+                bm.triGaussian["subspotData"].shape[2],
+            )
+        )
 
         for energy_i in range(len(enelist)):
             energy = enelist[energy_i]
@@ -1184,22 +1332,42 @@ class DOSECAL(BASE):
 
                 energy_dim = np.array([energy1, energy2])
                 points = (energy_dim, non_zero_idx_subspot)
-                interpolated_w = interpn(points, np.vstack(
-                    (subspotData[idx[1], non_zero_idx_subspot, 2], subspotData[idx[0], non_zero_idx_subspot, 2])),
-                                         (energy, non_zero_idx_subspot))
+                interpolated_w = interpn(
+                    points,
+                    np.vstack(
+                        (
+                            subspotData[idx[1], non_zero_idx_subspot, 2],
+                            subspotData[idx[0], non_zero_idx_subspot, 2],
+                        )
+                    ),
+                    (energy, non_zero_idx_subspot),
+                )
 
                 subspotDataInterp[energy_i, non_zero_idx_subspot, :] = subspotData[idx[0], non_zero_idx_subspot, :]
                 subspotDataInterp[energy_i, non_zero_idx_subspot, 2] = interpolated_w
 
                 if plotFlag:
                     import matplotlib.pyplot as plt
+
                     plt.figure()
-                    plt.plot(non_zero_idx_subspot, subspotData[idx[0], non_zero_idx_subspot, 2], ".-",
-                             label=measEneList[idx[0]])
-                    plt.plot(non_zero_idx_subspot, subspotData[idx[1], non_zero_idx_subspot, 2], ".-",
-                             label=measEneList[idx[1]])
-                    plt.plot(non_zero_idx_subspot, subspotDataInterp[energy_i, non_zero_idx_subspot, 2], ".-",
-                             label=enelist[energy_i])
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotData[idx[0], non_zero_idx_subspot, 2],
+                        ".-",
+                        label=measEneList[idx[0]],
+                    )
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotData[idx[1], non_zero_idx_subspot, 2],
+                        ".-",
+                        label=measEneList[idx[1]],
+                    )
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotDataInterp[energy_i, non_zero_idx_subspot, 2],
+                        ".-",
+                        label=enelist[energy_i],
+                    )
                     plt.legend()
                     plt.grid()
                     plt.savefig("/data/yunzhou_figs/proton/interp_w" + str(energy) + ".png")
@@ -1210,7 +1378,12 @@ class DOSECAL(BASE):
         subspotData = bm.triGaussian["subspotData"]
         subspotData_sigmalist = bm.triGaussian["subspotData_sigmalist"]
         subspotDataInterp = np.zeros(
-            (len(enelist), bm.triGaussian["subspotData"].shape[1], bm.triGaussian["subspotData"].shape[2]))
+            (
+                len(enelist),
+                bm.triGaussian["subspotData"].shape[1],
+                bm.triGaussian["subspotData"].shape[2],
+            )
+        )
 
         for energy_i in range(len(enelist)):
             energy = enelist[energy_i]
@@ -1221,11 +1394,16 @@ class DOSECAL(BASE):
             else:
                 _idx = np.argmin(np.abs(subspotData_sigmalist - sigma))  # TODO measEne, eneList small to max order.
                 if subspotData_sigmalist[_idx] < sigma:
-                    sigma1, sigma2 = subspotData_sigmalist[_idx], subspotData_sigmalist[
-                        _idx + 1]  # Here "energy" is sigma.
+                    sigma1, sigma2 = (
+                        subspotData_sigmalist[_idx],
+                        subspotData_sigmalist[_idx + 1],
+                    )  # Here "energy" is sigma.
                     idx = [_idx, _idx + 1]
                 else:
-                    sigma1, sigma2 = subspotData_sigmalist[_idx - 1], subspotData_sigmalist[_idx]
+                    sigma1, sigma2 = (
+                        subspotData_sigmalist[_idx - 1],
+                        subspotData_sigmalist[_idx],
+                    )
                     idx = [_idx - 1, _idx]
                 assert sigma1 < sigma < sigma2
                 non_zero_idx_subspot1 = np.where(subspotData[idx[0], :, 2])
@@ -1234,22 +1412,42 @@ class DOSECAL(BASE):
 
                 energy_dim = np.array([sigma1, sigma2])
                 points = (energy_dim, non_zero_idx_subspot)
-                interpolated_w = interpn(points, np.vstack(
-                    (subspotData[idx[1], non_zero_idx_subspot, 2], subspotData[idx[0], non_zero_idx_subspot, 2])),
-                                         (sigma, non_zero_idx_subspot))
+                interpolated_w = interpn(
+                    points,
+                    np.vstack(
+                        (
+                            subspotData[idx[1], non_zero_idx_subspot, 2],
+                            subspotData[idx[0], non_zero_idx_subspot, 2],
+                        )
+                    ),
+                    (sigma, non_zero_idx_subspot),
+                )
 
                 subspotDataInterp[energy_i, non_zero_idx_subspot, :] = subspotData[idx[0], non_zero_idx_subspot, :]
                 subspotDataInterp[energy_i, non_zero_idx_subspot, 2] = interpolated_w
 
                 if plotFlag:
                     import matplotlib.pyplot as plt
+
                     plt.figure()
-                    plt.plot(non_zero_idx_subspot, subspotData[idx[0], non_zero_idx_subspot, 2], ".-",
-                             label=subspotData_sigmalist[idx[0]])
-                    plt.plot(non_zero_idx_subspot, subspotData[idx[1], non_zero_idx_subspot, 2], ".-",
-                             label=subspotData_sigmalist[idx[1]])
-                    plt.plot(non_zero_idx_subspot, subspotDataInterp[energy_i, non_zero_idx_subspot, 2], ".-",
-                             label=np.round(sigma, 2))
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotData[idx[0], non_zero_idx_subspot, 2],
+                        ".-",
+                        label=subspotData_sigmalist[idx[0]],
+                    )
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotData[idx[1], non_zero_idx_subspot, 2],
+                        ".-",
+                        label=subspotData_sigmalist[idx[1]],
+                    )
+                    plt.plot(
+                        non_zero_idx_subspot,
+                        subspotDataInterp[energy_i, non_zero_idx_subspot, 2],
+                        ".-",
+                        label=np.round(sigma, 2),
+                    )
                     plt.legend()
                     plt.grid()
                     plt.title(str(energy))
@@ -1273,29 +1471,65 @@ class DOSECAL(BASE):
             else:
                 return -np.eye(3)  # 相反方向，旋转180度
 
-        vx = np.array([[0, -v[2], v[1]],
-                       [v[2], 0, -v[0]],
-                       [-v[1], v[0], 0]])
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
-        R = np.eye(3) + vx + (vx @ vx) * ((1 - c) / (s ** 2))
+        R = np.eye(3) + vx + (vx @ vx) * ((1 - c) / (s**2))
         return R
 
-    def caldose_raytrace_all(self, nFrac, beam, sadx, sady, ext_linear, ext_linear_opt, longitudalCutoff, bm: BEAM_MODEL, scan_points, rs=0,
-                             mode="Coarse", startProgress=0, deltaProgress=1, calType='Opt', cal_fluence_map=True,
-                             nuclear_correction=False):
+    def caldose_raytrace_all(
+        self,
+        nFrac,
+        beam,
+        sadx,
+        sady,
+        ext_linear,
+        ext_linear_opt,
+        longitudalCutoff,
+        bm: BEAM_MODEL,
+        scan_points,
+        rs: float = 0.0,
+        mode="Coarse",
+        startProgress: float = 0,
+        deltaProgress: float = 1,
+        calType="Opt",
+        cal_fluence_map=True,
+        dose_type="bio",
+    ):
+        function_start_time = time.time()
         x_all = []
         z_all = []
         ene_all = []
+        spot_spacing_x_all = []
+        spot_spacing_z_all = []
+
         for energy_idx in scan_points.keys():
-            x_all.extend(scan_points[energy_idx]['x'])
-            z_all.extend(scan_points[energy_idx]['z'])
-            ene_all.extend(scan_points[energy_idx]['energy'])
+            x_all.extend(scan_points[energy_idx]["x"])
+            z_all.extend(scan_points[energy_idx]["z"])
+            ene_all.extend(scan_points[energy_idx]["energy"])
+            if "spot_spacing_x" in scan_points[energy_idx] and "spot_spacing_z" in scan_points[energy_idx]:
+                spot_spacing_x_all.extend(scan_points[energy_idx]["spot_spacing_x"])
+                spot_spacing_z_all.extend(scan_points[energy_idx]["spot_spacing_z"])
 
         npermu = bm.getnPerMUInterp(ene_all)
         nBeam = len(x_all)
-        ext_linear = self._normalize_linear_indices("ext_linear", ext_linear)
-        ext_linear_opt = self._normalize_linear_indices("ext_linear_opt", ext_linear_opt)
-        nuclear_correction = self._resolve_rtd_nuclear_correction(nuclear_correction, calType)
+        if spot_spacing_x_all or spot_spacing_z_all:
+            if len(spot_spacing_x_all) != nBeam or len(spot_spacing_z_all) != nBeam:
+                raise RuntimeError(
+                    "spot_spacing_x/z length mismatch: spot_spacing_x={}, spot_spacing_z={}, nBeam={}".format(
+                        len(spot_spacing_x_all),
+                        len(spot_spacing_z_all),
+                        nBeam,
+                    )
+                )
+            spot_spacing_x_all = np.asarray(spot_spacing_x_all, dtype=np.float32)
+            spot_spacing_z_all = np.asarray(spot_spacing_z_all, dtype=np.float32)
+            if (not np.all(np.isfinite(spot_spacing_x_all))) or (not np.all(np.isfinite(spot_spacing_z_all))):
+                raise RuntimeError("spot_spacing_x/z must be finite physical PB spacing values")
+            if np.any(spot_spacing_x_all <= 0) or np.any(spot_spacing_z_all <= 0):
+                raise RuntimeError("spot_spacing_x/z must be positive physical PB spacing values")
+        else:
+            spot_spacing_x_all = None
+            spot_spacing_z_all = None
         nROI = np.size(ext_linear)
         sad = (sadx + sady) * 0.5
 
@@ -1318,14 +1552,42 @@ class DOSECAL(BASE):
         rayweq = np.zeros((9 + np.size(interpx) * nMaxStep,), dtype=np.float32)
         rayweq[3:9] = np.array([-ylim, 1, 2 * ylim + 1, -xlim, 1, 2 * xlim + 1])
 
-        # if (bm.modality == "Protons"):
-        cuPrepareWEQ(rayweq, nMaxStep, interpSource.flatten(order="F"), interpBeamDir.flatten(order="F"),
-                     self.doseGrid.data,
-                     self.doseGrid.corner, self.doseGrid.resolution, self.doseGrid.dims, 0)
+        # if (bm.modality == PtclType.Protons):
+        cuPrepareWEQ(
+            rayweq,
+            nMaxStep,
+            interpSource.flatten(order="F"),
+            interpBeamDir.flatten(order="F"),
+            self.doseGrid.data,
+            self.doseGrid.corner,
+            self.doseGrid.resolution,
+            self.doseGrid.dims,
+            0,
+        )
 
         idbeamxy = np.zeros((nBeam, 2))
         idbeamxy[:, 0] = np.array(x_all) + xlim + 0.5
         idbeamxy[:, 1] = np.array(z_all) + ylim + 0.5
+
+        # Diagnostic logging: spot spacing, sample spot coords and idbeamxy
+        try:
+            first_energy = list(scan_points.keys())[0] if len(scan_points) > 0 else None
+            if first_energy is not None and 'spot_spacing_x' in scan_points[first_energy]:
+                self.logger.info("DIAG sample spot_spacing_x: %s", np.array(scan_points[first_energy]['spot_spacing_x'])[:5].tolist())
+                self.logger.info("DIAG sample spot_spacing_z: %s", np.array(scan_points[first_energy]['spot_spacing_z'])[:5].tolist())
+        except Exception as _e:
+            self.logger.warning("DIAG unable to read spot_spacing from scan_points: %s", _e)
+        try:
+            self.logger.info("DIAG x_all sample: %s", np.array(x_all)[:20].tolist())
+            self.logger.info("DIAG z_all sample: %s", np.array(z_all)[:20].tolist())
+            self.logger.info("DIAG idbeamxy sample: %s", idbeamxy[:20].tolist())
+        except Exception:
+            pass
+        try:
+            header = rayweq[3:9]
+            self.logger.info("DIAG rayweq header: %s", header.tolist())
+        except Exception:
+            pass
 
         sourcePos = (sadx - sad) / sadx * np.array(x_all) * self.bmxdir
         sourcePos = sourcePos + (sady - sad) / sady * np.array(z_all) * self.bmydir
@@ -1337,41 +1599,66 @@ class DOSECAL(BASE):
         roiIdx = np.array(np.unravel_index(ext_linear, self.doseGrid.dims))
         roiIdx = roiIdx.flatten(order="F")
 
-        if (mode == "Fine"):
+        if mode == "Fine":
             cutoff = 0.0002
             sparse_ration = 1.0
-        elif (mode == "Coarse"):
+        elif mode == "Coarse":
             cutoff = 0.0002
             sparse_ration = 0.20
         else:
             cutoff = 0.001
 
         crossCut = cutoff * np.ones((nBeam,))
-        beamParaPos = 0  # 进入计算的beam parameter的虚拟面位置，相对于isocenter，iec坐标系
+        beamParaPos: float = 0.0  # 进入计算的beam parameter的虚拟面位置，相对于isocenter，iec坐标系
         # 实际默认为0，需测试对碳离子剂量计算的影响
-        if (bm.triGaussian["variableEnergyMode"] == "Discrete"):
-            enelist = np.array(bm.triGaussian['meaEneList']).astype('float32')
+        if bm.triGaussian["variableEnergyMode"] == "Discrete":
+            enelist = np.array(bm.triGaussian["meaEneList"]).astype("float32")
             idddata = np.array(bm.triGaussian["dose"])
             idddepth = bm.triGaussian["IDDDepth"]
-            iddsetting = np.array([idddepth[0] - rs, idddepth[1] - idddepth[0], np.size(idddepth)])
+            iddsetting = np.array(
+                [
+                    idddepth[0] - rs,
+                    idddepth[1] - idddepth[0],
+                    np.size(idddepth),
+                ]
+            )
             profiledata = np.array(bm.triGaussian["profile"])
             profiledepth = bm.triGaussian["profileDepth"]
-            profilesetting = np.array([profiledepth[0] - rs, profiledepth[1] - profiledepth[0], np.size(profiledepth)])
+            profilesetting = np.array(
+                [
+                    profiledepth[0] - rs,
+                    profiledepth[1] - profiledepth[0],
+                    np.size(profiledepth),
+                ]
+            )
             beamparadata = bm.getBeamPara(bm.commissionLoc, bm.latPara, beamParaPos)
-        elif (bm.triGaussian["variableEnergyMode"] == "Continuous"):
+            beamparadata = beamparadata.astype(np.float32)
+        elif bm.triGaussian["variableEnergyMode"] == "Continuous":
             enelist = np.unique(ene_all)
             idddata, profiledata, latparas, rsDeltaLatPara = bm.getIDDFromMeasureList(enelist)
             bm.rsDeltaLatPara = rsDeltaLatPara
             idddepth = bm.triGaussian["IDDDepth"]
-            iddsetting = np.array([idddepth[0] - rs, idddepth[1] - idddepth[0], np.size(idddepth)])
+            iddsetting = np.array(
+                [
+                    idddepth[0] - rs,
+                    idddepth[1] - idddepth[0],
+                    np.size(idddepth),
+                ]
+            )
             profiledepth = bm.triGaussian["profileDepth"]
-            profilesetting = np.array([profiledepth[0] - rs, profiledepth[1] - profiledepth[0], np.size(profiledepth)])
+            profilesetting = np.array(
+                [
+                    profiledepth[0] - rs,
+                    profiledepth[1] - profiledepth[0],
+                    np.size(profiledepth),
+                ]
+            )
             beamParaPos = 0
             beamparadata = bm.getBeamPara(bm.commissionLoc, latparas, beamParaPos)
         else:
             raise RuntimeError("Not supported variableEnergyType")
 
-        if (bm.modality == "Protonss"):  # by default no subspots splitting in carbon therapy
+        if bm.modality == PtclType.Unknow:  # by default no subspots splitting in carbon therapy
             subspotdata = self.split_subspot(bm=bm, beamparadata=beamparadata, enelist=enelist)
         else:
             subspotdata = np.zeros((beamparadata.shape[0], 1, 5))  # for test 1
@@ -1379,7 +1666,7 @@ class DOSECAL(BASE):
             subspotdata[:, 0, 3] = np.sqrt(beamparadata[:, 0] / 2)
             subspotdata[:, 0, 4] = np.sqrt(beamparadata[:, 0] / 2)
 
-        ctCubeSize  = np.squeeze(self.doseGrid.resolution) * self.doseGrid.dims
+        ctCubeSize = np.squeeze(self.doseGrid.resolution) * self.doseGrid.dims
 
         diameter = 80
         maxTraceSepth = int((ctCubeSize[0] ** 2 + ctCubeSize[1] ** 2 + ctCubeSize[2] ** 2) ** 0.5 / np.min(self.doseGrid.resolution))
@@ -1387,159 +1674,260 @@ class DOSECAL(BASE):
         spacingRes = 1.5
         depthRes = minRes
 
-        numVoxPerSpot = int(diameter / spacingRes + 1) ** 2 * int(
-            weq.size / nBeam * np.min(self.doseGrid.resolution) / depthRes + 1)
+        numVoxPerSpot = int(diameter / spacingRes + 1) ** 2 * int(weq.size / nBeam * np.min(self.doseGrid.resolution) / depthRes + 1)
 
         tmpSourcePos = sourcePos.flatten(order="F")
         self.sourcePos = tmpSourcePos[:3]
         tmpBeamDir = beamdir.flatten(order="F")
         layerEnergy = np.array([key for key, _ in groupby(ene_all)])
-        layerInfo = np.array([(np.sum(ene_all == element)) for element in layerEnergy], dtype=np.int32)
+        layerInfo = np.array(
+            [(np.sum(ene_all == element)) for element in layerEnergy],
+            dtype=np.int32,
+        )
         all_energies = np.array(ene_all)
 
         nnz_v = np.zeros((1,), dtype=np.uint64)
-        beam['all_energies'] = all_energies
-        beam['water_equivalence'] = rayweq
-        beam['source_pos'] = self.sourcePos
-        beam['beam_xdir'] = self.bmxdir
-        beam['beam_ydir'] = self.bmydir
-        beam['beam_dir'] = tmpBeamDir
-        beam['longitudal_cutoff'] = longitudalCutoff
-        beam['energy_list'] = enelist
-        beam['idd_data'] = idddata
-        beam['profile_data'] = profiledata
-        beam['idd_setting'] = iddsetting
-        beam['profile_setting'] = profilesetting
-        beam['beam_para_data'] = beamparadata
-        beam['subspot_data'] = subspotdata
-        beam['layer_info'] = layerInfo
-        beam['layer_energy'] = layerEnergy
-        beam['sad'] = sad
-        beam['npermu'] = npermu
-        beam['number_particle'] = npermu * beam['weight_vector']
-        beam['idbeamxy'] = idbeamxy
-        # 添加剂量网格几何信息和ROI/body索引到beam字典，便于导出
-        beam['doseGrid_corner'] = self.doseGrid.corner if hasattr(self.doseGrid, 'corner') else None
-        beam['doseGrid_resolution'] = self.doseGrid.resolution if hasattr(self.doseGrid, 'resolution') else None
-        beam['doseGrid_dims'] = self.doseGrid.dims if hasattr(self.doseGrid, 'dims') else None
-        beam['nuclear_correction'] = nuclear_correction
-        if 'nFrac' not in beam and 'nFrac' in locals():
-            beam['nFrac'] = nFrac
-        # 严格导出 cuFinalDose 真实传参
-        num_particles_per_beam = npermu * beam['weight_vector'] / nFrac if 'weight_vector' in beam and 'nFrac' in locals() else None
-        if num_particles_per_beam is not None:
-            beam['num_particles_per_beam'] = num_particles_per_beam
-        if 'ext_contour_linear_opt' not in beam and 'ext_linear_opt' in locals():
-            beam['ext_contour_linear_opt'] = ext_linear_opt
-        if 'ext_contour_linear' not in beam and 'ext_linear' in locals():
-            beam['ext_contour_linear'] = ext_linear
-        # 导出所有 cuCalDose 输入变量及 metadata
-        from content.dose_operator.export_cuda_inputs import export_cuda_inputs
-        export_cuda_inputs(beam, outdir=os.path.abspath(os.path.join(os.path.dirname(__file__), '../../output')))
-        self.logger.info("cuCalDose输入变量及metadata已导出")
-        if calType == 'Dose' or calType == 'QA' or calType == "Scale" or calType == "DoseRecalculation":
-
-            finalDose                 = np.zeros((self.doseGrid.dims[0], self.doseGrid.dims[1], self.doseGrid.dims[2]), dtype=np.float32)
-
-            args_to_check = {
-                "layerEnergy": layerEnergy,
-                "idbeamxy": idbeamxy,
-                "num_particles_per_beam": npermu * beam['weight_vector'] / nFrac,
-                "sad": sad,
-            }
-
-            for k, v in args_to_check.items():
-                print(k, type(v), getattr(v, "dtype", None), getattr(v, "shape", None))
-
-            layerEnergy = np.asarray(layerEnergy, dtype=np.float32)
-            idbeamxy = np.asarray(idbeamxy, dtype=np.float32)
-            num_particles_per_beam = np.asarray(
-                npermu * beam['weight_vector'] / nFrac, dtype=np.float32
+        beam["all_energies"] = all_energies
+        beam["water_equivalence"] = rayweq
+        beam["source_pos"] = self.sourcePos
+        beam["beam_xdir"] = self.bmxdir
+        beam["beam_ydir"] = self.bmydir
+        beam["beam_dir"] = tmpBeamDir
+        beam["longitudal_cutoff"] = longitudalCutoff
+        beam["energy_list"] = enelist
+        beam["idd_data"] = idddata
+        beam["profile_data"] = profiledata
+        beam["idd_setting"] = iddsetting
+        beam["profile_setting"] = profilesetting
+        beam["beam_para_data"] = beamparadata
+        beam["subspot_data"] = subspotdata
+        beam["layer_info"] = layerInfo
+        beam["layer_energy"] = layerEnergy
+        beam["sad"] = sad
+        beam["npermu"] = npermu
+        beam["number_particle"] = npermu * beam["weight_vector"]
+        beam["idbeamxy"] = idbeamxy
+        if spot_spacing_x_all is not None and spot_spacing_z_all is not None:
+            beam["spot_spacing_x"] = spot_spacing_x_all
+            beam["spot_spacing_z"] = spot_spacing_z_all
+        if calType == "Dose" or calType == "QA" or calType == "Scale" or calType == "DoseRecalculation":
+            finalDose = np.zeros(
+                (
+                    self.doseGrid.dims[0],
+                    self.doseGrid.dims[1],
+                    self.doseGrid.dims[2],
+                ),
+                dtype=np.float32,
             )
+            start_time = time.time()
+            if dose_type == "bio":
+                # 由RBEcal.calFinalRBEMapAndDose计算final dose，避免重复计算
+                end_time = time.time()
+                duration = end_time - start_time
+                csv_file = os.path.join(os.path.dirname(__file__), '..', '..', 'cuFinalDose_timing.csv')
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time)),
+                        duration,
+                        beam.get('beamName', ''),
+                        calType,
+                        dose_type,
+                        'skip_no_cuFinalDose',
+                    ])
+                return finalDose
             #########################################################################################
-            #finalDose：   final dose counter（最终的剂量网格）
-            #rayweq：      water equivalent matrix(每个spot的cumulate 水等效)
-            #roiIdx:       region of interest index  (ROI格子对应的xyz下标索引)
-            #all_energies: energies of each spot. vector size: (每个spot的能量)
-            #sourcePos:    snout position.每个spot的源的位置）
-            #tmpBeamDir:   direction of each spot（每个spot的方向）
-            #self.bmxdir:  x axis direction of virtual plan in global coordinate system.（虚平面x轴在全局坐标系下的矢量）
-            #self.bmydir:  y axis direction of virtual plan in global coordinate system.（虚平面y轴在全局坐标系下的矢量）
-            #self.doseGrid.corner: grid corner.（剂量网格左下角在全局坐标系的位置）
-            #self.doseGrid.resolution: grid resolution（剂量网格的分辨率）
-            #self.doseGrid.dims: grid dimension（剂量网格的维度）
-            #longitudalCutoff: longitudal cut off(这个能量能打到的最远距离的一个截断)
-            #enelist: energy list of machine(机器能打的所有能量)
-            #idddata: idd data(idd数据)
-            #iddsetting: idd data(idd数据)
-            #profiledata: profile data(profile数据)
-            #profilesetting: profile data(profile数据)
-            #beamparadata: beam model parameters(束流模型数据)
-            #subspotdata: sub spots parameters(子束分解sigma数据)
-            #layerInfo: spots number of each energy layer(每个能量层打多少个点的数据)
-            #layerEnergy: energy of each energy layer.(每个能量层的能量)
-            #idbeamxy：子束在V平面上的位置
-            #nPar：这是一个（nBeam, ）长的向量，记录每个spot打了多少粒子，也就是weights * 标定因子 ions/MU
-            #sad：sad距离
-            #0.0: gaussian weight 的 cut off 设置成0
-            #beamParaPos:暂时不需要关心
-            #0：使用0号GPU
+            # finalDose：   final dose counter（最终的剂量网格）
+            # rayweq：      water equivalent matrix(每个spot的cumulate 水等效)
+            # roiIdx:       region of interest index  (ROI格子对应的xyz下标索引)
+            # all_energies: energies of each spot. vector size: (每个spot的能量)
+            # sourcePos:    snout position.每个spot的源的位置）
+            # tmpBeamDir:   direction of each spot（每个spot的方向）
+            # self.bmxdir:  x axis direction of virtual plan in global coordinate system.（虚平面x轴在全局坐标系下的矢量）
+            # self.bmydir:  y axis direction of virtual plan in global coordinate system.（虚平面y轴在全局坐标系下的矢量）
+            # self.doseGrid.corner: grid corner.（剂量网格左下角在全局坐标系的位置）
+            # self.doseGrid.resolution: grid resolution（剂量网格的分辨率）
+            # self.doseGrid.dims: grid dimension（剂量网格的维度）
+            # longitudalCutoff: longitudal cut off(这个能量能打到的最远距离的一个截断)
+            # enelist: energy list of machine(机器能打的所有能量)
+            # idddata: idd data(idd数据)
+            # iddsetting: idd data(idd数据)
+            # profiledata: profile data(profile数据)
+            # profilesetting: profile data(profile数据)
+            # beamparadata: beam model parameters(束流模型数据)
+            # subspotdata: sub spots parameters(子束分解sigma数据)
+            # layerInfo: spots number of each energy layer(每个能量层打多少个点的数据)
+            # layerEnergy: energy of each energy layer.(每个能量层的能量)
+            # idbeamxy：子束在V平面上的位置
+            # nPar：这是一个（nBeam, ）长的向量，记录每个spot打了多少粒子，也就是weights * 标定因子 ions/MU
+            # sad：sad距离
+            # 0.0: gaussian weight 的 cut off 设置成0
+            # beamParaPos:暂时不需要关心
+            # 0：使用0号GPU
             #########################################################################################
-            cuFinalDose(finalDose, rayweq, roiIdx, all_energies, self.sourcePos, tmpBeamDir,
-                        self.bmxdir, self.bmydir, self.doseGrid.corner, self.doseGrid.resolution,
-                        self.doseGrid.dims, longitudalCutoff, enelist,
-                        idddata, iddsetting, profiledata, profilesetting, beamparadata, subspotdata, layerInfo,
-                        layerEnergy, idbeamxy, num_particles_per_beam, sad, 0.00005, beamParaPos, 0,
-                        nuclear_correction=nuclear_correction)
+            if rayweq[2] < 0:
+                error_message = f"Beam {beam['beamName']} does not intersect the patient outline."
+                raise RuntimeError(error_message)
+
+            nPtlcsPerBm = (npermu * beam["weight_vector"] / nFrac).astype(np.int32)
+            # 裁剪到 int32 有效范围
+            int32_max = np.iinfo(np.int32).max  # 2147483647
+            tmpNperMin = 0
+            numParticlesPerBeam = np.clip(nPtlcsPerBm, tmpNperMin, int32_max).astype(np.int32)
+
+            start_time = time.time()
+            cuFinalDose(
+                finalDose,
+                rayweq,
+                roiIdx,
+                all_energies,
+                self.sourcePos,
+                tmpBeamDir,
+                self.bmxdir,
+                self.bmydir,
+                self.doseGrid.corner,
+                self.doseGrid.resolution,
+                self.doseGrid.dims,
+                longitudalCutoff,
+                enelist,
+                idddata,
+                iddsetting,
+                profiledata,
+                profilesetting,
+                beamparadata,
+                subspotdata,
+                layerInfo,
+                layerEnergy,
+                idbeamxy,
+                numParticlesPerBeam,
+                sad,
+                0.00005,
+                beamParaPos,
+                0,
+                spotSpacingX=spot_spacing_x_all,
+                spotSpacingZ=spot_spacing_z_all,
+            )
+            end_time = time.time()
+            duration = end_time - start_time
+            csv_file = os.path.join(os.path.dirname(__file__), '..', '..', 'cuFinalDose_timing.csv')
+            with open(csv_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time)),
+                    duration,
+                    beam.get('beamName', ''),
+                    calType,
+                    dose_type,
+                    'cuFinalDose',
+                ])
+            if np.any(finalDose < 0):
+                raise ValueError("final dose negative!")
             return finalDose
         elif not cal_fluence_map:
             # 不在这里计算fluence_map, 只计算每行的norm
-            #cutoff = 0.0001
+            # cutoff = 0.0001
             cutoff = 0.00005  # 和finaldose一致
-            roiIdx = np.array(
-                np.unravel_index(ext_linear_opt, self.doseGrid.dims))
+            roiIdx = np.array(np.unravel_index(ext_linear_opt, self.doseGrid.dims))
             roiIdx = roiIdx.flatten(order="F")
             nROI = np.size(ext_linear_opt)
             grad_norm = np.zeros(nROI, dtype=np.float32)
-            succ = cuCalDoseNorm(grad_norm, 
-                rayweq, roiIdx, all_energies, self.sourcePos, tmpBeamDir,
-                self.bmxdir, self.bmydir, self.doseGrid.corner, 
+            succ = cuCalDoseNorm(
+                grad_norm,
+                rayweq,
+                roiIdx,
+                all_energies,
+                self.sourcePos,
+                tmpBeamDir,
+                self.bmxdir,
+                self.bmydir,
+                self.doseGrid.corner,
                 self.doseGrid.resolution,
-                self.doseGrid.dims, longitudalCutoff, enelist,
-                idddata, iddsetting, profiledata, 
-                profilesetting, beamparadata, subspotdata, 
-                layerInfo, layerEnergy, idbeamxy, sad, cutoff, beamParaPos, 0)
+                self.doseGrid.dims,
+                longitudalCutoff,
+                enelist,
+                idddata,
+                iddsetting,
+                profiledata,
+                profilesetting,
+                beamparadata,
+                subspotdata,
+                layerInfo,
+                layerEnergy,
+                idbeamxy,
+                sad,
+                cutoff,
+                beamParaPos,
+                0,
+            )
+            end_time = time.time()
+            duration = end_time - function_start_time
+            csv_file = os.path.join(os.path.dirname(__file__), '..', '..', 'cuFinalDose_timing.csv')
+            with open(csv_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time)),
+                    duration,
+                    beam.get('beamName', ''),
+                    calType,
+                    dose_type,
+                    'opt_grad_norm',
+                ])
             return grad_norm
         else:
-            # 计算完整dose grid的fluence_map，确保与外部代码兼容
-            # Calculate fluence_map for full dose grid to ensure compatibility with external code
-            total_voxels = int(np.prod(self.doseGrid.dims))
-            nROI = total_voxels
-            roiIdx = np.arange(nROI, dtype=np.int64)
+            # 只生成优化相关的voxel的fluence_map
+            roiIdx = np.array(np.unravel_index(ext_linear_opt, self.doseGrid.dims))
+            roiIdx = roiIdx.flatten(order="F")
+            nROI = np.size(ext_linear_opt)
             while True:
-                cscValues = np.zeros((int(numVoxPerSpot * nBeam * sparse_ration),), dtype=np.float32)
-                cscRowInd = np.zeros((int(numVoxPerSpot * nBeam * sparse_ration),), dtype=np.int32)
+                cscValues = np.zeros(
+                    (int(numVoxPerSpot * nBeam * sparse_ration),),
+                    dtype=np.float32,
+                )
+                cscRowInd = np.zeros(
+                    (int(numVoxPerSpot * nBeam * sparse_ration),),
+                    dtype=np.int32,
+                )
                 cscPtr = np.zeros((int(nBeam + 1),), dtype=np.int32)
-                succ = cuCalDose3(cscValues, cscPtr, cscRowInd, rayweq, roiIdx, all_energies, self.sourcePos, tmpBeamDir,
-                                  self.bmxdir, self.bmydir, self.doseGrid.corner, self.doseGrid.resolution,
-                                  self.doseGrid.dims, longitudalCutoff, enelist,
-                                  idddata, iddsetting, profiledata, profilesetting, beamparadata, subspotdata, layerInfo,
-                                  layerEnergy, nnz_v, idbeamxy, sad, 0.0001, beamParaPos, cscValues.size, 0)
+                succ = cuCalDose3(
+                    cscValues,
+                    cscPtr,
+                    cscRowInd,
+                    rayweq,
+                    roiIdx,
+                    all_energies,
+                    self.sourcePos,
+                    tmpBeamDir,
+                    self.bmxdir,
+                    self.bmydir,
+                    self.doseGrid.corner,
+                    self.doseGrid.resolution,
+                    self.doseGrid.dims,
+                    longitudalCutoff,
+                    enelist,
+                    idddata,
+                    iddsetting,
+                    profiledata,
+                    profilesetting,
+                    beamparadata,
+                    subspotdata,
+                    layerInfo,
+                    layerEnergy,
+                    nnz_v,
+                    idbeamxy,
+                    sad,
+                    0.00005,
+                    beamParaPos,
+                    cscValues.size,
+                    0,
+                )
 
                 cscPtr = cscPtr.astype(np.int64)
                 cscPtr = np.cumsum(cscPtr)
 
-
                 if nnz_v[0] > 0 and succ:
-                    cscValues  = cscValues[:nnz_v[0]]
-                    cscRowInd  = cscRowInd[:nnz_v[0]]
+                    cscValues = cscValues[: nnz_v[0]]
+                    cscRowInd = cscRowInd[: nnz_v[0]]
                     fluenceMap = csc_matrix((cscValues, cscRowInd, cscPtr), shape=(nROI, nBeam))
-                    if fluenceMap.shape[0] != total_voxels:
-                        raise RuntimeError(
-                            "Full-grid fluence_map row count {} does not match current doseGrid voxel count {}. "
-                            "This indicates a doseGrid/ROI contract drift, not a buffer-size issue."
-                            .format(fluenceMap.shape[0], total_voxels)
-                        )
                     del cscValues, cscRowInd, cscPtr
                     gc.collect()
                     break
@@ -1550,13 +1938,26 @@ class DOSECAL(BASE):
                     self.logger.error("There is no dose deposition within the region of interest. Please check the validity of the plan.")
                     raise RuntimeError("There is no dose deposition within the region of interest. Please check the validity of the plan.")
 
+        end_time = time.time()
+        duration = end_time - function_start_time
+        csv_file = os.path.join(os.path.dirname(__file__), '..', '..', 'cuFinalDose_timing.csv')
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time)),
+                duration,
+                beam.get('beamName', ''),
+                calType,
+                dose_type,
+                'opt_fluence_map',
+            ])
 
         for colidx in range(fluenceMap.shape[1]):
             ind1 = fluenceMap.indptr[colidx]
             ind2 = fluenceMap.indptr[colidx + 1]
-            if (ind2 <= ind1):
+            if ind2 <= ind1:
                 continue
-            threshold  = np.max(fluenceMap.data[ind1:ind2]) * 0.00005
+            threshold = np.max(fluenceMap.data[ind1:ind2]) * 0.00005
             fluenceMap.data[ind1:ind2] = fluenceMap.data[ind1:ind2] * (fluenceMap.data[ind1:ind2] > threshold) * npermu[colidx]
 
         print("*************", np.amax(fluenceMap.data))
@@ -1798,10 +2199,22 @@ class DOSECAL(BASE):
 
         return scan_points
 
-    def compute_single_beam(self, nFrac, beam, bm: BEAM_MODEL, ext_contour_linear, ext_contour_linear_opt, particle_type, cal_mode="Coarse",
-                            startProgress=0, deltaProgress=100, calType='Opt', cal_fluence_map=True,
-                            nuclear_correction=False):
-        scan_points = beam.get('scan_points', None)
+    def compute_single_beam(
+        self,
+        nFrac,
+        beam,
+        bm: BEAM_MODEL,
+        ext_contour_linear,
+        ext_contour_linear_opt,
+        particle_type,
+        cal_mode="Coarse",
+        startProgress=0.0,
+        deltaProgress=100.0,
+        calType="Opt",
+        cal_fluence_map=True,
+        dose_type="bio",
+    ):
+        scan_points = beam.get("scan_points", None)
         if scan_points is None:
             self.logger.error("Beam ID {} dose not have attribute 'scan_points'.".format(beam["beamName"]))
             raise RuntimeError("Beam '{}' dose not have attribute 'scan_points'.".format(str(beam["beamName"])))
@@ -1814,11 +2227,11 @@ class DOSECAL(BASE):
         ene_all = []
         for energy_idx in __scan_points.keys():
             self.logger.info("Beam ID {} merging energy index {}".format(beam["beamName"], str(energy_idx)))
-            theta_all.extend(__scan_points[energy_idx]['theta'])
-            phi_all.extend(__scan_points[energy_idx]['phi'])
-            ene_all.extend(__scan_points[energy_idx]['energy'])
+            theta_all.extend(__scan_points[energy_idx]["theta"])
+            phi_all.extend(__scan_points[energy_idx]["phi"])
+            ene_all.extend(__scan_points[energy_idx]["energy"])
 
-        isocenter = beam.get('isocenter', None)
+        isocenter = beam.get("isocenter", None)
         if isocenter is None:
             self.logger.warning("Beam ID {} dose not have isocenter. Cannot proceed.".format(beam["beamName"]))
             raise RuntimeError("Beam '{}' dose not have isocenter. Cannot proceed.".format(str(beam["beamName"])))
@@ -1826,11 +2239,21 @@ class DOSECAL(BASE):
         SAD = np.sum(np.abs(beam["source_pos"]) * 0.5)
         SADX = np.abs(beam["source_pos"][1])
         SADY = np.abs(beam["source_pos"][2])
-        self.setGeometry(beam['gantry_angle'], beam['couch_angle'], [0, 0, 0], isocenter, SAD)
+        self.setGeometry(
+            beam["gantry_angle"],
+            beam["couch_angle"],
+            [0, 0, 0],
+            isocenter,
+            SAD,
+        )
 
         if self.serviceMode:
-            NetWork.sender.sendStatus(None, self.task_id, "Calculating WEQ for beam '{}'".format(beam["beamName"]),
-                                      startProgress + deltaProgress * 0.2)
+            NetWork.sender.sendStatus(
+                None,
+                self.task_id,
+                "Calculating WEQ for beam '{}'".format(beam["beamName"]),
+                startProgress + deltaProgress * 0.2,
+            )
 
         longitudalCutoff = np.interp(ene_all, bm.triGaussian["meaEneList"], bm.triGaussian["R80"] * 2)
         longitudalCutoff1 = np.interp(ene_all, bm.triGaussian["meaEneList"], bm.triGaussian["R80"] + 100)
@@ -1843,13 +2266,24 @@ class DOSECAL(BASE):
             rs = rs_setting["rs_weq"]
         except:
             rs = beam.get("range_shifter", 0)
-        cal_result = self.caldose_raytrace_all(nFrac, beam, SAD, SAD, ext_contour_linear, ext_contour_linear_opt,
-                                                                             longitudalCutoff, bm, __scan_points,
-                                                                             rs=rs, mode=cal_mode,
-                                                                             startProgress=startProgress + deltaProgress * 0.21,
-                                                                             deltaProgress=deltaProgress * 0.7, calType=calType,
-                                                                             cal_fluence_map=cal_fluence_map,
-                                                                             nuclear_correction=nuclear_correction)
+        cal_result = self.caldose_raytrace_all(
+            nFrac,
+            beam,
+            SAD,
+            SAD,
+            ext_contour_linear,
+            ext_contour_linear_opt,
+            longitudalCutoff,
+            bm,
+            __scan_points,
+            rs=rs,
+            mode=cal_mode,
+            startProgress=startProgress + deltaProgress * 0.21,
+            deltaProgress=deltaProgress * 0.7,
+            calType=calType,
+            cal_fluence_map=cal_fluence_map,
+            dose_type=dose_type,
+        )
         # fluence_map = self.caldose_raytrace_all_proton(SADX, SADY, ext_contour_linear, longitudalCutoff, bm, __scan_points,
         #                                         rs=rs, mode=cal_mode,
         #                                         startProgress=startProgress + deltaProgress * 0.21,
@@ -1872,34 +2306,43 @@ class DOSECAL(BASE):
         # fluence_map = self.caldose_raytrace(bm, scan_points, amatrix, bmatrix, rs=__rs, mode=cal_mode, startProgress=startProgress+deltaProgress*0.51,endProgress=startProgress+deltaProgress*0.95) #bmatrix#
         # del amatrix, bmatrix
 
-        self.logger.info('Gathering data for beam ID {}.'.format(beam["beamName"]))
-        attribute_lists = ["x", "z", "theta", "phi", "energy", \
-                           "range", "scaleFactor", "spot_spacing_x", "spot_spacing_z", "weight_vector"]
+        self.logger.info("Gathering data for beam ID {}.".format(beam["beamName"]))
+        attribute_lists = [
+            "x",
+            "z",
+            "theta",
+            "phi",
+            "energy",
+            "range",
+            "scaleFactor",
+            "spot_spacing_x",
+            "spot_spacing_z",
+            "weight_vector",
+        ]
         for attribute in attribute_lists:
             beam[attribute] = []
             energy_list = np.sort(list(scan_points.keys()))[::-1]  # make sure descending order
             for energy_idx in energy_list:
-                if (attribute in scan_points[energy_idx].keys()):
+                if attribute in scan_points[energy_idx].keys():
                     beam[attribute].extend(scan_points[energy_idx][attribute])
                 else:
                     beam[attribute].extend([-1] * len(scan_points[energy_idx]["x"]))
             beam[attribute] = np.array(beam[attribute])
 
         if "weight_vector" not in beam.keys():
-            beam['weight_vector'] = np.ones((beam['spotId'].size,))
-            self.logger.warning(
-                "Beam ID {} dose not have attribute 'weight_vector', set to ones.".format(beam["beamName"]))
-        if calType in ['Dose', 'QA', 'Scale', 'DoseRecalculation']:
-            beam['final_dose']  = cal_result * nFrac
+            beam["weight_vector"] = np.ones((beam["spotId"].size,))
+            self.logger.warning("Beam ID {} dose not have attribute 'weight_vector', set to ones.".format(beam["beamName"]))
+        if calType in ["Dose", "QA", "Scale", "DoseRecalculation"]:
+            beam["final_dose"] = cal_result * nFrac
         else:
             if cal_fluence_map:
-                beam['fluence_map'] = cal_result
+                beam["fluence_map"] = cal_result
             else:
                 beam["fluence_map_row_norm"] = cal_result
             # beam['csc_values'] = cal_result[1]
             # beam['csc_row_ind'] = cal_result[2]
             # beam['csc_col_ptr'] = cal_result[3]
 
-        self.logger.info('Dose calculation finished for beam ID {}.'.format(beam["beamName"]))
+        self.logger.info("Dose calculation finished for beam ID {}.".format(beam["beamName"]))
 
         return beam

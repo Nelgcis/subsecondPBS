@@ -25,6 +25,7 @@
 #include <limits>
 #include <cstdlib>
 #include <cctype>
+#include <sstream>
 
 
 // RayTraceDicom CT image use(HU + 1000)
@@ -156,6 +157,10 @@ static bool rtdEnvFlag(const char* name) {
     if (!v) return false;
     const std::string s(v);
     return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
+}
+
+static bool rtdHaloAuditEnabled() {
+    return rtdEnvFlag("RTD_HALO_AUDIT");
 }
 
 static bool rtdPerfProfileEnabled() {
@@ -467,6 +472,101 @@ static void printStageVolumeSummary(const std::string& stageName,
               << std::endl;
     printZSliceSummary(stageName.c_str(), vol, nx, ny, nz, thr);
     printCenterlinePeakSummary(stageName, vol, nx, ny, nz, thr, axis);
+}
+
+static void printDoseGridSupportSummary(const std::string& stageName,
+                                        const std::vector<float>& vol,
+                                        int nx,
+                                        int ny,
+                                        int nz,
+                                        float thr) {
+    const size_t expected = static_cast<size_t>(std::max(nx, 0)) *
+                            static_cast<size_t>(std::max(ny, 0)) *
+                            static_cast<size_t>(std::max(nz, 0));
+    if (nx <= 0 || ny <= 0 || nz <= 0 || vol.size() < expected) {
+        std::cout << "[INPUT_AUDIT][WRAPPER][" << stageName << "_DOSE_GRID_SUPPORT]"
+                  << " skipped invalid volume dims=(" << nx << "," << ny << "," << nz << ")"
+                  << " size=" << vol.size()
+                  << " expected>=" << expected
+                  << std::endl;
+        return;
+    }
+
+    int nnz = 0;
+    double sum = 0.0;
+    float maxV = 0.0f;
+    int minX = nx, minY = ny, minZ = nz;
+    int maxX = -1, maxY = -1, maxZ = -1;
+    std::vector<double> sumY(static_cast<size_t>(ny), 0.0);
+    std::vector<int> cntY(static_cast<size_t>(ny), 0);
+
+    for (int x = 0; x < nx; ++x) {
+        for (int y = 0; y < ny; ++y) {
+            for (int z = 0; z < nz; ++z) {
+                const size_t idx =
+                    (static_cast<size_t>(x) * static_cast<size_t>(ny) + static_cast<size_t>(y)) *
+                    static_cast<size_t>(nz) + static_cast<size_t>(z);
+                const float v = vol[idx];
+                if (!hostIsFinite(v)) continue;
+                sum += static_cast<double>(v);
+                if (v > maxV) maxV = v;
+                if (v > thr) {
+                    ++nnz;
+                    sumY[static_cast<size_t>(y)] += static_cast<double>(v);
+                    ++cntY[static_cast<size_t>(y)];
+                    minX = std::min(minX, x);
+                    minY = std::min(minY, y);
+                    minZ = std::min(minZ, z);
+                    maxX = std::max(maxX, x);
+                    maxY = std::max(maxY, y);
+                    maxZ = std::max(maxZ, z);
+                }
+            }
+        }
+    }
+
+    std::cout << "[INPUT_AUDIT][WRAPPER][" << stageName << "_DOSE_GRID_SUPPORT]"
+              << " layout=c_order_xyz"
+              << " sum=" << sum
+              << " max=" << maxV
+              << " nonzero(>" << thr << ")=" << nnz << "/" << expected;
+    if (nnz > 0) {
+        std::cout << " bbox=[(" << minX << "," << minY << "," << minZ << ")-("
+                  << maxX << "," << maxY << "," << maxZ << ")]";
+    }
+    std::cout << std::endl;
+
+    int activeY = 0;
+    int firstY = -1;
+    int lastY = -1;
+    int maxSumY = 0;
+    double maxYSum = -1.0;
+    for (int y = 0; y < ny; ++y) {
+        if (cntY[static_cast<size_t>(y)] > 0) {
+            ++activeY;
+            if (firstY < 0) firstY = y;
+            lastY = y;
+        }
+        if (sumY[static_cast<size_t>(y)] > maxYSum) {
+            maxYSum = sumY[static_cast<size_t>(y)];
+            maxSumY = y;
+        }
+    }
+    std::cout << "  " << stageName << " y-slice support (dose-grid y, thr=" << thr << "):"
+              << " activeSlices=" << activeY << "/" << ny;
+    if (activeY > 0) {
+        std::cout << " activeRange=[" << firstY << "," << lastY << "]";
+    }
+    std::cout << " maxSumY=" << maxSumY << " (sum=" << maxYSum << ")" << std::endl;
+
+    const int probes[] = {0, 1, 14, 15, 18, 93, 94, 120, 146};
+    for (int y : probes) {
+        if (y < 0 || y >= ny) continue;
+        std::cout << "    y=" << y
+                  << " sum=" << sumY[static_cast<size_t>(y)]
+                  << " cnt>thr=" << cntY[static_cast<size_t>(y)]
+                  << std::endl;
+    }
 }
 
 struct PlaneShapeStats {
@@ -841,6 +941,14 @@ static inline bool decodeSpotPosition(const RTDBeamSettings& beam,
                                       float rawY,
                                       float& outX,
                                       float& outY);
+static bool rasterizeContinuousSpotToDensePlane(std::vector<float>& dense,
+                                                int nx,
+                                                int ny,
+                                                int layer,
+                                                float latticeX,
+                                                float latticeY,
+                                                float weight,
+                                                double* writtenWeight);
 
 static bool approxEq(float a, float b, float tol = 1e-4f) {
     return std::fabs(a - b) <= tol;
@@ -980,6 +1088,273 @@ static bool buildHaloLatticePlan(const RawSpotLattice& rawSpotLattice,
                   << " activeSpots=" << out.activeSpotCount
                   << " mappedRayCenters=" << out.mappedRayCenters
                   << " source=primary_dense_spot_lattice"
+                  << std::endl;
+    }
+    return true;
+}
+
+static bool buildExplicitPhysicalPBHaloLatticePlan(const RTDBeamSettings& beam,
+                                                   int layerIdx,
+                                                   const vec3f& cpbCorner,
+                                                   const vec3f& cpbResolution,
+                                                   const int2& rayDims,
+                                                   HaloLatticePlan& out,
+                                                   bool verbose) {
+    out = HaloLatticePlan{};
+    out.layerIdx = layerIdx;
+    auto fail = [&](const std::string& msg) {
+        out.failureReason = msg;
+        if (verbose) {
+            std::cerr << "  [RTD_HALO] layer=" << layerIdx
+                      << " source=explicit_physical_pb_rasterized_lattice " << msg << std::endl;
+        }
+        return false;
+    };
+
+    const int numLayers = static_cast<int>(beam.energies.size());
+    if (layerIdx < 0 || layerIdx >= numLayers) {
+        return fail("layerIdx is outside beam.energies");
+    }
+    if (beam.layerSpotDeltas.size() != static_cast<size_t>(numLayers)) {
+        return fail("explicit layerSpotDeltas must contain one spacing per energy layer");
+    }
+    if (beam.layerSpotCounts.size() != static_cast<size_t>(numLayers)) {
+        return fail("layerSpotCounts size must match beam.energies size");
+    }
+    if (beam.spotPositions.empty() || beam.spotWeights.empty()) {
+        return fail("missing spotPositions/spotWeights input");
+    }
+    if ((beam.spotPositions.size() % 2u) != 0u) {
+        return fail("spotPositions does not contain [N][2] rows");
+    }
+    if (!(cpbResolution.x > 0.0f) || !(cpbResolution.y > 0.0f)) {
+        return fail("CPB/ray spacing must be positive");
+    }
+    if (rayDims.x <= 0 || rayDims.y <= 0) {
+        return fail("rayDims must be positive");
+    }
+
+    int totalSpots = 0;
+    int layerSpotOffset = 0;
+    for (int l = 0; l < numLayers; ++l) {
+        const int count = beam.layerSpotCounts[static_cast<size_t>(l)];
+        if (count <= 0) {
+            return fail("layerSpotCounts must be positive for every layer");
+        }
+        if (l < layerIdx) layerSpotOffset += count;
+        totalSpots += count;
+    }
+    if (static_cast<int>(beam.spotPositions.size() / 2u) != totalSpots) {
+        return fail("spotPositions row count does not match summed layerSpotCounts");
+    }
+    if (static_cast<int>(beam.spotWeights.size()) != totalSpots) {
+        return fail("spotWeights size does not match summed layerSpotCounts");
+    }
+
+    const float2 layerDelta = beam.layerSpotDeltas[static_cast<size_t>(layerIdx)];
+    const float dxRef = layerDelta.x;
+    const float dyRef = layerDelta.y;
+    if (!(dxRef > 0.0f) || !(dyRef > 0.0f) ||
+        !hostIsFinite(dxRef) || !hostIsFinite(dyRef)) {
+        return fail("explicit layerSpotDeltas must be finite and positive");
+    }
+
+    const std::vector<float>& weqHeader = getActiveWeqHeader(beam);
+    if (beam.spotPositionsAreIndices && weqHeader.size() < 9u) {
+        return fail("spotPositionsAreIndices requires a 9-value WEQ header");
+    }
+
+    struct DecodedSpot {
+        float x = 0.0f;
+        float y = 0.0f;
+        float weight = 0.0f;
+    };
+
+    const int layerSpotCount = beam.layerSpotCounts[static_cast<size_t>(layerIdx)];
+    std::vector<DecodedSpot> decoded;
+    decoded.reserve(static_cast<size_t>(layerSpotCount));
+
+    float minX = INF;
+    float maxX = -INF;
+    float minY = INF;
+    float maxY = -INF;
+    double inputWeightSum = 0.0;
+    int positiveInputSpots = 0;
+
+    for (int i = 0; i < layerSpotCount; ++i) {
+        const int spotIdx = layerSpotOffset + i;
+        const float rawX = beam.spotPositions[static_cast<size_t>(spotIdx) * 2u + 0u];
+        const float rawY = beam.spotPositions[static_cast<size_t>(spotIdx) * 2u + 1u];
+        const float weight = beam.spotWeights[static_cast<size_t>(spotIdx)];
+        if (!hostIsFinite(weight)) {
+            return fail("non-finite spot weight at localSpot=" + std::to_string(i));
+        }
+        if (weight < 0.0f) {
+            return fail("negative spot weight at localSpot=" + std::to_string(i));
+        }
+
+        float x = 0.0f;
+        float y = 0.0f;
+        if (!decodeSpotPosition(beam, weqHeader, rawX, rawY, x, y)) {
+            return fail("failed to decode spot position at localSpot=" + std::to_string(i));
+        }
+        if (!hostIsFinite(x) || !hostIsFinite(y)) {
+            return fail("decoded spot position is non-finite at localSpot=" + std::to_string(i));
+        }
+
+        decoded.push_back(DecodedSpot{x, y, weight});
+        minX = std::min(minX, x);
+        maxX = std::max(maxX, x);
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+        inputWeightSum += static_cast<double>(weight);
+        if (weight > 0.0f) {
+            ++positiveInputSpots;
+        }
+    }
+
+    if (decoded.empty()) {
+        return fail("layer contains no decoded spots");
+    }
+    if (!(minX <= maxX) || !(minY <= maxY)) {
+        return fail("decoded spot bounds are invalid");
+    }
+
+    const float originX = minX;
+    const float originY = minY;
+    const float extentX = (maxX - originX) / dxRef;
+    const float extentY = (maxY - originY) / dyRef;
+    if (!hostIsFinite(extentX) || !hostIsFinite(extentY) || extentX < -1.0e-4f || extentY < -1.0e-4f) {
+        return fail("decoded spot extent is invalid for explicit physical PB rasterization");
+    }
+
+    // Add one high-side cell so bilinear rasterization of an off-lattice max
+    // coordinate can write its upper neighbor without losing weight.
+    const int rawX = std::max(1, static_cast<int>(std::floor(std::max(0.0f, extentX))) + 2);
+    const int rawY = std::max(1, static_cast<int>(std::floor(std::max(0.0f, extentY))) + 2);
+    if (rawX <= 0 || rawY <= 0) {
+        return fail("explicit physical PB rasterized lattice dimensions are non-positive");
+    }
+
+    const int nucX = roundUpToMultiple(rawX, SUPERP_TILE_X);
+    const int nucY = roundUpToMultiple(rawY, SUPERP_TILE_Y);
+    const size_t nucPlaneN = static_cast<size_t>(nucX) * static_cast<size_t>(nucY);
+    const size_t rawPlaneN = static_cast<size_t>(rawX) * static_cast<size_t>(rawY);
+    const size_t rayPlaneN = static_cast<size_t>(rayDims.x) * static_cast<size_t>(rayDims.y);
+    constexpr size_t kMaxExplicitPhysicalHaloCells = 4ull * 1024ull * 1024ull;
+    if (rawX > rayDims.x || rawY > rayDims.y || rawPlaneN > rayPlaneN) {
+        return fail("explicit physical PB rasterized lattice is larger than primary ray lattice: rawDims=(" +
+                    std::to_string(rawX) + "," + std::to_string(rawY) + ") rayDims=(" +
+                    std::to_string(rayDims.x) + "," + std::to_string(rayDims.y) + ")");
+    }
+    if (nucPlaneN > kMaxExplicitPhysicalHaloCells) {
+        return fail("explicit physical PB rasterized lattice exceeds sanity cap: paddedCells=" +
+                    std::to_string(nucPlaneN) + " cap=" +
+                    std::to_string(kMaxExplicitPhysicalHaloCells));
+    }
+
+    out.nucRayDims = make_int2(nucX, nucY);
+    out.nucPlaneN = nucPlaneN;
+    out.spotDelta = make_float3(dxRef, dyRef, 0.0f);
+    out.spotOffset = make_float3(originX, originY, 0.0f);
+    out.rayToNucSpotIdx.assign(static_cast<size_t>(rayDims.x) * static_cast<size_t>(rayDims.y), -1);
+    out.paddedSpotWeights.assign(nucPlaneN, 0.0f);
+
+    double rasterizedWeightSum = 0.0;
+    double fracAbsSumX = 0.0;
+    double fracAbsSumY = 0.0;
+    float maxNearestFracX = 0.0f;
+    float maxNearestFracY = 0.0f;
+    int offLatticeInputSpots = 0;
+    for (const DecodedSpot& spot : decoded) {
+        if (spot.weight == 0.0f) continue;
+        const float latticeX = (spot.x - originX) / dxRef;
+        const float latticeY = (spot.y - originY) / dyRef;
+        if (!hostIsFinite(latticeX) || !hostIsFinite(latticeY)) {
+            return fail("decoded spot produced non-finite explicit physical PB lattice coordinate");
+        }
+        const float nearestFracX = std::fabs(latticeX - std::round(latticeX));
+        const float nearestFracY = std::fabs(latticeY - std::round(latticeY));
+        fracAbsSumX += static_cast<double>(nearestFracX);
+        fracAbsSumY += static_cast<double>(nearestFracY);
+        maxNearestFracX = std::max(maxNearestFracX, nearestFracX);
+        maxNearestFracY = std::max(maxNearestFracY, nearestFracY);
+        if (nearestFracX > 1.0e-3f || nearestFracY > 1.0e-3f) {
+            ++offLatticeInputSpots;
+        }
+        if (!rasterizeContinuousSpotToDensePlane(out.paddedSpotWeights,
+                                                 nucX,
+                                                 nucY,
+                                                 0,
+                                                 latticeX,
+                                                 latticeY,
+                                                 spot.weight,
+                                                 &rasterizedWeightSum)) {
+            return fail("positive-weight decoded spot could not be rasterized onto explicit physical PB lattice");
+        }
+    }
+    const double conservationTol = std::max(1.0e-3, std::fabs(inputWeightSum) * 1.0e-5);
+    if (std::fabs(rasterizedWeightSum - inputWeightSum) > conservationTol) {
+        return fail("explicit physical PB rasterization did not conserve weight: input=" +
+                    std::to_string(inputWeightSum) + " rasterized=" +
+                    std::to_string(rasterizedWeightSum) + " tol=" +
+                    std::to_string(conservationTol));
+    }
+
+    for (float w : out.paddedSpotWeights) {
+        if (w > 0.0f) out.activeSpotCount++;
+    }
+
+    int mapped = 0;
+    for (int spotY = 0; spotY < rawY; ++spotY) {
+        const float gantryY = originY + static_cast<float>(spotY) * dyRef;
+        const int rayY = static_cast<int>(std::lround((gantryY - cpbCorner.y) / cpbResolution.y));
+        if (rayY < 0 || rayY >= rayDims.y) {
+            return fail("explicit physical PB rasterized lattice row mapped outside active ray grid");
+        }
+        for (int spotX = 0; spotX < rawX; ++spotX) {
+            const float gantryX = originX + static_cast<float>(spotX) * dxRef;
+            const int rayX = static_cast<int>(std::lround((gantryX - cpbCorner.x) / cpbResolution.x));
+            if (rayX < 0 || rayX >= rayDims.x) {
+                return fail("explicit physical PB rasterized lattice column mapped outside active ray grid");
+            }
+            int& mappedIdx = out.rayToNucSpotIdx[static_cast<size_t>(rayY) *
+                                                 static_cast<size_t>(rayDims.x) +
+                                                 static_cast<size_t>(rayX)];
+            if (mappedIdx >= 0) {
+                return fail("multiple explicit physical PB rasterized cells mapped to the same primary ray center");
+            }
+            mappedIdx = spotY * nucX + spotX;
+            mapped++;
+        }
+    }
+    if (mapped <= 0) {
+        return fail("no explicit physical PB rasterized lattice positions mapped onto the active ray grid");
+    }
+
+    out.mappedRayCenters = mapped;
+    out.valid = true;
+    if (verbose) {
+        std::cout << "  [RTD_HALO] layer=" << layerIdx
+                  << " nucRayDims=(" << out.nucRayDims.x << "," << out.nucRayDims.y << ")"
+                  << " rawDims=(" << rawX << "," << rawY << ",1)"
+                  << " spotOffset=(" << out.spotOffset.x << "," << out.spotOffset.y << "," << out.spotOffset.z << ")"
+                  << " spotDelta=(" << out.spotDelta.x << "," << out.spotDelta.y << "," << out.spotDelta.z << ")"
+                  << " inputSpots=" << layerSpotCount
+                  << " positiveInputSpots=" << positiveInputSpots
+                  << " inputWeightSum=" << inputWeightSum
+                  << " rasterizedWeightSum=" << rasterizedWeightSum
+                  << " activeSpots=" << out.activeSpotCount
+                  << " mappedRayCenters=" << out.mappedRayCenters
+                  << " decodedBounds=(" << minX << "," << maxX << "," << minY << "," << maxY << ")"
+                  << " fractionalOffsetMax=(" << maxNearestFracX << "," << maxNearestFracY << ")"
+                  << " fractionalOffsetMean=("
+                  << (positiveInputSpots > 0 ? fracAbsSumX / static_cast<double>(positiveInputSpots) : 0.0)
+                  << ","
+                  << (positiveInputSpots > 0 ? fracAbsSumY / static_cast<double>(positiveInputSpots) : 0.0)
+                  << ")"
+                  << " offLatticeInputSpots=" << offLatticeInputSpots
+                  << " source=explicit_physical_pb_rasterized_lattice"
                   << std::endl;
     }
     return true;
@@ -1200,6 +1575,9 @@ static bool validateWrapperEntryBeam(const RTDBeamSettings& beam, size_t beamIdx
         beam.layerLongitudinalCutoffs.size() != beam.energies.size()) {
         return fail("layerLongitudinalCutoffs size must match beam.energies size");
     }
+    if (!beam.layerSpotDeltas.empty() && beam.layerSpotDeltas.size() != beam.energies.size()) {
+        return fail("layerSpotDeltas size must match beam.energies size");
+    }
     if (!beam.profileData.empty() && beam.profileSetting.size() < 3u) {
         return fail("profileData requires profileSetting[depth0,step,n]");
     }
@@ -1265,6 +1643,7 @@ static void printWrapperEntryAuditSummary(const RTDBeamSettings& beam,
               << " spotDirRows=" << spotDirRows
               << " raySpacing=(" << beam.raySpacing.x << "," << beam.raySpacing.y << ")"
               << " spotDelta=(" << beam.spotDelta.x << "," << beam.spotDelta.y << "," << beam.spotDelta.z << ")"
+              << " layerSpotDeltas=" << beam.layerSpotDeltas.size()
               << " maxSubspots=" << beam.maxSubspotsPerLayer
               << " layerCutoffs=" << beam.layerLongitudinalCutoffs.size()
               << " roiLinear=" << beam.roiLinearIndices.size()
@@ -1703,10 +2082,10 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
     const bool xOk = inferAxis(allX, dxRef, oxRef, nxRef, whyXFailed);
     const bool yOk = inferAxis(allY, dyRef, oyRef, nyRef, whyYFailed);
     if (!xOk || !yOk) {
-        // Global inference failed. For hexagonal grids, alternating rows between layers
-        // introduce a half-step offset in X that makes the cross-layer allX cloud appear
-        // twice as dense (apparent step = half the true PB step). Try inferring from the
-        // densest single layer before falling back to weqHeader.
+        // Global inference failed. Some legacy callers provide layer-dependent
+        // placement phases that make the cross-layer cloud appear denser than a
+        // single layer. Try the densest single layer before falling back to the
+        // WEQ header. This branch is not used for explicit CarbonPBS pybind spacing.
         int bestLayerIdx = -1;
         int bestLayerCount = 0;
         int spotOffset2 = 0;
@@ -1755,7 +2134,7 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
                 if (nyRef < 1) nyRef = 1;
                 perLayerOk = true;
                 if (verbose) {
-                    std::cout << "  [RTD_PB_GRID] Per-layer PB inference succeeded (hexagonal/shifted grid)"
+                    std::cout << "  [RTD_PB_GRID] Per-layer PB inference succeeded"
                               << " using layer=" << bestLayerIdx << " (n=" << bestLayerCount << " spots)"
                               << " delta=(" << dxRef << "," << dyRef << ")"
                               << " dims=(" << nxRef << "," << nyRef << ")"
@@ -2517,6 +2896,7 @@ void subsecondWrapper(
     CPU_TIMER_START();
     setRTDVerbose(verbose);
     const bool fineTiming = rtdVerboseFineTiming();  // verbose==1 only; verbose>=2 is summary-only
+    const bool haloAudit = rtdHaloAuditEnabled();
     const bool perfProfile = rtdPerfProfileEnabled();
     const bool perfProfileLayers = rtdPerfProfileLayersEnabled();
     if (fineTiming) {
@@ -2995,7 +3375,7 @@ if (fineTiming) {
         // Build a right-handed gantry basis that matches RayTraceDicom convention:
         //   beam direction is along -z in gantry.
         const vec3f gX = bmX;
-        const vec3f gY = bmY * -1.0f;
+        const vec3f gY = bmY;
         const vec3f gZ = bmZ * -1.0f;
 
         // Gantry origin at isocenter (source + beamDir * SAD)
@@ -3015,8 +3395,8 @@ if (fineTiming) {
         }
 
         RawSpotLattice rawSpotLattice;
-        const bool hasRawSpotLattice = buildRawSpotLattice(beam, rawSpotLattice, fineTiming);
-        if (fineTiming && !hasRawSpotLattice) {
+        const bool hasRawSpotLattice = buildRawSpotLattice(beam, rawSpotLattice, fineTiming || haloAudit);
+        if ((fineTiming || haloAudit) && !hasRawSpotLattice) {
             std::cout << "  [RTD_SPOT_GRID] raw spot lattice unavailable; wrapper still uses legacy CPB projection path for this beam";
             if (!rawSpotLattice.failureReason.empty()) {
                 std::cout << " reason=" << rawSpotLattice.failureReason;
@@ -3486,31 +3866,72 @@ if (fineTiming) {
                 throw std::runtime_error(
                     "nuclear_correction=true requires raw spot lattice inputs; legacy CPB fallback cannot drive halo mode");
             }
-            // [9.41 Adaptive Gate] When spotPositionsAreIndices=true, the standard RawSpotLattice
-            // is built by rasterizing onto the dense WEQ departure plane. For halo/nuclear
-            // mapping we need a physical-PB lattice view with deterministic (one spot -> one cell)
-            // weight placement and explicit delta/offset/cardinality.
-            //
-            // Build a separate physical PB lattice view and plan halo from that.
+            haloPlans.resize(static_cast<size_t>(numLayers));
+            const bool hasExplicitLayerSpotDeltas =
+                beam.layerSpotDeltas.size() == static_cast<size_t>(numLayers);
+            const bool useExplicitPhysicalHaloLattice =
+                hasExplicitLayerSpotDeltas && beam.spotPositionsAreIndices;
             RawSpotLattice haloSpotLattice = rawSpotLattice;
-            if (beam.spotPositionsAreIndices) {
+            const char* haloLatticeSource =
+                useExplicitPhysicalHaloLattice ? "explicit_physical_pb_rasterized_lattice" : "raw_spot_lattice";
+            if (!useExplicitPhysicalHaloLattice && !hasExplicitLayerSpotDeltas && beam.spotPositionsAreIndices) {
+                // Legacy non-pybind callers may still require inference. Pybind
+                // CarbonPBS imports must supply explicit layerSpotDeltas so halo
+                // never falls back to the WEQ/depth-step lattice.
                 RawSpotLattice physicalPbLattice;
-                if (!buildPhysicalPBLatticeView(beam, physicalPbLattice, fineTiming)) {
+                if (!buildPhysicalPBLatticeView(beam, physicalPbLattice, fineTiming || haloAudit)) {
                     throw std::runtime_error(
                         "nuclear_correction=true requires a physical PB lattice view when spotPositionsAreIndices=true. "
                         "Gate 9.41 upstream contract failed: " + physicalPbLattice.failureReason);
                 }
                 haloSpotLattice = std::move(physicalPbLattice);
+                haloLatticeSource = "inferred_physical_pb_lattice";
             }
-            haloPlans.resize(static_cast<size_t>(numLayers));
+            if (haloAudit) {
+                std::cout << "  [RTD_HALO_SELECT] beam=" << beamIdx
+                          << " source=" << haloLatticeSource
+                          << " selectedMode="
+                          << (useExplicitPhysicalHaloLattice ? "per_layer_explicit_physical_pb" : "single_lattice")
+                          << " hasExplicitLayerSpotDeltas=" << (hasExplicitLayerSpotDeltas ? 1 : 0)
+                          << " spotPositionsAreIndices=" << (beam.spotPositionsAreIndices ? 1 : 0)
+                          << " rawDims=(" << rawSpotLattice.spotGridDims.x << "," << rawSpotLattice.spotGridDims.y << "," << rawSpotLattice.spotGridDims.z << ")"
+                          << " rawDelta=(" << rawSpotLattice.spotDelta.x << "," << rawSpotLattice.spotDelta.y << "," << rawSpotLattice.spotDelta.z << ")"
+                          << " rawOffset=(" << rawSpotLattice.spotOffset.x << "," << rawSpotLattice.spotOffset.y << "," << rawSpotLattice.spotOffset.z << ")"
+                          << " rawUsedFallback=" << (rawSpotLattice.usedFallback ? 1 : 0)
+                          << " beamSpotDelta=(" << beam.spotDelta.x << "," << beam.spotDelta.y << "," << beam.spotDelta.z << ")"
+                          << " raySpacing=(" << beam.raySpacing.x << "," << beam.raySpacing.y << ")";
+                if (!useExplicitPhysicalHaloLattice) {
+                    std::cout << " selectedDims=(" << haloSpotLattice.spotGridDims.x << "," << haloSpotLattice.spotGridDims.y << "," << haloSpotLattice.spotGridDims.z << ")"
+                              << " selectedDelta=(" << haloSpotLattice.spotDelta.x << "," << haloSpotLattice.spotDelta.y << "," << haloSpotLattice.spotDelta.z << ")"
+                              << " selectedOffset=(" << haloSpotLattice.spotOffset.x << "," << haloSpotLattice.spotOffset.y << "," << haloSpotLattice.spotOffset.z << ")";
+                }
+                if (hasExplicitLayerSpotDeltas && !beam.layerSpotDeltas.empty()) {
+                    const float2 firstDelta = beam.layerSpotDeltas.front();
+                    const float2 lastDelta = beam.layerSpotDeltas.back();
+                    std::cout << " firstLayerSpotDelta=(" << firstDelta.x << "," << firstDelta.y << ")"
+                              << " lastLayerSpotDelta=(" << lastDelta.x << "," << lastDelta.y << ")";
+                }
+                std::cout << std::endl;
+            }
             for (int layerNo = 0; layerNo < numLayers; ++layerNo) {
-                if (!buildHaloLatticePlan(haloSpotLattice,
-                                          layerNo,
-                                          cpbCorner,
-                                          cpbResolution,
-                                          rayDims,
-                                          haloPlans[static_cast<size_t>(layerNo)],
-                                          fineTiming)) {
+                const bool planOk =
+                    useExplicitPhysicalHaloLattice
+                        ? buildExplicitPhysicalPBHaloLatticePlan(
+                              beam,
+                              layerNo,
+                              cpbCorner,
+                              cpbResolution,
+                              rayDims,
+                              haloPlans[static_cast<size_t>(layerNo)],
+                              fineTiming || haloAudit)
+                        : buildHaloLatticePlan(haloSpotLattice,
+                                               layerNo,
+                                               cpbCorner,
+                                               cpbResolution,
+                                               rayDims,
+                                               haloPlans[static_cast<size_t>(layerNo)],
+                                               fineTiming || haloAudit);
+                if (!planOk) {
                     throw std::runtime_error("failed to build halo lattice plan for layer " +
                                              std::to_string(layerNo) + ": " +
                                              haloPlans[static_cast<size_t>(layerNo)].failureReason);
@@ -3769,7 +4190,8 @@ if (fineTiming) {
                 maxLongitudinalCutoffMm = layerCutoffMm;
             }
         }
-        const float longitudinalLimitAllMm = BP_DEPTH_CUTOFF * maxPeakDepth_mm;
+        const float longitudinalLimitAllMm = std::max(BP_DEPTH_CUTOFF * maxPeakDepth_mm,
+                                                      maxLongitudinalCutoffMm);
         const int firstPastCutoffAll = findFirstLargerOrdered(weplMinHost, longitudinalLimitAllMm);
         const int beamFirstGuaranteedPassiveRT = std::min(firstPastCutoffAll, beamFirstOutsideRT);
 
@@ -4214,6 +4636,21 @@ if (fineTiming) {
                 (runtimeNuclearEnabled && layerHaloPlan != nullptr && beam.raySpacing.x > 0.0f)
                     ? (layerHaloPlan->spotDelta.x / beam.raySpacing.x)
                     : 0.0f;
+            const bool hasExplicitLayerSpotDeltasForLayer =
+                beam.layerSpotDeltas.size() == static_cast<size_t>(numLayers);
+            const float3 physicalSpotDeltaForLayer =
+                (hasExplicitLayerSpotDeltasForLayer && layerIdx < beam.layerSpotDeltas.size())
+                    ? make_float3(beam.layerSpotDeltas[static_cast<size_t>(layerIdx)].x,
+                                  beam.layerSpotDeltas[static_cast<size_t>(layerIdx)].y,
+                                  0.0f)
+                    : make_float3(
+                          (layerHaloPlan != nullptr) ? layerHaloPlan->spotDelta.x : beam.spotDelta.x,
+                          (layerHaloPlan != nullptr) ? layerHaloPlan->spotDelta.y : beam.spotDelta.y,
+                          0.0f);
+            const float expectedPhysicalSpotDistInRays =
+                (runtimeNuclearEnabled && beam.raySpacing.x > 0.0f && physicalSpotDeltaForLayer.x > 0.0f)
+                    ? (physicalSpotDeltaForLayer.x / beam.raySpacing.x)
+                    : 0.0f;
 
             const auto layerAllocStart = perfNow();
             float* devRayIdd = devRayIddScratch;
@@ -4235,9 +4672,8 @@ if (fineTiming) {
             // will almost certainly exceed kMaxSuperpR; fail now with a diagnostic.
             if (runtimeNuclearEnabled && layerHaloPlan != nullptr && beam.raySpacing.x > 0.0f) {
                 float preCheckDeltaX;
-                const bool beamDeltaExplicit9 = (beam.spotDelta.x > beam.raySpacing.x * 1.5f);
-                if (beamDeltaExplicit9) {
-                    preCheckDeltaX = beam.spotDelta.x;
+                if (hasExplicitLayerSpotDeltasForLayer && physicalSpotDeltaForLayer.x > 0.0f) {
+                    preCheckDeltaX = physicalSpotDeltaForLayer.x;
                 } else {
                     preCheckDeltaX = layerHaloPlan->spotDelta.x;
                 }
@@ -4301,16 +4737,14 @@ if (fineTiming) {
             // explicitly supplied by the caller with the canonical physical PB spacing).
             //
             // Priority:
-            //   1. beam.spotDelta explicitly provided and > CPB spacing → use it (mirrors upstream)
-            //   2. runtimeNuclearEnabled → use layerHaloPlan->spotDelta (from per-layer or canonical inference)
-            //   3. fallback: beam.spotDelta (may equal CPB spacing for paths that did not set it correctly)
+            //   1. explicit per-layer CarbonPBS/dosecal spacing -> physical PB spacing.
+            //   2. runtimeNuclearEnabled legacy path -> layerHaloPlan->spotDelta.
+            //   3. fallback: beam.spotDelta for non-halo paths.
             float spotDistInRays = 1.0f;
             if (beam.raySpacing.x > 0.0f) {
                 float chosenDeltaX;
-                const bool beamDeltaExplicit = (beam.spotDelta.x > beam.raySpacing.x * 1.5f);
-                if (beamDeltaExplicit) {
-                    // Upstream-equivalent path: caller set the canonical physical PB spacing.
-                    chosenDeltaX = beam.spotDelta.x;
+                if (hasExplicitLayerSpotDeltasForLayer && physicalSpotDeltaForLayer.x > 0.0f) {
+                    chosenDeltaX = physicalSpotDeltaForLayer.x;
                 } else if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
                     chosenDeltaX = layerHaloPlan->spotDelta.x;
                 } else {
@@ -4321,16 +4755,16 @@ if (fineTiming) {
             }
             iddParams.spotDist = spotDistInRays;
             if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
-                // [9.24] Diagnostic warning (NOT a hard fail). Post-9.23, halo
-                // lattice is either the canonical physical PB grid (preferred) or
-                // the WEQ texel grid (fallback when canonical inference fails).
-                // In canonical mode haloDelta should be a small integer multiple
-                // of primaryDelta; in fallback mode they are equal (ratio = 1).
-                // Out-of-bound ratios indicate canonical inference produced a
-                // suspicious value -- log but proceed.
-                if (rawSpotLattice.spotDelta.x > 0.0f && rawSpotLattice.spotDelta.y > 0.0f) {
-                    const float ratioX = layerHaloPlan->spotDelta.x / rawSpotLattice.spotDelta.x;
-                    const float ratioY = layerHaloPlan->spotDelta.y / rawSpotLattice.spotDelta.y;
+                // [9.24] Legacy diagnostic warning (NOT a hard fail). In the
+                // explicit CarbonPBS path, placement grid spacing and physical PB
+                // spacing are intentionally separate: idbeamxy drives rayweight
+                // placement, layerSpotDeltas drives spotDist/nuclear normalization.
+                if (beam.layerSpotDeltas.size() != static_cast<size_t>(numLayers) &&
+                    rawSpotLattice.spotDelta.x > 0.0f && rawSpotLattice.spotDelta.y > 0.0f) {
+                    const float refDeltaX = rawSpotLattice.spotDelta.x;
+                    const float refDeltaY = rawSpotLattice.spotDelta.y;
+                    const float ratioX = layerHaloPlan->spotDelta.x / refDeltaX;
+                    const float ratioY = layerHaloPlan->spotDelta.y / refDeltaY;
                     const float roundedX = std::round(ratioX);
                     const float roundedY = std::round(ratioY);
                     const bool ratioBad = !(ratioX >= 0.999f && ratioY >= 0.999f) ||
@@ -4359,28 +4793,86 @@ if (fineTiming) {
                         }
                     }
                 }
-                if (fineTiming) {
+                if (fineTiming || haloAudit) {
                     // [9.50] Lateral-profile audit: nucRayDims and paddedSpotWeights
                     // occupancy directly indicate lattice identity.
                     //   Pre-9.23 (broken): nucRayDims = padded(CPB grid), e.g. (96, 64);
                     //                      occupancy ~ 25/6144 = 0.4% (sparse-on-dense).
                     //   Post-9.23 (fixed):  nucRayDims = padded(PB grid), e.g. (32, 32);
                     //                      occupancy ~ 25/1024 = 2.4% (sparse-on-coarse).
-                    int nonzero = 0;
-                    for (float v : layerHaloPlan->paddedSpotWeights) if (v > 0.0f) ++nonzero;
+                    int paddedNonzero = 0;
+                    double paddedWeightSum = 0.0;
+                    for (float v : layerHaloPlan->paddedSpotWeights) {
+                        if (v > 0.0f) ++paddedNonzero;
+                        if (hostIsFinite(v)) paddedWeightSum += static_cast<double>(v);
+                    }
                     const size_t totalCells = layerHaloPlan->paddedSpotWeights.size();
                     const double occupancy = (totalCells > 0)
-                        ? (static_cast<double>(nonzero) / static_cast<double>(totalCells))
+                        ? (static_cast<double>(paddedNonzero) / static_cast<double>(totalCells))
                         : 0.0;
+                    int validMapped = 0;
+                    int invalidMapped = 0;
+                    int mappedWeightNonzero = 0;
+                    double mappedWeightSum = 0.0;
+                    int mappedPrimaryRayWeightNonzero = 0;
+                    double mappedPrimaryRayWeightSum = 0.0;
+                    double primaryRayWeightSum = 0.0;
+                    std::vector<float> hMappedRayWeights(static_cast<size_t>(rayDims.x) * static_cast<size_t>(rayDims.y), 0.0f);
+                    copyToHost(hMappedRayWeights.data(), devRayWeights, hMappedRayWeights.size() * sizeof(float));
+                    for (size_t mapIdx = 0; mapIdx < layerHaloPlan->rayToNucSpotIdx.size(); ++mapIdx) {
+                        const float rw = (mapIdx < hMappedRayWeights.size()) ? hMappedRayWeights[mapIdx] : 0.0f;
+                        if (hostIsFinite(rw)) primaryRayWeightSum += static_cast<double>(rw);
+                        const int nucIdx = layerHaloPlan->rayToNucSpotIdx[mapIdx];
+                        if (nucIdx < 0 || static_cast<size_t>(nucIdx) >= layerHaloPlan->paddedSpotWeights.size()) {
+                            ++invalidMapped;
+                            continue;
+                        }
+                        ++validMapped;
+                        const float nw = layerHaloPlan->paddedSpotWeights[static_cast<size_t>(nucIdx)];
+                        if (nw > 0.0f) {
+                            ++mappedWeightNonzero;
+                            mappedWeightSum += static_cast<double>(nw);
+                        }
+                        if (rw > 0.0f) {
+                            ++mappedPrimaryRayWeightNonzero;
+                            mappedPrimaryRayWeightSum += static_cast<double>(rw);
+                        }
+                    }
+                    const double haloToPhysicalRatioX =
+                        (physicalSpotDeltaForLayer.x > 0.0f)
+                            ? static_cast<double>(layerHaloPlan->spotDelta.x) / static_cast<double>(physicalSpotDeltaForLayer.x)
+                            : 0.0;
+                    const double haloToPhysicalRatioY =
+                        (physicalSpotDeltaForLayer.y > 0.0f)
+                            ? static_cast<double>(layerHaloPlan->spotDelta.y) / static_cast<double>(physicalSpotDeltaForLayer.y)
+                            : 0.0;
+                    const bool physicalPbLike =
+                        std::fabs(haloToPhysicalRatioX - 1.0) <= 0.05 &&
+                        std::fabs(haloToPhysicalRatioY - 1.0) <= 0.05;
+                    const char* gridIdentity =
+                        physicalPbLike ? "physical_pb_like" :
+                        (hasExplicitLayerSpotDeltasForLayer ? "dense_or_nonphysical_vs_explicit_pb" : "dense_or_nonphysical");
                     std::cout << "  [RTD_HALO_AUDIT] layer=" << layerIdx
                               << " primarySpotDelta=(" << rawSpotLattice.spotDelta.x << "," << rawSpotLattice.spotDelta.y << ")"
                               << " cpbSpacing=(" << beam.raySpacing.x << "," << beam.raySpacing.y << ")"
-                              << " haloSpotDelta=(" << layerHaloPlan->spotDelta.x << "," << layerHaloPlan->spotDelta.y << ")"
+                              << " haloGridDelta=(" << layerHaloPlan->spotDelta.x << "," << layerHaloPlan->spotDelta.y << ")"
+                              << " physicalPBDelta=(" << physicalSpotDeltaForLayer.x << "," << physicalSpotDeltaForLayer.y << ")"
+                              << " haloToPhysicalRatio=(" << haloToPhysicalRatioX << "," << haloToPhysicalRatioY << ")"
+                              << " gridIdentity=" << gridIdentity
                               << " spotDistInRays=" << iddParams.spotDist
                               << " expectedSpotDistInRays=" << expectedHaloSpotDistInRays
+                              << " expectedPhysicalSpotDistInRays=" << expectedPhysicalSpotDistInRays
                               << " nucRayDims=(" << layerHaloPlan->nucRayDims.x << "," << layerHaloPlan->nucRayDims.y << ")"
-                              << " paddedNonzero=" << nonzero
+                              << " validMapped=" << validMapped
+                              << " invalidMapped=" << invalidMapped
+                              << " mappedWeightNonzero=" << mappedWeightNonzero
+                              << " mappedWeightSum=" << mappedWeightSum
+                              << " mappedPrimaryRayWeightNonzero=" << mappedPrimaryRayWeightNonzero
+                              << " mappedPrimaryRayWeightSum=" << mappedPrimaryRayWeightSum
+                              << " primaryRayWeightSum=" << primaryRayWeightSum
+                              << " paddedNonzero=" << paddedNonzero
                               << " paddedTotal=" << totalCells
+                              << " paddedWeightSum=" << paddedWeightSum
                               << " occupancy=" << occupancy
                               << std::endl;
                 }
@@ -4455,7 +4947,7 @@ if (fineTiming) {
                       << "\n";
         }
 
-            const float longitudinalLimitMm = BP_DEPTH_CUTOFF * peakDepth;
+            const float longitudinalLimitMm = std::max(BP_DEPTH_CUTOFF * peakDepth, layerCutoffMm);
             const int localAfterLastStep = findFirstLargerOrdered(weplMinHost, longitudinalLimitMm);
             const int afterLastStep = std::min(localAfterLastStep, beamFirstGuaranteedPassiveRT);
 
@@ -4481,16 +4973,12 @@ if (fineTiming) {
             // Spot distance in rays (used to cap effective sigma)
             if (fabsf(fanDelta_mm.x) > 1e-6f) {
                 // [9.48] RC2 fix companion site: layerHaloPlan->spotDelta is already in mm.
-                // Non-halo branches (rawSpotLattice / beam.spotDelta) are in cm → * lenToMm.
-                // [9.57] Priority mirrors upstream beam.getSpotIdxToGantry().getDelta() logic:
-                //   1. beam.spotDelta explicitly provided (> CPB spacing) → use it (mm units)
-                //   2. nuclear + halo plan → layerHaloPlan->spotDelta (mm)
-                //   3. rawSpotLattice → cm * lenToMm
-                //   4. fallback beam.spotDelta (cm) * lenToMm
+                // Priority mirrors site-1 above: explicit CarbonPBS spacing is
+                // physical PB spacing for spotDist; halo plan delta is only the
+                // BEV placement grid when explicit layerSpotDeltas exist.
                 float spotSpacingMm;
-                const bool beamDeltaExplicitSite2 = (beam.spotDelta.x > beam.raySpacing.x * 1.5f);
-                if (beamDeltaExplicitSite2) {
-                    spotSpacingMm = beam.spotDelta.x;  // caller set canonical PB spacing (mm)
+                if (hasExplicitLayerSpotDeltasForLayer && physicalSpotDeltaForLayer.x > 0.0f) {
+                    spotSpacingMm = physicalSpotDeltaForLayer.x;
                 } else if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
                     spotSpacingMm = layerHaloPlan->spotDelta.x;  // mm, from inference or fallback
                 } else {
@@ -4623,7 +5111,7 @@ if (fineTiming) {
             // to RC2 (BEV positioning) since both quantities exist before BEV-to-dose
             // transfer. Use 9.50 occupancy + runtime fixture comparisons for RC2/lateral
             // verdicts. See halo-energy-conservation.md section 6.
-            if (runtimeNuclearEnabled && layerHaloPlan != nullptr && fineTiming) {
+            if (runtimeNuclearEnabled && layerHaloPlan != nullptr && (fineTiming || haloAudit)) {
                 const size_t spotPlaneN =
                     static_cast<size_t>(rawSpotLattice.spotGridDims.x) *
                     static_cast<size_t>(rawSpotLattice.spotGridDims.y);
@@ -4640,12 +5128,98 @@ if (fineTiming) {
                     static_cast<double>(iddParams.spotDist) * static_cast<double>(iddParams.spotDist);
                 const double ratioNucToRay =
                     (sumRayWeight > 0.0) ? (sumNucRayWeight / sumRayWeight) : 0.0;
+                float nucWeightMin = std::numeric_limits<float>::infinity();
+                float nucWeightMax = -std::numeric_limits<float>::infinity();
+                if (energyData != nullptr &&
+                    energyData->nEnergySamples > 0 &&
+                    floorIdxUsed >= 0 &&
+                    floorIdxUsed < energyData->nEnergies &&
+                    energyData->nucWeightMatrix.size() >=
+                        static_cast<size_t>(energyData->nEnergySamples) * static_cast<size_t>(energyData->nEnergies)) {
+                    const size_t rowOff =
+                        static_cast<size_t>(floorIdxUsed) * static_cast<size_t>(energyData->nEnergySamples);
+                    for (int s = 0; s < energyData->nEnergySamples; ++s) {
+                        const float w = energyData->nucWeightMatrix[rowOff + static_cast<size_t>(s)];
+                        if (!hostIsFinite(w)) continue;
+                        nucWeightMin = std::min(nucWeightMin, w);
+                        nucWeightMax = std::max(nucWeightMax, w);
+                    }
+                }
                 std::cout << "  [RTD_HALO_ENERGY] layer=" << layerIdx
                           << " sum_rayWeight=" << sumRayWeight
                           << " sum_nucRayWeight=" << sumNucRayWeight
                           << " spotDistSq=" << spotDistSq
                           << " nuc/ray_should_be_1=" << ratioNucToRay
+                          << " expectedNucSourceScale="
+                          << ((spotDistSq > 0.0) ? (sumNucRayWeight / spotDistSq) : 0.0)
+                          << " expectedNucVsRayScale="
+                          << ((sumRayWeight > 0.0 && spotDistSq > 0.0)
+                                  ? (sumNucRayWeight / (sumRayWeight * spotDistSq))
+                                  : 0.0)
+                          << " nucWeightRow=" << floorIdxUsed;
+                if (hostIsFinite(nucWeightMin) && hostIsFinite(nucWeightMax)) {
+                    std::cout << " nucWeightRange=(" << nucWeightMin << "," << nucWeightMax << ")";
+                } else {
+                    std::cout << " nucWeightRange=(unavailable)";
+                }
+                std::cout
+                          << " placementSource=decoded_idbeamxy_rasterized"
+                          << " physicalPBDelta=(" << physicalSpotDeltaForLayer.x << "," << physicalSpotDeltaForLayer.y << ")"
+                          << " haloGridDelta=(" << layerHaloPlan->spotDelta.x << "," << layerHaloPlan->spotDelta.y << ")"
                           << std::endl;
+            }
+#endif
+
+#ifdef NUCLEAR_CORR
+            if ((rtdInputAuditEnabled() || haloAudit) && runtimeNuclearEnabled && layerHaloPlan != nullptr &&
+                isRepresentativeLayer(static_cast<int>(layerIdx), numLayers)) {
+                std::vector<float> hNucIdd(nucRaySize);
+                std::vector<float> hNucRSigma(nucRaySize);
+                std::vector<float> hRayIddForCompare(raySize);
+                copyToHost(hNucIdd.data(), devNucIdd, hNucIdd.size() * sizeof(float));
+                copyToHost(hNucRSigma.data(), devNucRSigmaEff, hNucRSigma.size() * sizeof(float));
+                copyToHost(hRayIddForCompare.data(), devRayIdd, hRayIddForCompare.size() * sizeof(float));
+                const std::string nucIddStage = "NUC_IDD layer=" + std::to_string(layerIdx);
+                const std::string nucSigmaStage = "NUC_RSIGMA layer=" + std::to_string(layerIdx);
+                const FloatSummaryStats rayIddCompareStats = summarizeFloatVector(hRayIddForCompare, 1.0e-12f);
+                const FloatSummaryStats nucIddStats = summarizeFloatVector(hNucIdd, 1.0e-12f);
+                int nucPositiveSigmaFinite = 0;
+                int nucPositiveSigmaBad = 0;
+                const size_t nucCompareN = std::min(hNucIdd.size(), hNucRSigma.size());
+                for (size_t i = 0; i < nucCompareN; ++i) {
+                    if (!(hNucIdd[i] > 0.0f)) continue;
+                    if (hostIsFinite(hNucRSigma[i]) && hNucRSigma[i] > 0.0f) {
+                        ++nucPositiveSigmaFinite;
+                    } else {
+                        ++nucPositiveSigmaBad;
+                    }
+                }
+                std::cout << "  [RTD_HALO_IDD_COMPARE] layer=" << layerIdx
+                          << " primaryIddSum=" << rayIddCompareStats.sumFinite
+                          << " nucIddSum=" << nucIddStats.sumFinite
+                          << " nucToPrimaryIddSumRatio="
+                          << ((rayIddCompareStats.sumFinite > 0.0)
+                                  ? (nucIddStats.sumFinite / rayIddCompareStats.sumFinite)
+                                  : 0.0)
+                          << " nucIddNonzero=" << nucIddStats.countGT
+                          << " primaryIddNonzero=" << rayIddCompareStats.countGT
+                          << " nucRSigmaFiniteWhereIddPositive=" << nucPositiveSigmaFinite
+                          << " nucRSigmaBadWhereIddPositive=" << nucPositiveSigmaBad
+                          << std::endl;
+                printStageVolumeSummary(nucIddStage,
+                                        hNucIdd,
+                                        layerHaloPlan->nucRayDims.x,
+                                        layerHaloPlan->nucRayDims.y,
+                                        tracerSteps,
+                                        1.0e-12f,
+                                        "step");
+                printStageVolumeSummary(nucSigmaStage,
+                                        hNucRSigma,
+                                        layerHaloPlan->nucRayDims.x,
+                                        layerHaloPlan->nucRayDims.y,
+                                        tracerSteps,
+                                        1.0e-12f,
+                                        "step");
             }
 #endif
 
@@ -5240,7 +5814,8 @@ if (fineTiming) {
             }
 #endif
 
-            const bool auditRepresentativeLayer = rtdInputAuditEnabled() && isRepresentativeLayer(layerIdx, numLayers);
+            const bool auditRepresentativeLayer =
+                (rtdInputAuditEnabled() || haloAudit) && isRepresentativeLayer(layerIdx, numLayers);
             std::vector<float> hSuperpInputIdd;
             std::vector<float> hSuperpInputRSigma;
             std::vector<int> superpSlices;
@@ -5414,6 +5989,30 @@ if (fineTiming) {
                                             bevDoseZ,
                                             superpSlices,
                                             "step");
+#ifdef NUCLEAR_CORR
+                if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
+                    const size_t bevNucDoseElems = static_cast<size_t>(bevNucDoseX) *
+                                                   static_cast<size_t>(bevNucDoseY) *
+                                                   static_cast<size_t>(bevNucDoseZ);
+                    std::vector<float> hBevNucDose(bevNucDoseElems);
+                    copyToHost(hBevNucDose.data(), devBevNucDose, bevNucDoseElems * sizeof(float));
+                    printStageVolumeSummary("SUPERP_OUTPUT_NUC_BEV",
+                                            hBevNucDose,
+                                            bevNucDoseX,
+                                            bevNucDoseY,
+                                            bevNucDoseZ,
+                                            1.0e-12f,
+                                            "step");
+                    printVolumePeakLocationSummary("SUPERP_OUTPUT_NUC_BEV",
+                                                   hBevNucDose,
+                                                   bevNucDoseX,
+                                                   bevNucDoseY,
+                                                   bevNucDoseZ,
+                                                   "step",
+                                                   -maxSuperpR,
+                                                   -maxSuperpR);
+                }
+#endif
 
                 const VolumePeakStats inputPeak = summarizeVolumePeak(hSuperpInputIdd, superpRayDimsX, superpRayDimsY, tracerSteps);
                 const VolumePeakStats outputPeak = summarizeVolumePeak(hBevPrimDose, bevDoseX, bevDoseY, bevDoseZ);
@@ -5523,8 +6122,14 @@ if (fineTiming) {
                 -float(maxSuperpR),
                 float(superpRayDimsY + maxSuperpR - 1)
             };
+            // Transfer launch support must be conservative. `beamFirstInside`
+            // is a tracer/material diagnostic and can be one step deeper than
+            // the first shallow voxels that still sample nonzero BEV dose after
+            // fan projection. Keep the BEV sampling shift unchanged; only widen
+            // the dose-box launch lower bound.
+            const int transferFirstStep = 0;
             const float zVals[2] = {
-                float(beamFirstInside),
+                float(transferFirstStep),
                 float(beamFirstCalculatedPassive - 1)
             };
 
@@ -5591,6 +6196,7 @@ if (fineTiming) {
                 std::cout << "[TRANSFER_AUDIT] layer=" << layerIdx
                           << " energy=" << energy
                           << " beamFirstInside=" << beamFirstInside
+                          << " transferFirstStep=" << transferFirstStep
                           << " beamFirstCalculatedPassive=" << beamFirstCalculatedPassive
                           << " maxSuperpR=" << maxSuperpR
                           << std::endl;
@@ -5758,6 +6364,95 @@ if (fineTiming) {
                     roundUpTo(std::max(nucMaxIdx.x - nucStartIdx.x + 1, 0), transfBlockDim.x) / transfBlockDim.x,
                     roundUpTo(std::max(nucMaxIdx.y - nucStartIdx.y + 1, 0), transfBlockDim.y) / transfBlockDim.y
                 );
+                const bool nuclearTransferAuditLayer =
+                    (transferAudit || haloAudit) && isRepresentativeLayer(static_cast<int>(layerIdx), numLayers);
+                std::vector<float> hDoseBeforeNuc;
+                if (nuclearTransferAuditLayer) {
+                    hDoseBeforeNuc.resize(doseSize);
+                    copyToHost(hDoseBeforeNuc.data(), devDoseVol, doseSize * sizeof(float));
+                    std::cout << "[TRANSFER_AUDIT][NUC] layer=" << layerIdx
+                              << " energy=" << energy
+                              << " startIdx=(" << nucStartIdx.x << "," << nucStartIdx.y << "," << nucStartIdx.z << ")"
+                              << " maxIdx=(" << nucMaxIdx.x << "," << nucMaxIdx.y << "," << nucMaxIdx.z << ")"
+                              << " grid=(" << nucTransfGridDim.x << "," << nucTransfGridDim.y << ")"
+                              << " nucMinPoint=(" << nucMinPoint.x << "," << nucMinPoint.y << "," << nucMinPoint.z << ")"
+                              << " nucMaxPoint=(" << nucMaxPoint.x << "," << nucMaxPoint.y << "," << nucMaxPoint.z << ")"
+                              << " nucBevDims=(" << bevNucDoseX << "," << bevNucDoseY << "," << bevNucDoseZ << ")"
+                              << " haloGridDelta=(" << layerHaloPlan->spotDelta.x << "," << layerHaloPlan->spotDelta.y << ")"
+                              << " haloOffset=(" << layerHaloPlan->spotOffset.x << "," << layerHaloPlan->spotOffset.y << ")"
+                              << " physicalPBDelta=(" << physicalSpotDeltaForLayer.x << "," << physicalSpotDeltaForLayer.y << ")"
+                              << " beamFirstInside=" << beamFirstInside
+                              << " transferFirstStep=" << transferFirstStep
+                              << " beamFirstCalculatedPassive=" << beamFirstCalculatedPassive
+                              << " willLaunch="
+                              << ((nucStartIdx.x <= nucMaxIdx.x && nucStartIdx.y <= nucMaxIdx.y &&
+                                   nucStartIdx.z <= nucMaxIdx.z && nucTransfGridDim.x > 0 &&
+                                   nucTransfGridDim.y > 0) ? 1 : 0)
+                              << std::endl;
+
+                    std::cout << "  [TRANSFER_AUDIT][NUC] normDist=("
+                              << nucTransferParams.normDist.x << "," << nucTransferParams.normDist.y << ")"
+                              << " globalOffset=(" << nucTransferParams.globalOffset.x << ","
+                              << nucTransferParams.globalOffset.y << "," << nucTransferParams.globalOffset.z << ")"
+                              << std::endl;
+                    const vec3f nucBasisDoseOrigin = make_vec3f(float((nucStartIdx.x + nucMaxIdx.x) / 2),
+                                                                float((nucStartIdx.y + nucMaxIdx.y) / 2),
+                                                                float((nucStartIdx.z + nucMaxIdx.z) / 2));
+                    const vec3f nucFanAtOrigin = doseIdxToNucRayIdx.transformPoint(nucBasisDoseOrigin);
+                    const vec3f nucFanDx = doseIdxToNucRayIdx.transformPoint(nucBasisDoseOrigin + make_vec3f(1.0f, 0.0f, 0.0f)) - nucFanAtOrigin;
+                    const vec3f nucFanDy = doseIdxToNucRayIdx.transformPoint(nucBasisDoseOrigin + make_vec3f(0.0f, 1.0f, 0.0f)) - nucFanAtOrigin;
+                    const vec3f nucFanDz = doseIdxToNucRayIdx.transformPoint(nucBasisDoseOrigin + make_vec3f(0.0f, 0.0f, 1.0f)) - nucFanAtOrigin;
+                    std::cout << "  [TRANSFER_AUDIT][NUC] basisProbe doseOrigin=("
+                              << nucBasisDoseOrigin.x << "," << nucBasisDoseOrigin.y << "," << nucBasisDoseOrigin.z << ")"
+                              << " -> nucBev=(" << nucFanAtOrigin.x << "," << nucFanAtOrigin.y << "," << nucFanAtOrigin.z << ")"
+                              << std::endl;
+                    std::cout << "  [TRANSFER_AUDIT][NUC] doseAxisResponse dX=("
+                              << nucFanDx.x << "," << nucFanDx.y << "," << nucFanDx.z << ")"
+                              << " dY=(" << nucFanDy.x << "," << nucFanDy.y << "," << nucFanDy.z << ")"
+                              << " dZ=(" << nucFanDz.x << "," << nucFanDz.y << "," << nucFanDz.z << ")"
+                              << std::endl;
+
+                    auto nucProbe = [&](int i, int j, int k) {
+                        TransferParamStructDiv3 p = nucTransferParams;
+                        p.init(i, j);
+                        const vec3f fan = p.getFanIdx(k);
+                        const vec3f tex = fan + make_vec3f(HALF, HALF, HALF);
+                        const bool fanIn = (fan.x >= 0.0f && fan.x < float(bevNucDoseX) &&
+                                            fan.y >= 0.0f && fan.y < float(bevNucDoseY) &&
+                                            fan.z >= 0.0f && fan.z < float(bevNucDoseZ));
+                        const bool texIn = (tex.x >= 0.0f && tex.x < float(bevNucDoseX) &&
+                                            tex.y >= 0.0f && tex.y < float(bevNucDoseY) &&
+                                            tex.z >= 0.0f && tex.z < float(bevNucDoseZ));
+                        std::cout << "    [PROBE][NUC] doseIdx=(" << i << "," << j << "," << k << ")"
+                                  << " -> nucBevIdx=(" << fan.x << "," << fan.y << "," << fan.z << ")"
+                                  << " texIdx=(" << tex.x << "," << tex.y << "," << tex.z << ") "
+                                  << (texIn ? "IN" : "OUT")
+                                  << " rawFanIn=" << (fanIn ? 1 : 0)
+                                  << std::endl;
+                    };
+                    const int ni0 = nucStartIdx.x;
+                    const int nj0 = nucStartIdx.y;
+                    const int nic = (nucStartIdx.x + nucMaxIdx.x) / 2;
+                    const int njc = (nucStartIdx.y + nucMaxIdx.y) / 2;
+                    const int ni1 = nucMaxIdx.x;
+                    const int nj1 = nucMaxIdx.y;
+                    const int nkA = std::max(0, nucStartIdx.z);
+                    const int nkB = std::max(0, nucMaxIdx.z);
+                    const int nkMid = std::max(0, (nucStartIdx.z + nucMaxIdx.z) / 2);
+                    nucProbe(ni0, nj0, nkA);
+                    nucProbe(nic, njc, nkA);
+                    nucProbe(ni1, nj1, nkA);
+                    if (nkMid != nkA && nkMid != nkB) {
+                        nucProbe(ni0, nj0, nkMid);
+                        nucProbe(nic, njc, nkMid);
+                        nucProbe(ni1, nj1, nkMid);
+                    }
+                    if (nkB != nkA) {
+                        nucProbe(ni0, nj0, nkB);
+                        nucProbe(nic, njc, nkB);
+                        nucProbe(ni1, nj1, nkB);
+                    }
+                }
 
                 if (nucStartIdx.x <= nucMaxIdx.x && nucStartIdx.y <= nucMaxIdx.y && nucStartIdx.z <= nucMaxIdx.z &&
                     nucTransfGridDim.x > 0 && nucTransfGridDim.y > 0) {
@@ -5772,6 +6467,48 @@ if (fineTiming) {
                     checkCudaErrors(cudaDeviceSynchronize());
                 } else if (fineTiming) {
                     std::cout << "  [TRANSF] Skipping nucTransfDiv because projected halo dose box is empty" << std::endl;
+                }
+
+                if (nuclearTransferAuditLayer) {
+                    std::vector<float> hDoseAfterNuc(doseSize);
+                    copyToHost(hDoseAfterNuc.data(), devDoseVol, doseSize * sizeof(float));
+                    const FloatSummaryStats beforeStats = summarizeFloatVector(hDoseBeforeNuc, 1.0e-12f);
+                    const FloatSummaryStats afterStats = summarizeFloatVector(hDoseAfterNuc, 1.0e-12f);
+                    double deltaSum = 0.0;
+                    float maxDelta = -std::numeric_limits<float>::infinity();
+                    float minDelta = std::numeric_limits<float>::infinity();
+                    int positiveDeltaCount = 0;
+                    int negativeDeltaCount = 0;
+                    int finiteDeltaCount = 0;
+                    const size_t compareN = std::min(hDoseBeforeNuc.size(), hDoseAfterNuc.size());
+                    for (size_t idx = 0; idx < compareN; ++idx) {
+                        const float beforeV = hDoseBeforeNuc[idx];
+                        const float afterV = hDoseAfterNuc[idx];
+                        if (!hostIsFinite(beforeV) || !hostIsFinite(afterV)) continue;
+                        const float d = afterV - beforeV;
+                        ++finiteDeltaCount;
+                        deltaSum += static_cast<double>(d);
+                        maxDelta = std::max(maxDelta, d);
+                        minDelta = std::min(minDelta, d);
+                        if (d > 1.0e-12f) ++positiveDeltaCount;
+                        if (d < -1.0e-12f) ++negativeDeltaCount;
+                    }
+                    if (finiteDeltaCount == 0) {
+                        maxDelta = 0.0f;
+                        minDelta = 0.0f;
+                    }
+                    std::cout << "[TRANSFER_AUDIT][NUC_DELTA] layer=" << layerIdx
+                              << " beforeSum=" << beforeStats.sumFinite
+                              << " afterSum=" << afterStats.sumFinite
+                              << " deltaSum=" << deltaSum
+                              << " beforeMax=" << beforeStats.maxFinite
+                              << " afterMax=" << afterStats.maxFinite
+                              << " maxDelta=" << maxDelta
+                              << " minDelta=" << minDelta
+                              << " positiveDeltaCount=" << positiveDeltaCount
+                              << " negativeDeltaCount=" << negativeDeltaCount
+                              << " finiteDeltaCount=" << finiteDeltaCount
+                              << std::endl;
                 }
             }
 #endif
@@ -5888,6 +6625,7 @@ if (fineTiming) {
         std::vector<float> hDoseVol(doseSize);
         copyToHost(hDoseVol.data(), devDoseVol, doseSize * sizeof(float));
         printStageVolumeSummary("DOSE_PRE_WRITEBACK", hDoseVol, doseDims.x, doseDims.y, doseDims.z, 1.0e-12f, "z");
+        printDoseGridSupportSummary("DOSE_PRE_WRITEBACK", hDoseVol, doseDims.x, doseDims.y, doseDims.z, 1.0e-12f);
     }
     
     // Copy accumulated dose from device to host

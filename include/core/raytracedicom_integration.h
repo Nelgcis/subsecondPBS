@@ -59,6 +59,7 @@ struct RTDBeamSettings {
     std::vector<float> spotWeights;        // number_particle / weight per spot, length N
     std::vector<float> spotBeamDirections; // beam_dir flattened as [N][3], optional but preferred
     std::vector<float> layerLongitudinalCutoffs; // CarbonPBS longitudal_cutoff reduced to one value per energy layer
+    std::vector<float2> layerSpotDeltas;   // explicit physical PB spacing per layer, in gantry mm
 
     // Preferred direct import of CarbonPBS water_equivalence.
     // Header layout follows [depth_start, depth_step, depth_n,

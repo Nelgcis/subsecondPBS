@@ -29,6 +29,13 @@ bool rtdPerfProfileEnabled() {
     return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
 }
 
+bool rtdHaloAuditEnabled() {
+    const char* v = std::getenv("RTD_HALO_AUDIT");
+    if (!v) return false;
+    const std::string s(v);
+    return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
+}
+
 #define LAUNCH_SUPERP_KERNEL(R) \
     if (batchedPrimTileRadCtrs[R] > 0) { \
         kernelSuperposition<R><<<batchedPrimTileRadCtrs[R], superpBlockDim>>>( \
@@ -887,12 +894,17 @@ void performNuclearTileBasedSuperposition(float* devIdd,
     int totalTiles = 0;
     for (int rad = 0; rad <= kMaxSuperpR; ++rad) totalTiles += tileRadCtrs[rad];
 
-    if (rtdVerboseFineTiming()) {
+    if (rtdVerboseFineTiming() || rtdHaloAuditEnabled()) {
         std::cout << "  Nuclear superposition tile summary: totalTiles=" << totalTiles
                   << ", layerMaxSuperpR=" << layerMaxSuperpR
                   << ", rad0=" << tileRadCtrs[0]
                   << ", rad1=" << tileRadCtrs[1]
                   << ", rad2=" << tileRadCtrs[2]
+                  << ", rad4=" << tileRadCtrs[4]
+                  << ", rad8=" << tileRadCtrs[8]
+                  << ", rad16=" << tileRadCtrs[16]
+                  << ", rad24=" << tileRadCtrs[24]
+                  << ", rad32=" << tileRadCtrs[32]
                   << std::endl;
     }
 
@@ -906,7 +918,7 @@ void performNuclearTileBasedSuperposition(float* devIdd,
         }
     }
 
-    if (rtdVerboseFineTiming()) {
+    if (rtdVerboseFineTiming() || rtdHaloAuditEnabled()) {
         std::cout << "  Nuclear superposition batched launches:";
         for (int r = 0; r <= layerMaxSuperpR; ++r) {
             if (batchedTileRadCtrs[r] > 0) {
