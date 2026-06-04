@@ -31,4 +31,6 @@ __host__ __device__ TransferParamStructDiv3::TransferParamStructDiv3(
         delta.z * imIdxToFanIdx.getSourceDist().x,
         delta.z * imIdxToFanIdx.getSourceDist().y
     );
+    avgSourceDist = 0.5f * (imIdxToFanIdx.getSourceDist().x +
+                            imIdxToFanIdx.getSourceDist().y);
 }

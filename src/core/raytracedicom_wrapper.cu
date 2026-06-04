@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <sstream>
+#include <stdexcept>
 
 
 // RayTraceDicom CT image use(HU + 1000)
@@ -116,12 +117,60 @@ struct SigmaFieldStats {
     float minRSigmaEff = 0.0f;
 };
 
+struct IddSigmaInvariantStats {
+    int invalidDensity = 0;
+    int invalidCumulSp = 0;
+    int invalidVoxelWidth = 0;
+    int invalidStepVol = 0;
+    int invalidSigmaSq = 0;
+    int invalidRSigmaEff = 0;
+    int invalidMass = 0;
+    int invalidNucSigmaSq = 0;
+    int invalidNucRSigmaEff = 0;
+    int firstBadRay = -1;
+    int firstBadStep = -1;
+    float firstBadValue = 0.0f;
+    int firstBadCode = 0;
+};
+
 static inline bool hostIsNaN(float v) {
     return std::isnan(v);
 }
 
 static inline bool hostIsFinite(float v) {
     return std::isfinite(v);
+}
+
+static void requireFiniteValue(float v, const std::string& label) {
+    if (!hostIsFinite(v)) {
+        throw std::runtime_error(label + " must be finite");
+    }
+}
+
+static void requirePositiveFiniteValue(float v, const std::string& label) {
+    if (!hostIsFinite(v) || !(v > 0.0f)) {
+        std::ostringstream oss;
+        oss << label << " must be finite and positive; value=" << v;
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static void requireNonNegativeFiniteValue(float v, const std::string& label) {
+    if (!hostIsFinite(v) || v < 0.0f) {
+        std::ostringstream oss;
+        oss << label << " must be finite and non-negative; value=" << v;
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static std::string beamLayerPrefix(size_t beamIdx, int layerIdx, const char* stage) {
+    std::ostringstream oss;
+    oss << "[RTD_PHYSICS_ASSERT][" << stage << "] beamIdx=" << beamIdx;
+    if (layerIdx >= 0) {
+        oss << " layer=" << layerIdx;
+    }
+    oss << " ";
+    return oss.str();
 }
 
 static bool rtdSigmaDebugEnabled() {
@@ -187,10 +236,314 @@ static bool isRepresentativeLayer(size_t layerIdx, int numLayers) {
     return layerIdx == 0 || layerIdx == static_cast<size_t>(numLayers / 2) || layerIdx + 1 == static_cast<size_t>(numLayers);
 }
 
-static float normalizeLongitudinalCutoffToMm(float cutoff, float lenToMm) {
+static std::string lowerCopy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
+static float parsePositiveFloatEnvOrThrow(const char* envName, const char* value, const char* label) {
+    char* end = nullptr;
+    const float parsed = std::strtof(value, &end);
+    if (end == value || (end != nullptr && *end != '\0') ||
+        !std::isfinite(parsed) || !(parsed > 0.0f)) {
+        std::ostringstream oss;
+        oss << label << " has invalid " << envName << "=" << value
+            << "; expected a finite positive scale-to-mm value";
+        throw std::runtime_error(oss.str());
+    }
+    return parsed;
+}
+
+static bool resolveUnitScaleOverrideToMm(const char* unitEnvName,
+                                         const char* scaleEnvName,
+                                         const char* label,
+                                         float& outScaleToMm) {
+    const char* unitValue = std::getenv(unitEnvName);
+    const char* scaleValue = std::getenv(scaleEnvName);
+    const bool hasUnit = unitValue && unitValue[0] != '\0';
+    const bool hasScale = scaleValue && scaleValue[0] != '\0';
+    if (hasUnit && hasScale) {
+        std::ostringstream oss;
+        oss << label << " received both " << unitEnvName << " and " << scaleEnvName
+            << "; provide only one explicit unit override";
+        throw std::runtime_error(oss.str());
+    }
+    if (hasScale) {
+        outScaleToMm = parsePositiveFloatEnvOrThrow(scaleEnvName, scaleValue, label);
+        return true;
+    }
+    if (hasUnit) {
+        const std::string unit = lowerCopy(unitValue);
+        if (unit == "mm" || unit == "millimeter" || unit == "millimeters") {
+            outScaleToMm = 1.0f;
+            return true;
+        }
+        if (unit == "cm" || unit == "centimeter" || unit == "centimeters") {
+            outScaleToMm = 10.0f;
+            return true;
+        }
+        std::ostringstream oss;
+        oss << label << " has invalid " << unitEnvName << "=" << unitValue
+            << "; expected mm or cm";
+        throw std::runtime_error(oss.str());
+    }
+    return false;
+}
+
+static float resolveGeometryLengthScaleToMm(const float3& ctResolution,
+                                            const float3& doseResolution,
+                                            bool fineTiming) {
+    float overrideScale = 0.0f;
+    if (resolveUnitScaleOverrideToMm("RTD_GEOMETRY_LENGTH_UNIT",
+                                     "RTD_GEOMETRY_LENGTH_SCALE",
+                                     "geometry length unit contract",
+                                     overrideScale)) {
+        return overrideScale;
+    }
+
+    const float values[] = {
+        ctResolution.x, ctResolution.y, ctResolution.z,
+        doseResolution.x, doseResolution.y, doseResolution.z
+    };
+    float minSpacing = std::numeric_limits<float>::infinity();
+    float maxSpacing = 0.0f;
+    for (float v : values) {
+        if (!std::isfinite(v) || !(v > 0.0f)) {
+            throw std::runtime_error("geometry length unit contract received non-finite or non-positive spacing");
+        }
+        minSpacing = std::min(minSpacing, v);
+        maxSpacing = std::max(maxSpacing, v);
+    }
+
+    const bool clearlyCm = maxSpacing <= 0.3f;
+    const bool clearlyMm = minSpacing >= 1.0f;
+    if (clearlyCm) {
+        return 10.0f;
+    }
+    if (clearlyMm) {
+        return 1.0f;
+    }
+
+    std::ostringstream oss;
+    oss << "Ambiguous geometry length units from ctResolution=("
+        << ctResolution.x << "," << ctResolution.y << "," << ctResolution.z
+        << ") doseResolution=(" << doseResolution.x << "," << doseResolution.y
+        << "," << doseResolution.z << "). Set RTD_GEOMETRY_LENGTH_UNIT=mm|cm "
+        << "or RTD_GEOMETRY_LENGTH_SCALE=<scale-to-mm>.";
+    if (fineTiming) {
+        std::cout << "  [GEOMETRY_UNITS] " << oss.str() << std::endl;
+    }
+    throw std::runtime_error(oss.str());
+}
+
+static float resolveEnergyDepthScaleToMm(const RTDEnergyStruct& energyData,
+                                         bool fineTiming) {
+    float overrideScale = 0.0f;
+    if (resolveUnitScaleOverrideToMm("RTD_ENERGY_DEPTH_UNIT",
+                                     "RTD_ENERGY_DEPTH_SCALE",
+                                     "energy depth unit contract",
+                                     overrideScale)) {
+        return overrideScale;
+    }
+
+    float peakMax = 0.0f;
+    for (float v : energyData.peakDepths) {
+        if (!std::isfinite(v)) {
+            throw std::runtime_error("energy depth unit contract received non-finite peakDepth");
+        }
+        peakMax = std::max(peakMax, v);
+    }
+    if (!(peakMax > 0.0f)) {
+        throw std::runtime_error(
+            "energy depth unit contract cannot infer units because peakDepths are empty or non-positive");
+    }
+
+    const float maxEnergy = energyData.energiesPerU.empty()
+        ? 0.0f
+        : *std::max_element(energyData.energiesPerU.begin(), energyData.energiesPerU.end());
+
+    if (peakMax >= 100.0f) {
+        return 1.0f;
+    }
+    if (peakMax <= 45.0f && maxEnergy >= 120.0f) {
+        return 10.0f;
+    }
+
+    std::ostringstream oss;
+    oss << "Ambiguous energy depth table units: peakDepthMax=" << peakMax
+        << " maxEnergy=" << maxEnergy
+        << ". Set RTD_ENERGY_DEPTH_UNIT=mm|cm or "
+        << "RTD_ENERGY_DEPTH_SCALE=<scale-to-mm>.";
+    if (fineTiming) {
+        std::cout << "  [ENERGY_UNITS] " << oss.str() << std::endl;
+    }
+    throw std::runtime_error(oss.str());
+}
+
+static float normalizeLongitudinalCutoffToMm(float cutoff,
+                                             float geometryScaleToMm,
+                                             size_t beamIdx,
+                                             size_t layerIdx) {
     if (!(cutoff > 0.0f)) return 0.0f;
-    if (lenToMm > 1.0f && cutoff < 100.0f) return cutoff * 10.0f;
-    return cutoff;
+
+    float overrideScale = 0.0f;
+    if (resolveUnitScaleOverrideToMm("RTD_LONGITUDINAL_CUTOFF_UNIT",
+                                     "RTD_LONGITUDINAL_CUTOFF_SCALE",
+                                     "longitudinal cutoff unit contract",
+                                     overrideScale)) {
+        return cutoff * overrideScale;
+    }
+
+    if (std::fabs(geometryScaleToMm - 10.0f) < 1.0e-3f) {
+        if (cutoff < 100.0f) {
+            return cutoff * 10.0f;
+        }
+        std::ostringstream oss;
+        oss << "Ambiguous longitudinal cutoff units at beamIdx=" << beamIdx
+            << " layer=" << layerIdx
+            << ": cutoff=" << cutoff
+            << " while geometry is cm-like. Set RTD_LONGITUDINAL_CUTOFF_UNIT=mm|cm "
+            << "or RTD_LONGITUDINAL_CUTOFF_SCALE=<scale-to-mm>.";
+        throw std::runtime_error(oss.str());
+    }
+    if (std::fabs(geometryScaleToMm - 1.0f) < 1.0e-3f) {
+        return cutoff;
+    }
+
+    std::ostringstream oss;
+    oss << "Unsupported geometry scale for longitudinal cutoff normalization at beamIdx="
+        << beamIdx << " layer=" << layerIdx
+        << ": geometryScaleToMm=" << geometryScaleToMm;
+    throw std::runtime_error(oss.str());
+}
+
+static void validateBeamPhysicalGeometry(size_t beamIdx,
+                                         float sadMm,
+                                         const vec2f& sourceDistMm,
+                                         const vec3f& cpbResolution,
+                                         const int2& rayDims,
+                                         int tracerSteps,
+                                         float startZMm,
+                                         float stepLengthMm,
+                                         const vec3f& fanCornerMm,
+                                         const vec3f& fanDeltaMm) {
+    const std::string prefix = beamLayerPrefix(beamIdx, -1, "GEOMETRY");
+    requirePositiveFiniteValue(sadMm, prefix + "sad/sourceDist scalar");
+    requirePositiveFiniteValue(sourceDistMm.x, prefix + "sourceDist.x");
+    requirePositiveFiniteValue(sourceDistMm.y, prefix + "sourceDist.y");
+    requirePositiveFiniteValue(cpbResolution.x, prefix + "cpbResolution.x");
+    requirePositiveFiniteValue(cpbResolution.y, prefix + "cpbResolution.y");
+    requirePositiveFiniteValue(cpbResolution.z, prefix + "cpbResolution.z");
+    if (rayDims.x <= 0 || rayDims.y <= 0 || tracerSteps <= 0) {
+        std::ostringstream oss;
+        oss << prefix << "ray/tracer dimensions must be positive; rayDims=("
+            << rayDims.x << "," << rayDims.y << ") tracerSteps=" << tracerSteps;
+        throw std::runtime_error(oss.str());
+    }
+    requireFiniteValue(startZMm, prefix + "startZ");
+    requirePositiveFiniteValue(stepLengthMm, prefix + "stepLength");
+    requireFiniteValue(fanCornerMm.x, prefix + "fanCorner.x");
+    requireFiniteValue(fanCornerMm.y, prefix + "fanCorner.y");
+    requireFiniteValue(fanCornerMm.z, prefix + "fanCorner.z");
+    requirePositiveFiniteValue(fanDeltaMm.x, prefix + "fanDelta.x");
+    requirePositiveFiniteValue(fanDeltaMm.y, prefix + "fanDelta.y");
+    requireFiniteValue(fanDeltaMm.z, prefix + "fanDelta.z");
+    if (!(fanDeltaMm.z < 0.0f)) {
+        std::ostringstream oss;
+        oss << prefix << "fanDelta.z must march downstream as a negative step; value="
+            << fanDeltaMm.z;
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static void validateConvolutionGeometry(size_t beamIdx,
+                                        int layerIdx,
+                                        float entryZMm,
+                                        const vec2f& sourceDistMm,
+                                        const float2& pxSpMult,
+                                        const uint3& spotGridDims,
+                                        const float3& spotDelta,
+                                        const vec3f& cpbResolution,
+                                        const int2& rayDims) {
+    const std::string prefix = beamLayerPrefix(beamIdx, layerIdx, "CONV");
+    requireFiniteValue(entryZMm, prefix + "entryZ");
+    requirePositiveFiniteValue(sourceDistMm.x, prefix + "sourceDist.x");
+    requirePositiveFiniteValue(sourceDistMm.y, prefix + "sourceDist.y");
+    requirePositiveFiniteValue(pxSpMult.x, prefix + "pxSpMult.x");
+    requirePositiveFiniteValue(pxSpMult.y, prefix + "pxSpMult.y");
+    requirePositiveFiniteValue(spotDelta.x, prefix + "spotDelta.x");
+    requirePositiveFiniteValue(spotDelta.y, prefix + "spotDelta.y");
+    requirePositiveFiniteValue(cpbResolution.x, prefix + "rayDelta.x");
+    requirePositiveFiniteValue(cpbResolution.y, prefix + "rayDelta.y");
+    if (spotGridDims.x == 0 || spotGridDims.y == 0 ||
+        rayDims.x <= 0 || rayDims.y <= 0) {
+        std::ostringstream oss;
+        oss << prefix << "spot/ray grid dimensions must be positive; spotDims=("
+            << spotGridDims.x << "," << spotGridDims.y
+            << ") rayDims=(" << rayDims.x << "," << rayDims.y << ")";
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static void validateIddSigmaPhysicalParams(size_t beamIdx,
+                                           int layerIdx,
+                                           const FillIddAndSigmaParams& params) {
+    const std::string prefix = beamLayerPrefix(beamIdx, layerIdx, "IDD_SIGMA");
+    requireFiniteValue(params.energyIdx, prefix + "energyIdx");
+    requirePositiveFiniteValue(params.energyScaleFact, prefix + "energyScaleFact");
+    requirePositiveFiniteValue(params.peakDepth, prefix + "peakDepth");
+    requirePositiveFiniteValue(params.getRangeStopDepth(), prefix + "rangeStopDepth");
+    requireNonNegativeFiniteValue(params.entrySigmaSq, prefix + "entrySigmaSq");
+    requirePositiveFiniteValue(params.stepLength, prefix + "stepLength");
+    requirePositiveFiniteValue(params.dist.x, prefix + "dist.x");
+    requirePositiveFiniteValue(params.dist.y, prefix + "dist.y");
+    requirePositiveFiniteValue(params.delta.x, prefix + "delta.x");
+    requirePositiveFiniteValue(params.delta.y, prefix + "delta.y");
+    requireFiniteValue(params.delta.z, prefix + "delta.z");
+    if (!(params.delta.z < 0.0f)) {
+        std::ostringstream oss;
+        oss << prefix << "delta.z must be negative; value=" << params.delta.z;
+        throw std::runtime_error(oss.str());
+    }
+    requireFiniteValue(params.corner.z, prefix + "corner.z");
+    requirePositiveFiniteValue(params.spotDist, prefix + "spotDist");
+
+    if (!(params.first <= params.afterLast)) {
+        std::ostringstream oss;
+        oss << prefix << "step window is invalid: first=" << params.first
+            << " afterLast=" << params.afterLast;
+        throw std::runtime_error(oss.str());
+    }
+    if (params.first == params.afterLast) {
+        requireFiniteValue(params.sigmaSqAirLin, prefix + "sigmaSqAirLin");
+        requireFiniteValue(params.sigmaSqAirQuad, prefix + "sigmaSqAirQuad");
+        return;
+    }
+
+    requireFiniteValue(params.sigmaSqAirLin, prefix + "sigmaSqAirLin");
+    requireFiniteValue(params.sigmaSqAirQuad, prefix + "sigmaSqAirQuad");
+
+    for (unsigned int step = params.first; step < params.afterLast; ++step) {
+        const vec2f voxelWidth = params.voxelWidth(step);
+        const float stepVol = params.stepVol(step);
+        const float incDiv =
+            params.sigmaSqAirLin +
+            (2.0f * static_cast<float>(step) - 1.0f) * params.sigmaSqAirQuad;
+        if (!hostIsFinite(voxelWidth.x) || !(voxelWidth.x > 0.0f) ||
+            !hostIsFinite(voxelWidth.y) || !(voxelWidth.y > 0.0f) ||
+            !hostIsFinite(stepVol) || !(stepVol > 0.0f) ||
+            !hostIsFinite(incDiv)) {
+            std::ostringstream oss;
+            oss << prefix << "invalid step invariant at step=" << step
+                << " voxelWidth=(" << voxelWidth.x << "," << voxelWidth.y << ")"
+                << " stepVol=" << stepVol
+                << " incDiv=" << incDiv
+                << " activeWindow=[" << params.first << "," << params.afterLast << ")";
+            throw std::runtime_error(oss.str());
+        }
+    }
 }
 
 static SigmaFieldStats summarizeSigmaField(const std::vector<float>& rayIdd,
@@ -284,6 +637,159 @@ static FloatSummaryStats summarizeFloatVector(const std::vector<float>& v, float
         s.minPositive = 0.0f;
     }
     return s;
+}
+
+static std::string finiteSentryPrefix(const std::string& stageName,
+                                      size_t beamIdx,
+                                      int layerIdx) {
+    std::ostringstream oss;
+    oss << "[RTD_FINITE_ASSERT][" << stageName << "] beamIdx=" << beamIdx;
+    if (layerIdx >= 0) {
+        oss << " layer=" << layerIdx;
+    }
+    return oss.str();
+}
+
+static void assertDeviceFloatBufferFinite(const std::string& stageName,
+                                          const float* devicePtr,
+                                          size_t elemCount,
+                                          size_t beamIdx,
+                                          int layerIdx,
+                                          float gtThr) {
+    if (elemCount == 0) return;
+    const std::string prefix = finiteSentryPrefix(stageName, beamIdx, layerIdx);
+    if (devicePtr == nullptr) {
+        throw std::runtime_error(prefix + " device buffer is null");
+    }
+
+    std::vector<float> hostValues(elemCount);
+    copyToHost(hostValues.data(), devicePtr, elemCount * sizeof(float));
+    const FloatSummaryStats st = summarizeFloatVector(hostValues, gtThr);
+    if (st.countNaN > 0 || st.countInf > 0) {
+        size_t firstBadIdx = elemCount;
+        float firstBadValue = 0.0f;
+        for (size_t idx = 0; idx < elemCount; ++idx) {
+            if (!hostIsFinite(hostValues[idx])) {
+                firstBadIdx = idx;
+                firstBadValue = hostValues[idx];
+                break;
+            }
+        }
+        std::ostringstream oss;
+        oss << prefix
+            << " contains non-finite samples"
+            << " elems=" << elemCount
+            << " nan=" << st.countNaN
+            << " inf=" << st.countInf
+            << " finite=" << st.countFinite
+            << " sumFinite=" << st.sumFinite
+            << " maxFinite=" << st.maxFinite
+            << " nonzero(>" << gtThr << ")=" << st.countGT;
+        if (firstBadIdx != elemCount) {
+            oss << " firstBadIdx=" << firstBadIdx
+                << " firstBadValue=" << firstBadValue;
+        }
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static void assertDeviceIddSigmaFiniteOnActive(const std::string& stageName,
+                                               const float* iddDevicePtr,
+                                               const float* rSigmaDevicePtr,
+                                               size_t elemCount,
+                                               size_t beamIdx,
+                                               int layerIdx) {
+    if (elemCount == 0) return;
+    const std::string prefix = finiteSentryPrefix(stageName, beamIdx, layerIdx);
+    if (iddDevicePtr == nullptr || rSigmaDevicePtr == nullptr) {
+        throw std::runtime_error(prefix + " IDD/rSigmaEff device buffer is null");
+    }
+
+    std::vector<float> iddValues(elemCount);
+    std::vector<float> rSigmaValues(elemCount);
+    copyToHost(iddValues.data(), iddDevicePtr, elemCount * sizeof(float));
+    copyToHost(rSigmaValues.data(), rSigmaDevicePtr, elemCount * sizeof(float));
+
+    const FloatSummaryStats iddStats = summarizeFloatVector(iddValues, 1.0e-12f);
+    if (iddStats.countNaN > 0 || iddStats.countInf > 0) {
+        std::ostringstream oss;
+        oss << prefix
+            << " IDD contains non-finite samples"
+            << " elems=" << elemCount
+            << " nan=" << iddStats.countNaN
+            << " inf=" << iddStats.countInf
+            << " finite=" << iddStats.countFinite
+            << " sumFinite=" << iddStats.sumFinite
+            << " maxFinite=" << iddStats.maxFinite;
+        throw std::runtime_error(oss.str());
+    }
+
+    int activeIddCount = 0;
+    int badSigmaOnActive = 0;
+    int nonFiniteSigmaOnActive = 0;
+    int nonPositiveSigmaOnActive = 0;
+    size_t firstBadIdx = elemCount;
+    float firstBadIdd = 0.0f;
+    float firstBadSigma = 0.0f;
+    for (size_t idx = 0; idx < elemCount; ++idx) {
+        const float idd = iddValues[idx];
+        if (!(idd > 0.0f)) continue;
+        ++activeIddCount;
+        const float rSigma = rSigmaValues[idx];
+        const bool sigmaFinite = hostIsFinite(rSigma);
+        const bool sigmaPositive = rSigma > 0.0f;
+        if (!sigmaFinite || !sigmaPositive) {
+            ++badSigmaOnActive;
+            if (!sigmaFinite) ++nonFiniteSigmaOnActive;
+            if (sigmaFinite && !sigmaPositive) ++nonPositiveSigmaOnActive;
+            if (firstBadIdx == elemCount) {
+                firstBadIdx = idx;
+                firstBadIdd = idd;
+                firstBadSigma = rSigma;
+            }
+        }
+    }
+
+    if (badSigmaOnActive > 0) {
+        std::ostringstream oss;
+        oss << prefix
+            << " rSigmaEff is invalid where IDD is positive"
+            << " elems=" << elemCount
+            << " activeIdd=" << activeIddCount
+            << " badSigmaOnActive=" << badSigmaOnActive
+            << " nonFiniteSigmaOnActive=" << nonFiniteSigmaOnActive
+            << " nonPositiveSigmaOnActive=" << nonPositiveSigmaOnActive;
+        if (firstBadIdx != elemCount) {
+            oss << " firstBadIdx=" << firstBadIdx
+                << " firstBadIdd=" << firstBadIdd
+                << " firstBadRSigmaEff=" << firstBadSigma;
+        }
+        throw std::runtime_error(oss.str());
+    }
+}
+
+static void throwIddSigmaInvariantError(const std::string& stageName,
+                                        size_t beamIdx,
+                                        int layerIdx,
+                                        const IddSigmaInvariantStats& stats) {
+    std::ostringstream oss;
+    oss << "[RTD_PHYSICS_ASSERT][" << stageName << "] beamIdx=" << beamIdx
+        << " layer=" << layerIdx
+        << " invalid transport invariant"
+        << " invalidDensity=" << stats.invalidDensity
+        << " invalidCumulSp=" << stats.invalidCumulSp
+        << " invalidVoxelWidth=" << stats.invalidVoxelWidth
+        << " invalidStepVol=" << stats.invalidStepVol
+        << " invalidSigmaSq=" << stats.invalidSigmaSq
+        << " invalidRSigmaEff=" << stats.invalidRSigmaEff
+        << " invalidMass=" << stats.invalidMass
+        << " invalidNucSigmaSq=" << stats.invalidNucSigmaSq
+        << " invalidNucRSigmaEff=" << stats.invalidNucRSigmaEff
+        << " firstBadRay=" << stats.firstBadRay
+        << " firstBadStep=" << stats.firstBadStep
+        << " firstBadCode=" << stats.firstBadCode
+        << " firstBadValue=" << stats.firstBadValue;
+    throw std::runtime_error(oss.str());
 }
 
 static int totalSpotCountHost(const std::vector<int>& layerSpotCounts) {
@@ -920,6 +1426,144 @@ struct RawSpotLattice {
     std::vector<float> spotWeights;
 };
 
+struct RawSpotLayerAudit {
+    int inputSpots = 0;
+    int positiveInputSpots = 0;
+    int zeroWeightSpots = 0;
+    int activeCells = 0;
+    double inputWeightSum = 0.0;
+    double rasterizedWeightSum = 0.0;
+    float minX = INF;
+    float maxX = -INF;
+    float minY = INF;
+    float maxY = -INF;
+};
+
+static void rawSpotAuditAddDecodedBounds(RawSpotLayerAudit& audit, float x, float y) {
+    audit.minX = std::min(audit.minX, x);
+    audit.maxX = std::max(audit.maxX, x);
+    audit.minY = std::min(audit.minY, y);
+    audit.maxY = std::max(audit.maxY, y);
+}
+
+static bool rawSpotAuditCheckWeightConservation(const std::vector<RawSpotLayerAudit>& layerAudits,
+                                                const std::string& sourceTag,
+                                                std::string& failureReason) {
+    double totalInput = 0.0;
+    double totalRasterized = 0.0;
+    for (size_t layer = 0; layer < layerAudits.size(); ++layer) {
+        const RawSpotLayerAudit& audit = layerAudits[layer];
+        totalInput += audit.inputWeightSum;
+        totalRasterized += audit.rasterizedWeightSum;
+        const double tol = std::max(1.0e-3, std::fabs(audit.inputWeightSum) * 1.0e-5);
+        if (std::fabs(audit.rasterizedWeightSum - audit.inputWeightSum) > tol) {
+            std::ostringstream oss;
+            oss << sourceTag
+                << " layer=" << layer
+                << " raw spot lattice failed weight conservation: input="
+                << audit.inputWeightSum
+                << " rasterized=" << audit.rasterizedWeightSum
+                << " tol=" << tol;
+            failureReason = oss.str();
+            return false;
+        }
+    }
+
+    const double totalTol = std::max(1.0e-3, std::fabs(totalInput) * 1.0e-5);
+    if (std::fabs(totalRasterized - totalInput) > totalTol) {
+        std::ostringstream oss;
+        oss << sourceTag
+            << " raw spot lattice failed total weight conservation: input="
+            << totalInput
+            << " rasterized=" << totalRasterized
+            << " tol=" << totalTol;
+        failureReason = oss.str();
+        return false;
+    }
+    return true;
+}
+
+static void rawSpotAuditCountActiveCells(std::vector<RawSpotLayerAudit>& layerAudits,
+                                         const std::vector<float>& dense,
+                                         int nx,
+                                         int ny,
+                                         int numLayers) {
+    if (nx <= 0 || ny <= 0 || numLayers <= 0) return;
+    const size_t planeN = static_cast<size_t>(nx) * static_cast<size_t>(ny);
+    for (int layer = 0; layer < numLayers; ++layer) {
+        RawSpotLayerAudit& audit = layerAudits[static_cast<size_t>(layer)];
+        const size_t base = static_cast<size_t>(layer) * planeN;
+        for (size_t i = 0; i < planeN && base + i < dense.size(); ++i) {
+            const float w = dense[base + i];
+            if (hostIsFinite(w) && w > 0.0f) {
+                audit.activeCells++;
+            }
+        }
+    }
+}
+
+static void printRawSpotLatticeAudit(const char* sourceTag,
+                                     const std::vector<RawSpotLayerAudit>& layerAudits,
+                                     uint3 dims,
+                                     const float3& offset,
+                                     const float3& delta,
+                                     int skippedZeroWeightSpots) {
+    double totalInput = 0.0;
+    double totalRasterized = 0.0;
+    int totalPositiveSpots = 0;
+    int totalActiveCells = 0;
+    for (const RawSpotLayerAudit& audit : layerAudits) {
+        totalInput += audit.inputWeightSum;
+        totalRasterized += audit.rasterizedWeightSum;
+        totalPositiveSpots += audit.positiveInputSpots;
+        totalActiveCells += audit.activeCells;
+    }
+
+    const int maxLayersToPrint = 6;
+    const int numLayers = static_cast<int>(layerAudits.size());
+    std::cout << "  [RTD_SPOT_GRID_AUDIT]"
+              << " source=" << sourceTag
+              << " dims=(" << dims.x << "," << dims.y << "," << dims.z << ")"
+              << " offset=(" << offset.x << "," << offset.y << "," << offset.z << ")"
+              << " delta=(" << delta.x << "," << delta.y << "," << delta.z << ")"
+              << " positiveInputSpots=" << totalPositiveSpots
+              << " activeCells=" << totalActiveCells
+              << " totalWeightIn=" << totalInput
+              << " totalWeightRasterized=" << totalRasterized
+              << " skippedZeroWeightSpots=" << skippedZeroWeightSpots
+              << std::endl;
+
+    for (int layer = 0; layer < numLayers; ++layer) {
+        if (numLayers > maxLayersToPrint &&
+            !(layer == 0 || layer == numLayers / 2 || layer + 1 == numLayers)) {
+            continue;
+        }
+        const RawSpotLayerAudit& audit = layerAudits[static_cast<size_t>(layer)];
+        const bool haveBounds = audit.positiveInputSpots > 0 &&
+                                audit.minX <= audit.maxX &&
+                                audit.minY <= audit.maxY;
+        const double occupancy = (dims.x > 0 && dims.y > 0)
+            ? static_cast<double>(audit.activeCells) /
+                  (static_cast<double>(dims.x) * static_cast<double>(dims.y))
+            : 0.0;
+        std::cout << "    [RTD_SPOT_GRID_AUDIT] layer=" << layer
+                  << " inputSpots=" << audit.inputSpots
+                  << " positiveInputSpots=" << audit.positiveInputSpots
+                  << " zeroWeightSpots=" << audit.zeroWeightSpots
+                  << " activeCells=" << audit.activeCells
+                  << " occupancy=" << occupancy
+                  << " weightIn=" << audit.inputWeightSum
+                  << " weightRasterized=" << audit.rasterizedWeightSum;
+        if (haveBounds) {
+            std::cout << " decodedBounds=(" << audit.minX << "," << audit.maxX
+                      << "," << audit.minY << "," << audit.maxY << ")";
+        } else {
+            std::cout << " decodedBounds=none";
+        }
+        std::cout << std::endl;
+    }
+}
+
 struct HaloLatticePlan {
     bool valid = false;
     int layerIdx = -1;
@@ -958,6 +1602,8 @@ static int roundUpToMultiple(int value, int multiple) {
     if (multiple <= 1) return value;
     return ((value + multiple - 1) / multiple) * multiple;
 }
+
+
 
 // UNIT CONTRACT (must match upstream beam.getSpotIdxToGantry()):
 //   spotDelta   : mm per physical PB grid step (typically 2-10 mm)
@@ -1463,9 +2109,8 @@ static bool validateWrapperGlobalInputs(const float* ctData,
                                         const RTDBeamSettings* beamSettings,
                                         size_t numBeams,
                                         const RTDEnergyStruct* energyData) {
-    auto fail = [](const char* msg) {
-        std::cerr << "[RTD_ENTRY_ASSERT] " << msg << std::endl;
-        return false;
+    auto fail = [](const char* msg) -> bool {
+        throw std::runtime_error(std::string("[RTD_ENTRY_ASSERT] ") + msg);
     };
 
     if (ctData == nullptr) return fail("ctData must not be null");
@@ -1529,9 +2174,10 @@ static void enforceNuclearCorrectionContract(const RTDEnergyStruct* energyData,
 }
 
 static bool validateWrapperEntryBeam(const RTDBeamSettings& beam, size_t beamIdx) {
-    auto fail = [beamIdx](const std::string& msg) {
-        std::cerr << "[RTD_ENTRY_ASSERT] beamIdx=" << beamIdx << " " << msg << std::endl;
-        return false;
+    auto fail = [beamIdx](const std::string& msg) -> bool {
+        std::ostringstream oss;
+        oss << "[RTD_ENTRY_ASSERT] beamIdx=" << beamIdx << " " << msg;
+        throw std::runtime_error(oss.str());
     };
 
     if (beam.energies.empty()) return fail("beam.energies must not be empty");
@@ -1740,13 +2386,14 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
 
         const size_t denseN = static_cast<size_t>(nxRef) * static_cast<size_t>(nyRef) * static_cast<size_t>(numLayers);
         std::vector<float> dense(denseN, 0.0f);
-        double totalInputWeight = 0.0;
-        double totalRasterizedWeight = 0.0;
+        std::vector<RawSpotLayerAudit> layerAudits(static_cast<size_t>(numLayers));
 
         int offset = 0;
         for (int layer = 0; layer < numLayers; ++layer) {
             const int count = beam.layerSpotCounts[layer];
             if (count <= 0) return false;
+            RawSpotLayerAudit& layerAudit = layerAudits[static_cast<size_t>(layer)];
+            layerAudit.inputSpots = count;
             for (int i = 0; i < count; ++i) {
                 const int spotIdx = offset + i;
                 const float rawX = beam.spotPositions[spotIdx * 2 + 0];
@@ -1762,15 +2409,20 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
                 }
                 if (weight == 0.0f) {
                     out.skippedZeroWeightSpots++;
+                    layerAudit.zeroWeightSpots++;
                     continue;
                 }
-                totalInputWeight += static_cast<double>(weight);
+                layerAudit.positiveInputSpots++;
+                layerAudit.inputWeightSum += static_cast<double>(weight);
                 // CarbonPBS uses idbeamxy directly as continuous rayweq texture coordinates.
                 // Preserve that sub-texel position when rasterizing onto the dense departure
                 // plane instead of hard-flooring to the lower texel.
                 const float latticeX = rawX - 0.5f;
                 const float latticeY = rawY - 0.5f;
-                if (!rasterizeContinuousSpotToDensePlane(dense, nxRef, nyRef, layer, latticeX, latticeY, weight, &totalRasterizedWeight)) {
+                const float decodedX = oxRef + latticeX * dxRef;
+                const float decodedY = oyRef + latticeY * dyRef;
+                rawSpotAuditAddDecodedBounds(layerAudit, decodedX, decodedY);
+                if (!rasterizeContinuousSpotToDensePlane(dense, nxRef, nyRef, layer, latticeX, latticeY, weight, &layerAudit.rasterizedWeightSum)) {
                     return fail("positive-weight spot could not be rasterized onto rayweq lattice at layer=" +
                                 std::to_string(layer) + " localSpot=" + std::to_string(i) +
                                 " raw=(" + std::to_string(rawX) + "," + std::to_string(rawY) + ")" +
@@ -1781,20 +2433,24 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
             offset += count;
         }
 
+        std::string auditFailure;
+        if (!rawSpotAuditCheckWeightConservation(layerAudits, "rayweq_index", auditFailure)) {
+            return fail(auditFailure);
+        }
+        rawSpotAuditCountActiveCells(layerAudits, dense, nxRef, nyRef, numLayers);
+
         out.valid = true;
         out.spotGridDims = make_uint3(nxRef, nyRef, numLayers);
         out.spotDelta = make_float3(dxRef, dyRef, 0.0f);
         out.spotOffset = make_float3(oxRef, oyRef, 0.0f);
         out.spotWeights = std::move(dense);
         if (verbose) {
-            std::cout << "  [RTD_SPOT_GRID] rasterized onto full rayweq departure plane grid:"
-                      << " dims=(" << out.spotGridDims.x << "," << out.spotGridDims.y << "," << out.spotGridDims.z << ")"
-                      << " offset=(" << out.spotOffset.x << "," << out.spotOffset.y << "," << out.spotOffset.z << ")"
-                      << " delta=(" << out.spotDelta.x << "," << out.spotDelta.y << "," << out.spotDelta.z << ")"
-                      << " weightIn=" << totalInputWeight
-                      << " weightRasterized=" << totalRasterizedWeight
-                      << " skippedZeroWeightSpots=" << out.skippedZeroWeightSpots
-                      << "\n";
+            printRawSpotLatticeAudit("rayweq_index",
+                                     layerAudits,
+                                     out.spotGridDims,
+                                     out.spotOffset,
+                                     out.spotDelta,
+                                     out.skippedZeroWeightSpots);
         }
         return true;
     }
@@ -1848,11 +2504,14 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
 
     const size_t denseN = static_cast<size_t>(nxRef) * static_cast<size_t>(nyRef) * static_cast<size_t>(numLayers);
     std::vector<float> dense(denseN, 0.0f);
+    std::vector<RawSpotLayerAudit> layerAudits(static_cast<size_t>(numLayers));
 
     int offset = 0;
     for (int layer = 0; layer < numLayers; ++layer) {
         const int count = beam.layerSpotCounts[layer];
         if (count <= 0) return false;
+        RawSpotLayerAudit& layerAudit = layerAudits[static_cast<size_t>(layer)];
+        layerAudit.inputSpots = count;
         for (int i = 0; i < count; ++i) {
             const int spotIdx = offset + i;
             const float rawX = beam.spotPositions[spotIdx * 2 + 0];
@@ -1868,6 +2527,7 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
             }
             if (weight == 0.0f) {
                 out.skippedZeroWeightSpots++;
+                layerAudit.zeroWeightSpots++;
                 continue;
             }
             float x = 0.0f;
@@ -1888,11 +2548,21 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
                 return fail("positive-weight decoded spot does not align with inferred lattice phase at layer=" +
                             std::to_string(layer) + " localSpot=" + std::to_string(i));
             }
+            layerAudit.positiveInputSpots++;
+            layerAudit.inputWeightSum += static_cast<double>(weight);
+            layerAudit.rasterizedWeightSum += static_cast<double>(weight);
+            rawSpotAuditAddDecodedBounds(layerAudit, x, y);
             dense[(static_cast<size_t>(layer) * nyRef + static_cast<size_t>(iy)) * nxRef + static_cast<size_t>(ix)] +=
                 weight;
         }
         offset += count;
     }
+
+    std::string auditFailure;
+    if (!rawSpotAuditCheckWeightConservation(layerAudits, "physical_position", auditFailure)) {
+        return fail(auditFailure);
+    }
+    rawSpotAuditCountActiveCells(layerAudits, dense, nxRef, nyRef, numLayers);
 
     out.valid = true;
     out.spotGridDims = make_uint3(nxRef, nyRef, numLayers);
@@ -1900,10 +2570,12 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
     out.spotOffset = make_float3(oxRef, oyRef, 0.0f);
     out.spotWeights = std::move(dense);
     if (verbose) {
-        std::cout << "  [RTD_SPOT_GRID] dims=(" << out.spotGridDims.x << "," << out.spotGridDims.y << "," << out.spotGridDims.z
-                  << ") offset=(" << out.spotOffset.x << "," << out.spotOffset.y << "," << out.spotOffset.z
-                  << ") delta=(" << out.spotDelta.x << "," << out.spotDelta.y << "," << out.spotDelta.z << ")"
-                  << " skippedZeroWeightSpots=" << out.skippedZeroWeightSpots << "\n";
+        printRawSpotLatticeAudit("physical_position",
+                                 layerAudits,
+                                 out.spotGridDims,
+                                 out.spotOffset,
+                                 out.spotDelta,
+                                 out.skippedZeroWeightSpots);
     }
     return true;
 }
@@ -2356,6 +3028,217 @@ static bool estimateVirtualSourceDistancesFromSpots(const RTDBeamSettings& beam,
     return sadX > 0.0f || sadY > 0.0f;
 }
 
+struct WeqLateralSamplingAudit {
+    int linearInsideRays = 0;
+    int linearOutsideRays = 0;
+    int nearestInsideRays = 0;
+    int nearestOutsideRays = 0;
+    int supportMismatchRays = 0;
+    int uniqueNearestX = 0;
+    int uniqueNearestY = 0;
+    double fracAbsSumX = 0.0;
+    double fracAbsSumY = 0.0;
+    float maxNearestFracX = 0.0f;
+    float maxNearestFracY = 0.0f;
+    int deltaSamples = 0;
+    double deltaAbsSum = 0.0;
+    float maxAbsDelta = 0.0f;
+};
+
+static inline int clampHostInt(int v, int lo, int hi) {
+    return std::max(lo, std::min(hi, v));
+}
+
+static inline bool weqLinearSupportContains(float f, int n) {
+    return n > 0 && hostIsFinite(f) && f >= -0.5f && f <= (static_cast<float>(n) - 0.5f);
+}
+
+static inline float sampleWeqVolumeNearestHost(const float* weqVolume,
+                                               int weqNy,
+                                               int weqStoredSteps,
+                                               int ix,
+                                               int iy,
+                                               int k) {
+    const size_t idx =
+        (static_cast<size_t>(ix) * static_cast<size_t>(weqNy) + static_cast<size_t>(iy)) *
+            static_cast<size_t>(weqStoredSteps) +
+        static_cast<size_t>(k);
+    return weqVolume[idx];
+}
+
+static inline float sampleWeqVolumeLinearXYHost(const float* weqVolume,
+                                                int weqNx,
+                                                int weqNy,
+                                                int weqStoredSteps,
+                                                float fx,
+                                                float fy,
+                                                int k) {
+    const int ix0 = static_cast<int>(std::floor(fx));
+    const int iy0 = static_cast<int>(std::floor(fy));
+    const int ix1 = ix0 + 1;
+    const int iy1 = iy0 + 1;
+    const float tx = fx - static_cast<float>(ix0);
+    const float ty = fy - static_cast<float>(iy0);
+
+    const int cx0 = clampHostInt(ix0, 0, weqNx - 1);
+    const int cx1 = clampHostInt(ix1, 0, weqNx - 1);
+    const int cy0 = clampHostInt(iy0, 0, weqNy - 1);
+    const int cy1 = clampHostInt(iy1, 0, weqNy - 1);
+
+    const float v00 = sampleWeqVolumeNearestHost(weqVolume, weqNy, weqStoredSteps, cx0, cy0, k);
+    const float v10 = sampleWeqVolumeNearestHost(weqVolume, weqNy, weqStoredSteps, cx1, cy0, k);
+    const float v01 = sampleWeqVolumeNearestHost(weqVolume, weqNy, weqStoredSteps, cx0, cy1, k);
+    const float v11 = sampleWeqVolumeNearestHost(weqVolume, weqNy, weqStoredSteps, cx1, cy1, k);
+
+    const float vx0 = v00 + (v10 - v00) * tx;
+    const float vx1 = v01 + (v11 - v01) * tx;
+    return vx0 + (vx1 - vx0) * ty;
+}
+
+static WeqLateralSamplingAudit auditWeqLateralSampling(const float* weqVolume,
+                                                       int rayDimsX,
+                                                       int rayDimsY,
+                                                       int weqNx,
+                                                       int weqNy,
+                                                       int weqStoredSteps,
+                                                       int weqActiveSteps,
+                                                       float rayOriginX,
+                                                       float rayOriginY,
+                                                       float rayStepX,
+                                                       float rayStepY,
+                                                       float weqX0,
+                                                       float weqY0,
+                                                       float weqDx,
+                                                       float weqDy) {
+    WeqLateralSamplingAudit audit;
+    if (!weqVolume || rayDimsX <= 0 || rayDimsY <= 0 || weqNx <= 0 || weqNy <= 0 ||
+        weqStoredSteps <= 0 || weqActiveSteps <= 0 || !(std::fabs(weqDx) > 0.0f) ||
+        !(std::fabs(weqDy) > 0.0f)) {
+        return audit;
+    }
+
+    std::vector<unsigned char> seenX(static_cast<size_t>(weqNx), 0u);
+    std::vector<unsigned char> seenY(static_cast<size_t>(weqNy), 0u);
+    const int sampleStrideX = std::max(1, rayDimsX / 64);
+    const int sampleStrideY = std::max(1, rayDimsY / 64);
+    const int sampleStrideK = std::max(1, weqActiveSteps / 128);
+
+    for (int y = 0; y < rayDimsY; ++y) {
+        const float rayY = rayOriginY + static_cast<float>(y) * rayStepY;
+        const float fy = (rayY - weqY0) / weqDy;
+        const int nearestY = static_cast<int>(std::lround(fy));
+        const bool nearestYInside = nearestY >= 0 && nearestY < weqNy;
+        const bool linearYInside = weqLinearSupportContains(fy, weqNy);
+
+        for (int x = 0; x < rayDimsX; ++x) {
+            const float rayX = rayOriginX + static_cast<float>(x) * rayStepX;
+            const float fx = (rayX - weqX0) / weqDx;
+            const int nearestX = static_cast<int>(std::lround(fx));
+            const bool nearestXInside = nearestX >= 0 && nearestX < weqNx;
+            const bool linearXInside = weqLinearSupportContains(fx, weqNx);
+            const bool nearestInside = nearestXInside && nearestYInside;
+            const bool linearInside = linearXInside && linearYInside;
+
+            if (nearestInside) {
+                audit.nearestInsideRays++;
+                seenX[static_cast<size_t>(nearestX)] = 1u;
+                seenY[static_cast<size_t>(nearestY)] = 1u;
+            } else {
+                audit.nearestOutsideRays++;
+            }
+
+            if (linearInside) {
+                audit.linearInsideRays++;
+                const float fracX = std::fabs(fx - std::round(fx));
+                const float fracY = std::fabs(fy - std::round(fy));
+                audit.fracAbsSumX += static_cast<double>(fracX);
+                audit.fracAbsSumY += static_cast<double>(fracY);
+                audit.maxNearestFracX = std::max(audit.maxNearestFracX, fracX);
+                audit.maxNearestFracY = std::max(audit.maxNearestFracY, fracY);
+            } else {
+                audit.linearOutsideRays++;
+            }
+
+            if (nearestInside != linearInside) {
+                audit.supportMismatchRays++;
+            }
+
+            if (!nearestInside || !linearInside ||
+                (x % sampleStrideX) != 0 || (y % sampleStrideY) != 0) {
+                continue;
+            }
+            for (int k = 0; k < weqActiveSteps; k += sampleStrideK) {
+                const float nearest = sampleWeqVolumeNearestHost(
+                    weqVolume, weqNy, weqStoredSteps, nearestX, nearestY, k);
+                const float linear = sampleWeqVolumeLinearXYHost(
+                    weqVolume, weqNx, weqNy, weqStoredSteps, fx, fy, k);
+                const float delta = std::fabs(linear - nearest);
+                audit.deltaAbsSum += static_cast<double>(delta);
+                audit.maxAbsDelta = std::max(audit.maxAbsDelta, delta);
+                audit.deltaSamples++;
+            }
+        }
+    }
+
+    for (unsigned char v : seenX) {
+        if (v) audit.uniqueNearestX++;
+    }
+    for (unsigned char v : seenY) {
+        if (v) audit.uniqueNearestY++;
+    }
+    return audit;
+}
+
+__device__ __forceinline__ int clampDeviceInt(int v, int lo, int hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+__device__ __forceinline__ bool weqLinearSupportContainsDevice(float f, int n) {
+    return n > 0 && isfinite(f) && f >= -0.5f && f <= (static_cast<float>(n) - 0.5f);
+}
+
+__device__ __forceinline__ float sampleWeqVolumeValue(const float* __restrict__ weqVolume,
+                                                      int weqNy,
+                                                      int weqStoredSteps,
+                                                      int ix,
+                                                      int iy,
+                                                      int k) {
+    const size_t idx =
+        (static_cast<size_t>(ix) * static_cast<size_t>(weqNy) + static_cast<size_t>(iy)) *
+            static_cast<size_t>(weqStoredSteps) +
+        static_cast<size_t>(k);
+    return weqVolume[idx];
+}
+
+__device__ __forceinline__ float sampleWeqVolumeLinearXY(const float* __restrict__ weqVolume,
+                                                         int weqNx,
+                                                         int weqNy,
+                                                         int weqStoredSteps,
+                                                         float fx,
+                                                         float fy,
+                                                         int k) {
+    const int ix0 = static_cast<int>(floorf(fx));
+    const int iy0 = static_cast<int>(floorf(fy));
+    const int ix1 = ix0 + 1;
+    const int iy1 = iy0 + 1;
+    const float tx = fx - static_cast<float>(ix0);
+    const float ty = fy - static_cast<float>(iy0);
+
+    const int cx0 = clampDeviceInt(ix0, 0, weqNx - 1);
+    const int cx1 = clampDeviceInt(ix1, 0, weqNx - 1);
+    const int cy0 = clampDeviceInt(iy0, 0, weqNy - 1);
+    const int cy1 = clampDeviceInt(iy1, 0, weqNy - 1);
+
+    const float v00 = sampleWeqVolumeValue(weqVolume, weqNy, weqStoredSteps, cx0, cy0, k);
+    const float v10 = sampleWeqVolumeValue(weqVolume, weqNy, weqStoredSteps, cx1, cy0, k);
+    const float v01 = sampleWeqVolumeValue(weqVolume, weqNy, weqStoredSteps, cx0, cy1, k);
+    const float v11 = sampleWeqVolumeValue(weqVolume, weqNy, weqStoredSteps, cx1, cy1, k);
+
+    const float vx0 = v00 + (v10 - v00) * tx;
+    const float vx1 = v01 + (v11 - v01) * tx;
+    return vx0 + (vx1 - vx0) * ty;
+}
+
 __global__ void fillBevFromWeqVolumeKernel(
     float* __restrict__ bevDensity,
     float* __restrict__ bevCumulSp,
@@ -2394,18 +3277,19 @@ __global__ void fillBevFromWeqVolumeKernel(
     float lastKnownWeq = 0.0f;
     const float rayX = rayOriginX + static_cast<float>(x) * rayStepX;
     const float rayY = rayOriginY + static_cast<float>(y) * rayStepY;
-    const int weqX = (fabsf(weqDx) > 0.0f) ? static_cast<int>(lroundf((rayX - weqX0) / weqDx)) : -1;
-    const int weqY = (fabsf(weqDy) > 0.0f) ? static_cast<int>(lroundf((rayY - weqY0) / weqDy)) : -1;
-    const bool rayInsideWeq = (weqX >= 0 && weqX < weqNx && weqY >= 0 && weqY < weqNy);
+    const bool validWeqSpacing = (fabsf(weqDx) > 0.0f) && (fabsf(weqDy) > 0.0f);
+    const float weqFx = validWeqSpacing ? ((rayX - weqX0) / weqDx) : 0.0f;
+    const float weqFy = validWeqSpacing ? ((rayY - weqY0) / weqDy) : 0.0f;
+    const bool rayInsideWeq =
+        validWeqSpacing &&
+        weqLinearSupportContainsDevice(weqFx, weqNx) &&
+        weqLinearSupportContainsDevice(weqFy, weqNy);
 
     for (int k = 0; k < steps; ++k) {
         float weq = lastKnownWeq;
         if (rayInsideWeq && k < weqActiveSteps) {
-            const size_t weqIdx =
-                (static_cast<size_t>(weqX) * static_cast<size_t>(weqNy) + static_cast<size_t>(weqY)) *
-                    static_cast<size_t>(weqStoredSteps) +
-                static_cast<size_t>(k);
-            weq = weqVolume[weqIdx];
+            weq = sampleWeqVolumeLinearXY(
+                weqVolume, weqNx, weqNy, weqStoredSteps, weqFx, weqFy, k);
             lastKnownWeq = weq;
         }
         const float density = fmaxf(0.0f, weq - prevWeq) / safeWeqStepMm;
@@ -2511,6 +3395,255 @@ __global__ void fillFloatKernel(float* __restrict__ dst,
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n) return;
     dst[idx] = value;
+}
+
+__device__ void recordIddSigmaInvariantBad(IddSigmaInvariantStats* stats,
+                                           int code,
+                                           int rayIdx,
+                                           int step,
+                                           float value) {
+    if (stats == nullptr) return;
+    switch (code) {
+        case 1: atomicAdd(&stats->invalidDensity, 1); break;
+        case 2: atomicAdd(&stats->invalidCumulSp, 1); break;
+        case 3: atomicAdd(&stats->invalidVoxelWidth, 1); break;
+        case 4: atomicAdd(&stats->invalidStepVol, 1); break;
+        case 5: atomicAdd(&stats->invalidSigmaSq, 1); break;
+        case 6: atomicAdd(&stats->invalidRSigmaEff, 1); break;
+        case 7: atomicAdd(&stats->invalidMass, 1); break;
+        case 8: atomicAdd(&stats->invalidNucSigmaSq, 1); break;
+        case 9: atomicAdd(&stats->invalidNucRSigmaEff, 1); break;
+        default: break;
+    }
+    if (atomicCAS(&stats->firstBadCode, 0, code) == 0) {
+        stats->firstBadRay = rayIdx;
+        stats->firstBadStep = step;
+        stats->firstBadValue = value;
+    }
+}
+
+__global__ void validateIddSigmaTransportInvariantKernel(
+    const float* __restrict__ bevDensity,
+    const float* __restrict__ bevCumulSp,
+    const float* __restrict__ rayWeights,
+    const int* __restrict__ firstInside,
+    const int* __restrict__ firstOutside,
+    FillIddAndSigmaParams params,
+    int rayDimsX,
+    int rayDimsY,
+    cudaTextureObject_t rRadiationLengthTex,
+#ifdef NUCLEAR_CORR
+    bool nuclearEnabled,
+    const int* __restrict__ nucIdcs,
+    cudaTextureObject_t nucSqSigmaTex,
+#endif
+    IddSigmaInvariantStats* stats
+) {
+    const unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
+    const unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
+    if (x >= static_cast<unsigned int>(rayDimsX) || y >= static_cast<unsigned int>(rayDimsY)) return;
+
+    const unsigned int memStep = static_cast<unsigned int>(rayDimsY * rayDimsX);
+    const unsigned int idx2d = y * static_cast<unsigned int>(rayDimsX) + x;
+    const int rayIdx = static_cast<int>(idx2d);
+    unsigned int afterLast = static_cast<unsigned int>(min(firstOutside[idx2d],
+                                                          static_cast<int>(params.getAfterLastStep())));
+    const float rayWeight = rayWeights[idx2d];
+    bool beamLive = true;
+    if (rayWeight < 1.0e-6f || afterLast < params.getFirstStep()) {
+        beamLive = false;
+        afterLast = 0;
+    }
+
+    float cumulSp = 0.0f;
+    float cumulSpOld = 0.0f;
+    float incScat = 0.0f;
+    float incincScat = 0.0f;
+    float incDiv = params.getSigmaSqAirLin() +
+                   (2.0f * float(params.getFirstStep()) - 1.0f) * params.getSigmaSqAirQuad();
+    float sigmaSq = -incDiv;
+
+    float eRefSq = E_REF_SQ;
+    float sigmaDelta = SIGMA_DELTA;
+    bool suppressDistalSigmaDip = false;
+#ifdef NUCLEAR_CORR
+    if (nuclearEnabled) {
+#if NUCLEAR_CORR == SOUKUP
+        eRefSq = 190.44f;
+        sigmaDelta = 0.0f;
+#elif NUCLEAR_CORR == FLUKA
+        eRefSq = 216.09f;
+        sigmaDelta = 0.08f;
+#elif NUCLEAR_CORR == GAUSS_FIT
+        eRefSq = 169.00f;
+        sigmaDelta = 0.06f;
+        suppressDistalSigmaDip = true;
+#endif
+    }
+    int nucIdx = -1;
+    if (nuclearEnabled && nucIdcs != nullptr) {
+        nucIdx = nucIdcs[idx2d];
+    }
+#endif
+
+    unsigned int idx = idx2d + params.getFirstStep() * memStep;
+    for (unsigned int stepNo = params.getFirstStep(); stepNo < params.getAfterLastStep(); ++stepNo) {
+        if (beamLive) {
+            const float density = bevDensity[idx];
+            const float currentCumulSp = bevCumulSp[idx];
+            const vec2f voxelWidth = params.voxelWidth(stepNo);
+            const float stepVol = params.stepVol(stepNo);
+
+            if (!isfinite(density) || density < 0.0f) {
+                recordIddSigmaInvariantBad(stats, 1, rayIdx, static_cast<int>(stepNo), density);
+            }
+            if (!isfinite(currentCumulSp) || currentCumulSp < 0.0f) {
+                recordIddSigmaInvariantBad(stats, 2, rayIdx, static_cast<int>(stepNo), currentCumulSp);
+            }
+            if (!isfinite(voxelWidth.x) || !(voxelWidth.x > 0.0f) ||
+                !isfinite(voxelWidth.y) || !(voxelWidth.y > 0.0f)) {
+                recordIddSigmaInvariantBad(
+                    stats, 3, rayIdx, static_cast<int>(stepNo), 0.5f * (voxelWidth.x + voxelWidth.y));
+            }
+            if (!isfinite(stepVol) || !(stepVol > 0.0f)) {
+                recordIddSigmaInvariantBad(stats, 4, rayIdx, static_cast<int>(stepNo), stepVol);
+            }
+
+            cumulSp = currentCumulSp;
+            if (cumulSp < params.getPeakDepth()) {
+                const float residualDepth = params.getPeakDepth() - HALF * (cumulSp + cumulSpOld);
+                if (!isfinite(residualDepth) || !(residualDepth > 0.0f)) {
+                    recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), residualDepth);
+                } else {
+                    const float resE = E_COEF * __powf(residualDepth, P_INV);
+                    const float betaP = resE + 938.3f - 938.3f * 938.3f / (resE + 938.3f);
+                    const float rRl = density * tex1D<float>(
+                        rRadiationLengthTex, density * params.getRRlScale() + HALF);
+                    const float thetaSq = eRefSq / (betaP * betaP) * params.getStepLength() * rRl;
+                    if (!isfinite(rRl) || rRl < 0.0f || !isfinite(thetaSq) || thetaSq < 0.0f) {
+                        recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), thetaSq);
+                    }
+
+                    sigmaSq += incScat + incDiv;
+                    incincScat += 2.0f * thetaSq * params.getStepLength() * params.getStepLength();
+                    incScat += incincScat;
+                    incDiv += 2.0f * params.getSigmaSqAirQuad();
+                }
+            } else {
+                if (!suppressDistalSigmaDip) {
+                    sigmaSq -= 1.5f * (incScat + incDiv) * density;
+                }
+            }
+
+            if (!isfinite(sigmaSq) || sigmaSq < 0.0f) {
+                recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), sigmaSq);
+            } else {
+                const float meanWidth = 0.5f * (voxelWidth.x + voxelWidth.y);
+                const float denom = SQRT2 * (sqrtf(sigmaSq) + sigmaDelta);
+                const float rSigmaEff = meanWidth / denom;
+                if (!isfinite(rSigmaEff) || !(rSigmaEff > 0.0f)) {
+                    recordIddSigmaInvariantBad(stats, 6, rayIdx, static_cast<int>(stepNo), rSigmaEff);
+                }
+#ifdef NUCLEAR_CORR
+                if (nuclearEnabled && nucIdx >= 0 && nucSqSigmaTex != 0) {
+                    const float depthMidIdx =
+                        HALF * (cumulSp + cumulSpOld) * params.getEnergyScaleFact() + HALF;
+                    const float energyTexIdx = params.getEnergyIdx() + HALF;
+                    const float nucSqSigma = tex2D<float>(nucSqSigmaTex, depthMidIdx, energyTexIdx);
+                    const float nucSigmaSq = sigmaSq + nucSqSigma + params.getEntrySigmaSq();
+                    if (!isfinite(nucSqSigma) || !isfinite(nucSigmaSq) || !(nucSigmaSq > 0.0f)) {
+                        recordIddSigmaInvariantBad(stats, 8, rayIdx, static_cast<int>(stepNo), nucSigmaSq);
+                    } else {
+                        const float nucRSigmaEff =
+                            HALF * params.getSpotDist() * (voxelWidth.x + voxelWidth.y) /
+                            (SQRT2 * sqrtf(nucSigmaSq));
+                        if (!isfinite(nucRSigmaEff) || !(nucRSigmaEff > 0.0f)) {
+                            recordIddSigmaInvariantBad(
+                                stats, 9, rayIdx, static_cast<int>(stepNo), nucRSigmaEff);
+                        }
+                    }
+                }
+#endif
+            }
+
+#ifdef DOSE_TO_WATER
+            const float mass = (cumulSp - cumulSpOld) * stepVol;
+#else
+            const float mass = density * stepVol;
+#endif
+            if (!isfinite(mass) || mass < 0.0f) {
+                recordIddSigmaInvariantBad(stats, 7, rayIdx, static_cast<int>(stepNo), mass);
+            }
+
+            cumulSpOld = cumulSp;
+            if (cumulSp > params.getRangeStopDepth() || stepNo == afterLast) {
+                beamLive = false;
+                afterLast = stepNo;
+            }
+        }
+        idx += memStep;
+    }
+}
+
+static void validateIddSigmaTransportInvariants(
+    const float* devBevDensity,
+    const float* devBevCumulSp,
+    const float* devRayWeights,
+    const int* devBeamFirstInside,
+    const int* devFirstStepOutside,
+    const FillIddAndSigmaParams& params,
+    int rayDimsX,
+    int rayDimsY,
+    cudaTextureObject_t rRadiationLengthTex,
+#ifdef NUCLEAR_CORR
+    bool nuclearEnabled,
+    const int* devNucSpotIdx,
+    cudaTextureObject_t nucSqSigmaTex,
+#endif
+    size_t beamIdx,
+    int layerIdx) {
+    if (rayDimsX <= 0 || rayDimsY <= 0 || params.getFirstStep() >= params.getAfterLastStep()) return;
+    IddSigmaInvariantStats hStats;
+    hStats.firstBadRay = -1;
+    hStats.firstBadStep = -1;
+    IddSigmaInvariantStats* devStats =
+        static_cast<IddSigmaInvariantStats*>(allocateDeviceMemory(sizeof(IddSigmaInvariantStats)));
+    copyToDevice(devStats, &hStats, sizeof(IddSigmaInvariantStats));
+
+    dim3 block(16, 16);
+    dim3 grid((rayDimsX + block.x - 1) / block.x,
+              (rayDimsY + block.y - 1) / block.y);
+    validateIddSigmaTransportInvariantKernel<<<grid, block>>>(
+        devBevDensity,
+        devBevCumulSp,
+        devRayWeights,
+        devBeamFirstInside,
+        devFirstStepOutside,
+        params,
+        rayDimsX,
+        rayDimsY,
+        rRadiationLengthTex,
+#ifdef NUCLEAR_CORR
+        nuclearEnabled,
+        devNucSpotIdx,
+        nucSqSigmaTex,
+#endif
+        devStats);
+    checkCudaErrors(cudaDeviceSynchronize());
+    copyToHost(&hStats, devStats, sizeof(IddSigmaInvariantStats));
+    freeDeviceMemory(devStats);
+
+    if (hStats.invalidDensity > 0 ||
+        hStats.invalidCumulSp > 0 ||
+        hStats.invalidVoxelWidth > 0 ||
+        hStats.invalidStepVol > 0 ||
+        hStats.invalidSigmaSq > 0 ||
+        hStats.invalidRSigmaEff > 0 ||
+        hStats.invalidMass > 0 ||
+        hStats.invalidNucSigmaSq > 0 ||
+        hStats.invalidNucRSigmaEff > 0) {
+        throwIddSigmaInvariantError("IDD_SIGMA_TRANSPORT", beamIdx, layerIdx, hStats);
+    }
 }
 
 __global__ void overrideRSigmaFromCarbonProfileKernel(
@@ -2903,19 +4036,15 @@ void subsecondWrapper(
         std::cout << "Starting RTD wrapper" << std::endl;
     }
 
-    if (!validateWrapperGlobalInputs(
-            ctData, ctDims, ctResolution,
-            doseData, doseDims, doseResolution,
-            beamSettings, numBeams, energyData)) {
-        return;
-    }
+    validateWrapperGlobalInputs(
+        ctData, ctDims, ctResolution,
+        doseData, doseDims, doseResolution,
+        beamSettings, numBeams, energyData);
     enforceNuclearCorrectionContract(energyData, nuclearCorrection);
 
     for (size_t beamIdx = 0; beamIdx < numBeams; ++beamIdx) {
         const RTDBeamSettings& beam = beamSettings[beamIdx];
-        if (!validateWrapperEntryBeam(beam, beamIdx)) {
-            return;
-        }
+        validateWrapperEntryBeam(beam, beamIdx);
         printWrapperEntryAuditSummary(
             beam, energyData,
             ctDims, ctResolution, ctCorner,
@@ -3138,24 +4267,27 @@ void subsecondWrapper(
         //  - Per requirements: wrapper must NOT synthesize / hard-code subspot data.
         //  - subspotData must be supplied by the caller (CarbonPBS plan parsing pipeline).
         if (maxSubspotsPerLayer <= 0 || beam.subspotData.empty()) {
-            std::cerr << "[RTD] ERROR: beam.maxSubspotsPerLayer/subspotData not provided (beamIdx="
-                      << beamIdx << ", numLayers=" << numLayers
-                      << "). This wrapper no longer generates test subspot data." << std::endl;
-            continue;
+            std::ostringstream oss;
+            oss << "[RTD] beamIdx=" << beamIdx
+                << " missing beam-critical subspot contract: maxSubspotsPerLayer="
+                << maxSubspotsPerLayer
+                << " subspotData.size=" << beam.subspotData.size()
+                << " numLayers=" << numLayers
+                << ". This wrapper no longer generates synthetic test subspot data.";
+            throw std::runtime_error(oss.str());
         }
         const size_t expectedSubspotN = static_cast<size_t>(numLayers) * static_cast<size_t>(maxSubspotsPerLayer) * 5ull;
         if (beam.subspotData.size() != expectedSubspotN) {
-            std::cerr << "[RTD] ERROR: beam.subspotData size mismatch. Expected " << expectedSubspotN
-                      << " floats (= numLayers*maxSubspotsPerLayer*5), got " << beam.subspotData.size()
-                      << " (beamIdx=" << beamIdx << ")" << std::endl;
-            continue;
+            std::ostringstream oss;
+            oss << "[RTD] beamIdx=" << beamIdx
+                << " beam-critical subspotData size mismatch: expected="
+                << expectedSubspotN
+                << " floats (= numLayers*maxSubspotsPerLayer*5), actual="
+                << beam.subspotData.size()
+                << " numLayers=" << numLayers
+                << " maxSubspotsPerLayer=" << maxSubspotsPerLayer;
+            throw std::runtime_error(oss.str());
         }
-        const float* subspotData = beam.subspotData.data();
-        
-        // Create subspot texture
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-        cudaTextureObject_t subspotTexture = 0;
-        cudaArray* subspotArray = nullptr;
 
         // ------------------------------------------------------------------------
         // Geometry + coordinate system (CarbonPBS -> RayTraceDicom)
@@ -3169,10 +4301,10 @@ void subsecondWrapper(
         //   bmdir (beam direction), bmxdir, bmydir, source position, SAD.
         //
         // Unit handling:
-        //   CarbonPBS commonly uses cm (e.g. 0.1 == 1 mm). RayTraceDicom energy LUTs use mm.
-        //   We infer a length scale from ctResolution.z (heuristic retained from step2).
-        const float stepLength_input = ctResolution.z;
-        const float lenToMm = (stepLength_input > 0.0f && stepLength_input < 0.3f) ? 10.0f : 1.0f;
+        //   CarbonPBS commonly uses cm (e.g. 0.1 == 1 mm), while RTD tables
+        //   and kernels operate in mm. Accept only clearly cm/mm geometry or
+        //   explicit overrides; ambiguous spacing now fails before kernels run.
+        const float lenToMm = resolveGeometryLengthScaleToMm(ctResolution, doseResolution, fineTiming);
 
         // ------------------------------------------------------------------------
         // Energy depth unit normalization (EnergyStruct peakDepth/scaleFacts -> mm)
@@ -3182,74 +4314,25 @@ void subsecondWrapper(
         //   - peakDepth in the same units as cumulSp
         //   - energyScaleFact converts cumulSp to the depth-index of cumulIddTex
         //
-        // CarbonPBS tables may be stored in cm. We detect/override and convert
+        // CarbonPBS tables may be stored in cm. We resolve/override and convert
         // peakDepth and scaleFacts so that WEPL(mm) maps to the correct IDD depth.
         // Override options:
         //   RTD_ENERGY_DEPTH_UNIT=mm|cm
         //   RTD_ENERGY_DEPTH_SCALE=<float>   (e.g. 10 for cm->mm)
         // ------------------------------------------------------------------------
-                float energyDepthToMm = lenToMm;
-        if (energyData && !energyData->peakDepths.empty()) {
-            const char* envScale = std::getenv("RTD_ENERGY_DEPTH_SCALE");
-            const char* envUnit  = std::getenv("RTD_ENERGY_DEPTH_UNIT");
+        const float energyDepthToMm = resolveEnergyDepthScaleToMm(*energyData, fineTiming);
 
-            // Peak depth magnitude is a strong indicator of table units:
-            //   - Proton therapy peak depth is ~30-320 mm for ~60-230 MeV.
-            //   - The reference RayTraceDicom proton LUT (proton_cumul_ddd_data.txt) uses mm.
-            float peakMax = 0.0f;
-            for (float v : energyData->peakDepths) peakMax = std::max(peakMax, v);
-
-            // --------------------------------------------------------------------
-            // User override wins (for full determinism)
-            // --------------------------------------------------------------------
-            if (envScale && envScale[0] != '\0') {
-                energyDepthToMm = std::max(0.0f, static_cast<float>(std::atof(envScale)));
-                if (energyDepthToMm == 0.0f) energyDepthToMm = lenToMm;
-            } else if (envUnit && envUnit[0] != '\0') {
-                std::string u(envUnit);
-                for (char& c : u) c = (char)std::tolower((unsigned char)c);
-                if (u == "cm") energyDepthToMm = 10.0f;
-                else if (u == "mm") energyDepthToMm = 1.0f;
-            } else {
-                // ----------------------------------------------------------------
-                // Auto-detect when the CT geometry uses cm (lenToMm==10) but the LUT
-                // peakDepth values are clearly in mm (hundreds).
-                // This avoids a common pitfall where peakDepth(mm) is mistakenly
-                // treated as cm and multiplied by 10, which stretches the depth axis
-                // and makes IDD values near-zero for typical WEPL(mm) values.
-                // ----------------------------------------------------------------
-                if (lenToMm == 10.0f && peakMax > 200.0f) {
-                    energyDepthToMm = 1.0f;
-                    if (fineTiming) {
-                        std::cout << "  [ENERGY_UNITS] Auto-detected peakDepth table units as mm (peakMax=" << peakMax
-                                  << ", CT lenToMm=10). Using energyDepthToMm=1." << std::endl;
-                    }
-                }
-
-                // Retain diagnostic warnings to help catch rare/ambiguous cases.
-                if (fineTiming) {
-                    if (lenToMm == 1.0f && peakMax > 0.0f && peakMax < 80.0f) {
-                        std::cout << "  [ENERGY_UNITS] Warning: peakDepth max=" << peakMax
-                                  << " could be cm, but CT unit looks like mm (lenToMm=1). "
-                                  << "Set RTD_ENERGY_DEPTH_UNIT=cm if needed." << std::endl;
-                    }
-                    if (lenToMm == 10.0f && peakMax > 200.0f) {
-                        // This warning is kept, but auto-correction above should already handle it.
-                        std::cout << "  [ENERGY_UNITS] Note: peakDepth max=" << peakMax
-                                  << " looks like mm while CT uses cm; auto-correct applied (energyDepthToMm=1)." << std::endl;
-                    }
-                }
-            }
-        }
-
-if (fineTiming) {
+        if (fineTiming) {
+            std::cout << "  [GEOMETRY_UNITS] lenToMm=" << lenToMm
+                      << " (geometry length units -> mm)" << std::endl;
             std::cout << "  [ENERGY_UNITS] energyDepthToMm=" << energyDepthToMm
                       << " (peakDepth table units -> mm)" << std::endl;
         }
 
         auto layerLongitudinalCutoffMm = [&](size_t layerIdx) {
             if (layerIdx >= beam.layerLongitudinalCutoffs.size()) return 0.0f;
-            return normalizeLongitudinalCutoffToMm(beam.layerLongitudinalCutoffs[layerIdx], lenToMm);
+            return normalizeLongitudinalCutoffToMm(
+                beam.layerLongitudinalCutoffs[layerIdx], lenToMm, beamIdx, layerIdx);
         };
 
         // Strict RTD-baseline mode for the current wrapper convergence pass:
@@ -3396,12 +4479,16 @@ if (fineTiming) {
 
         RawSpotLattice rawSpotLattice;
         const bool hasRawSpotLattice = buildRawSpotLattice(beam, rawSpotLattice, fineTiming || haloAudit);
-        if ((fineTiming || haloAudit) && !hasRawSpotLattice) {
-            std::cout << "  [RTD_SPOT_GRID] raw spot lattice unavailable; wrapper still uses legacy CPB projection path for this beam";
+        if (!hasRawSpotLattice) {
+            std::ostringstream oss;
+            oss << "[RTD] beamIdx=" << beamIdx
+                << " raw spot lattice unavailable. Legacy CPB fallback is disabled for "
+                   "CarbonPBS final-dose compatibility because it does not preserve real "
+                   "spot weights/positions and can return a tiny-but-finite non-equivalent dose.";
             if (!rawSpotLattice.failureReason.empty()) {
-                std::cout << " reason=" << rawSpotLattice.failureReason;
+                oss << " Reason: " << rawSpotLattice.failureReason;
             }
-            std::cout << "\n";
+            throw std::runtime_error(oss.str());
         }
 
         // Gantry->World affine transform (mm)
@@ -3836,6 +4923,17 @@ if (fineTiming) {
         const vec3f fanDelta_mm  = make_vec3f(cpbResolution.x * lenToMm,
                                               cpbResolution.y * lenToMm,
                                               -fabsf(stepLength_mm));
+        validateBeamPhysicalGeometry(
+            beamIdx,
+            sad_mm,
+            sourceDistVec,
+            cpbResolution,
+            rayDims,
+            tracerSteps,
+            startZ_mm,
+            stepLength_mm,
+            fanCorner_mm,
+            fanDelta_mm);
         if (rtdSigmaDebugEnabled()) {
             std::cout << "  [RTD_DEBUG_FAN] cpbCorner=(" << cpbCorner.x << "," << cpbCorner.y << "," << cpbCorner.z << ")"
                       << " cpbRes=(" << cpbResolution.x << "," << cpbResolution.y << "," << cpbResolution.z << ")"
@@ -3940,65 +5038,6 @@ if (fineTiming) {
         }
 #endif
 
-        if (!hasRawSpotLattice) {
-            // ------------------------------------------------------------------------
-            // Legacy CPB fallback path
-            // ------------------------------------------------------------------------
-            cudaExtent subspotExtent = make_cudaExtent(5, maxSubspotsPerLayer, numLayers);
-            cudaMalloc3DArray(&subspotArray, &channelDesc, subspotExtent);
-
-            cudaMemcpy3DParms copyParams = {};
-            copyParams.srcPtr = make_cudaPitchedPtr((void*)subspotData, 5 * sizeof(float), 5, maxSubspotsPerLayer);
-            copyParams.dstArray = subspotArray;
-            copyParams.extent = subspotExtent;
-            copyParams.kind = cudaMemcpyHostToDevice;
-            cudaMemcpy3D(&copyParams);
-
-            cudaResourceDesc resDesc = {};
-            resDesc.resType = cudaResourceTypeArray;
-            resDesc.res.array.array = subspotArray;
-
-            cudaTextureDesc texDesc = {};
-            texDesc.filterMode = cudaFilterModePoint;
-            texDesc.addressMode[0] = cudaAddressModeClamp;
-            texDesc.addressMode[1] = cudaAddressModeClamp;
-            texDesc.addressMode[2] = cudaAddressModeClamp;
-            texDesc.readMode = cudaReadModeElementType;
-            texDesc.normalizedCoords = 0;
-            cudaCreateTextureObject(&subspotTexture, &resDesc, &texDesc, nullptr);
-
-            float* d_cpbWeights;
-            size_t cpbWeightsSize = cpbDims.x * cpbDims.y * cpbDims.z * sizeof(float);
-            cudaMalloc(&d_cpbWeights, cpbWeightsSize);
-            cudaMemset(d_cpbWeights, 0, cpbWeightsSize);
-            const vec3f beamDirectionG = make_vec3f(0.0f, 0.0f, -1.0f);
-            const vec3f bmXDirectionG  = make_vec3f(1.0f, 0.0f, 0.0f);
-            const vec3f bmYDirectionG  = make_vec3f(0.0f, -1.0f, 0.0f);
-            const vec3f sourcePositionG_cm = make_vec3f(0.0f, 0.0f, sad_cm);
-            const float refPlaneZ = 0.0f;
-            performSubspotToCPBConvolution(subspotTexture, numLayers, maxSubspotsPerLayer,
-                                          cpbCorner, cpbResolution, cpbDims, d_cpbWeights,
-                                          beamDirectionG, bmXDirectionG, bmYDirectionG,
-                                          sourcePositionG_cm, sad_cm, refPlaneZ);
-            vec3i rayDimsVec = make_vec3i(rayDims.x, rayDims.y, 1);
-            vec3f rayCorner = cpbCorner;
-            vec3f rayResolution = cpbResolution;
-            for (int l = 0; l < numLayers; ++l) {
-                float* devRayWeightsLayer = devRayWeightsAllLayers + l * rayDims.x * rayDims.y;
-                performCPBToRayWeightMapping(d_cpbWeights, cpbDims, cpbCorner, cpbResolution,
-                                            devRayWeightsLayer, rayDimsVec,
-                                            rayCorner, rayResolution,
-                                            l,
-                                            beamDirectionG, bmXDirectionG, bmYDirectionG,
-                                            sourcePositionG_cm, sad_cm, refPlaneZ);
-            }
-            cudaFree(d_cpbWeights);
-        }
-
-        // Cleanup subspot texture (keep rayWeightsAllLayers)
-        if (subspotTexture != 0) cudaDestroyTextureObject(subspotTexture);
-        if (subspotArray != nullptr) cudaFreeArray(subspotArray);
-
         const size_t raySize = static_cast<size_t>(rayDims.x) * static_cast<size_t>(rayDims.y) * static_cast<size_t>(tracerSteps);
         dim3 tracerBlock(16, 16);
         dim3 tracerGrid((rayDims.x + tracerBlock.x - 1) / tracerBlock.x,
@@ -4083,6 +5122,52 @@ if (fineTiming) {
             const float weqDx = weqHeader[7] / lenToMm;
             const float weqDy = weqHeader[4] / lenToMm;
 
+            if (fineTiming || rtdInputAuditEnabled()) {
+                const WeqLateralSamplingAudit samplingAudit = auditWeqLateralSampling(
+                    body,
+                    rayDims.x,
+                    rayDims.y,
+                    weqNx,
+                    weqNy,
+                    weqStoredSteps,
+                    weqActiveSteps,
+                    cpbCorner.x,
+                    cpbCorner.y,
+                    cpbResolution.x,
+                    cpbResolution.y,
+                    weqX0,
+                    weqY0,
+                    weqDx,
+                    weqDy);
+                const double meanFracX = samplingAudit.linearInsideRays > 0
+                    ? samplingAudit.fracAbsSumX / static_cast<double>(samplingAudit.linearInsideRays)
+                    : 0.0;
+                const double meanFracY = samplingAudit.linearInsideRays > 0
+                    ? samplingAudit.fracAbsSumY / static_cast<double>(samplingAudit.linearInsideRays)
+                    : 0.0;
+                const double meanAbsDelta = samplingAudit.deltaSamples > 0
+                    ? samplingAudit.deltaAbsSum / static_cast<double>(samplingAudit.deltaSamples)
+                    : 0.0;
+                std::cout << "  [WEQ_LATERAL_AUDIT]"
+                          << " sampling=linearXY"
+                          << " rayDims=(" << rayDims.x << "," << rayDims.y << ")"
+                          << " weqDims=(" << weqNx << "," << weqNy << "," << weqSteps << ")"
+                          << " linearInsideRays=" << samplingAudit.linearInsideRays
+                          << " linearOutsideRays=" << samplingAudit.linearOutsideRays
+                          << " nearestInsideRays=" << samplingAudit.nearestInsideRays
+                          << " nearestOutsideRays=" << samplingAudit.nearestOutsideRays
+                          << " supportMismatchRays=" << samplingAudit.supportMismatchRays
+                          << " nearestUniqueXY=(" << samplingAudit.uniqueNearestX << "/" << weqNx
+                          << "," << samplingAudit.uniqueNearestY << "/" << weqNy << ")"
+                          << " fracMean=(" << meanFracX << "," << meanFracY << ")"
+                          << " fracMax=(" << samplingAudit.maxNearestFracX << ","
+                          << samplingAudit.maxNearestFracY << ")"
+                          << " nearestVsLinearSamples=" << samplingAudit.deltaSamples
+                          << " meanAbsWeqDelta=" << meanAbsDelta
+                          << " maxAbsWeqDelta=" << samplingAudit.maxAbsDelta
+                          << std::endl;
+            }
+
             if (fineTiming) {
                 int firstPositive = -1;
                 int lastPositive = -1;
@@ -4138,6 +5223,13 @@ if (fineTiming) {
             checkCudaErrors(cudaDeviceSynchronize());
         }
         beamTiming.bevTraceMs += perfElapsedMs(bevTracePerfStart);
+        assertDeviceFloatBufferFinite(
+            "BEV_WEPL",
+            devBevCumulSp,
+            raySize,
+            beamIdx,
+            -1,
+            1.0e-6f);
 
         int beamFirstInsideRT = 0;
         int beamFirstOutsideRT = tracerSteps;
@@ -4230,6 +5322,16 @@ if (fineTiming) {
             const float entryZ_mm = float(beamFirstInsideRT) * fanDelta_mm.z + fanCorner_mm.z;
             const float2 pxSpMult = make_float2(1.0f - entryZ_mm / sourceDistVec.x,
                                                 1.0f - entryZ_mm / sourceDistVec.y);
+            validateConvolutionGeometry(
+                beamIdx,
+                -1,
+                entryZ_mm,
+                sourceDistVec,
+                pxSpMult,
+                rawSpotLattice.spotGridDims,
+                rawSpotLattice.spotDelta,
+                cpbResolution,
+                rayDims);
             const size_t spotPlaneN = (size_t)rawSpotLattice.spotGridDims.x * rawSpotLattice.spotGridDims.y;
             const size_t convIntermPlaneN = (size_t)rayDims.x * rawSpotLattice.spotGridDims.y;
             const size_t rayPlaneN = (size_t)rayDims.x * rayDims.y;
@@ -4371,6 +5473,15 @@ if (fineTiming) {
         }
 
         beamTiming.rayWeightMs += perfElapsedMs(rayWeightPerfStart);
+        assertDeviceFloatBufferFinite(
+            "RAY_WEIGHT",
+            devRayWeightsAllLayers,
+            static_cast<size_t>(numLayers) *
+                static_cast<size_t>(rayDims.x) *
+                static_cast<size_t>(rayDims.y),
+            beamIdx,
+            -1,
+            1.0e-6f);
 
         if (fineTiming) {
             const int nRays = rayDims.x * rayDims.y;
@@ -4730,6 +5841,9 @@ if (fineTiming) {
             iddParams.peakDepth = peakDepth;  // Interpolated peak depth
             iddParams.rangeStopDepth = BP_DEPTH_CUTOFF * peakDepth;
             iddParams.rRlScale = energyData->rRlScaleFact;
+            requirePositiveFiniteValue(
+                iddParams.rRlScale,
+                beamLayerPrefix(beamIdx, static_cast<int>(layerIdx), "IDD_SIGMA") + "rRlScale");
 
             // spotDist is **dimensionless**: spot spacing expressed in number of rays.
             // RayTraceDicom reference: spotDistInRays = beam.spotDelta.x / beam.raySpacing.x
@@ -4751,7 +5865,6 @@ if (fineTiming) {
                     chosenDeltaX = beam.spotDelta.x;
                 }
                 spotDistInRays = chosenDeltaX / beam.raySpacing.x;
-                if (!(spotDistInRays > 0.0f)) spotDistInRays = 1.0f;
             }
             iddParams.spotDist = spotDistInRays;
             if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
@@ -4932,6 +6045,7 @@ if (fineTiming) {
             
             // Initialize step and air division parameters
             iddParams.initStepAndAirDiv();
+            validateIddSigmaPhysicalParams(beamIdx, static_cast<int>(layerIdx), iddParams);
         // FillIddAndSigmaParams debug (helps diagnose rSigmaEff NaNs)
         if (rtdSigmaDebugEnabled()) {
             const float incDiv0 = iddParams.sigmaSqAirLin + (2.0f * static_cast<float>(iddParams.first) - 1.0f) * iddParams.sigmaSqAirQuad;
@@ -5022,9 +6136,27 @@ if (fineTiming) {
             iddParams.afterLast = afterLastStep;
             iddParams.nucMemStep = runtimeNuclearEnabled ? static_cast<unsigned int>(layerHaloPlan->nucPlaneN) : 0u;
             iddParams.initStepAndAirDiv();
+            validateIddSigmaPhysicalParams(beamIdx, static_cast<int>(layerIdx), iddParams);
             layerPerf.activeFirst = static_cast<int>(iddParams.first);
             layerPerf.activeLast = std::max(layerPerf.activeFirst, static_cast<int>(iddParams.afterLast) - 1);
             layerPerf.activeCount = std::max(0, static_cast<int>(iddParams.afterLast) - layerPerf.activeFirst);
+            validateIddSigmaTransportInvariants(
+                devBevDensity,
+                devBevCumulSp,
+                devRayWeights,
+                devBeamFirstInside,
+                devFirstStepOutside,
+                iddParams,
+                rayDims.x,
+                rayDims.y,
+                rRadiationLengthTex,
+#ifdef NUCLEAR_CORR
+                runtimeNuclearEnabled,
+                runtimeNuclearEnabled ? devNucSpotIdx : nullptr,
+                runtimeNuclearEnabled ? nucSqSigmaTex : 0,
+#endif
+                beamIdx,
+                static_cast<int>(layerIdx));
 
             if (fineTiming) {
                 const int activeFirst = iddParams.first;
@@ -5558,6 +6690,24 @@ if (fineTiming) {
                 );
                 checkCudaErrors(cudaDeviceSynchronize());
             }
+            assertDeviceIddSigmaFiniteOnActive(
+                "IDD_SIGMA",
+                devRayIdd,
+                devRayRSigmaEff,
+                raySize,
+                beamIdx,
+                static_cast<int>(layerIdx));
+#ifdef NUCLEAR_CORR
+            if (runtimeNuclearEnabled) {
+                assertDeviceIddSigmaFiniteOnActive(
+                    "NUC_IDD_SIGMA",
+                    devNucIdd,
+                    devNucRSigmaEff,
+                    nucRaySize,
+                    beamIdx,
+                    static_cast<int>(layerIdx));
+            }
+#endif
 
             if (sigmaFieldAudit) {
                 sigmaAuditAfter.resize(raySize);
@@ -5952,6 +7102,28 @@ if (fineTiming) {
 #endif
             layerPerf.superpositionMs += perfElapsedMs(superpositionPerfStart);
             beamTiming.superpositionMs += layerPerf.superpositionMs;
+            assertDeviceFloatBufferFinite(
+                "SUPERPOSITION_BEV",
+                devBevPrimDose,
+                static_cast<size_t>(bevDoseX) *
+                    static_cast<size_t>(bevDoseY) *
+                    static_cast<size_t>(bevDoseZ),
+                beamIdx,
+                static_cast<int>(layerIdx),
+                1.0e-12f);
+#ifdef NUCLEAR_CORR
+            if (runtimeNuclearEnabled) {
+                assertDeviceFloatBufferFinite(
+                    "NUC_SUPERPOSITION_BEV",
+                    devBevNucDose,
+                    static_cast<size_t>(bevNucDoseX) *
+                        static_cast<size_t>(bevNucDoseY) *
+                        static_cast<size_t>(bevNucDoseZ),
+                    beamIdx,
+                    static_cast<int>(layerIdx),
+                    1.0e-12f);
+            }
+#endif
 
             if (auditRepresentativeLayer) {
                 const size_t bevDoseElems = static_cast<size_t>(bevDoseX) * static_cast<size_t>(bevDoseY) * static_cast<size_t>(bevDoseZ);
@@ -6165,7 +7337,7 @@ if (fineTiming) {
             );
 
             const Float3ToFanTransform doseIdxToPrimRayIdx = primRayIdxToDoseIdx.invertAndShift(
-                make_vec3f(float(maxSuperpR), float(maxSuperpR), -float(beamFirstInside))
+                make_vec3f(float(maxSuperpR), float(maxSuperpR), 0.0f)
             );
             const TransferParamStructDiv3 transferParams(doseIdxToPrimRayIdx);
             const bool transferAudit = rtdTransferAuditEnabled();
@@ -6289,6 +7461,13 @@ if (fineTiming) {
             } else if (fineTiming) {
                 std::cout << "  [TRANSF] Skipping primTransfDiv because projected dose box is empty" << std::endl;
             }
+            assertDeviceFloatBufferFinite(
+                "BEV_TO_DOSE_PRIMARY",
+                devDoseVol,
+                doseSize,
+                beamIdx,
+                static_cast<int>(layerIdx),
+                1.0e-12f);
 
 #ifdef NUCLEAR_CORR
             if (runtimeNuclearEnabled) {
@@ -6357,7 +7536,7 @@ if (fineTiming) {
                     std::min(static_cast<int>(ceilf(nucMaxPoint.z)), doseDims.z - 1)
                 );
                 const Float3ToFanTransform doseIdxToNucRayIdx = nucRayIdxToDoseIdx.invertAndShift(
-                    make_vec3f(float(maxSuperpR), float(maxSuperpR), -float(beamFirstInside))
+                    make_vec3f(float(maxSuperpR), float(maxSuperpR), 0.0f)
                 );
                 const TransferParamStructDiv3 nucTransferParams(doseIdxToNucRayIdx);
                 dim3 nucTransfGridDim(
@@ -6468,6 +7647,13 @@ if (fineTiming) {
                 } else if (fineTiming) {
                     std::cout << "  [TRANSF] Skipping nucTransfDiv because projected halo dose box is empty" << std::endl;
                 }
+                assertDeviceFloatBufferFinite(
+                    "BEV_TO_DOSE_NUCLEAR",
+                    devDoseVol,
+                    doseSize,
+                    beamIdx,
+                    static_cast<int>(layerIdx),
+                    1.0e-12f);
 
                 if (nuclearTransferAuditLayer) {
                     std::vector<float> hDoseAfterNuc(doseSize);

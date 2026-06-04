@@ -1,0 +1,734 @@
+2026-06-02 16:13:51,374 - dosecal.py - 123 - DOSECAL - INFO : 
+                ***********************
+                ALL units of angle are radiant
+                All units of distance, resolution are millimeter!!!
+                ***********************
+
+2026-06-02 16:13:51,375 - multiBeamGroups.py - 86 - MultiBeamGroups - INFO : MBG initialized
+2026-06-02 16:13:51,375 - multiBeamGroups.py - 96 - MultiBeamGroups - INFO : [USCAL] GPU ID 0
+2026-06-02 16:13:51,389 - multiBeamGroups.py - 359 - MultiBeamGroups - INFO : Reading CT
+2026-06-02 16:13:51,389 - multiBeamGroups.py - 415 - MultiBeamGroups - INFO : Not DoseRecalculation. Use normal CT.
+2026-06-02 16:13:51,646 - ctProcess.py - 135 - CT_PROCESS - INFO : [DICOM] /data/app/tps/dicom/root/patient_183/study_231/examination_541/ data loaded successful.
+2026-06-02 16:13:51,646 - ctProcess.py - 153 - CT_PROCESS - INFO : Start getting ct HU
+2026-06-02 16:13:51,916 - ctProcess.py - 295 - CT_PROCESS - INFO : Start transforming HU to StopppingPower
+2026-06-02 16:13:52,009 - ctProcess.py - 303 - CT_PROCESS - INFO : Making CT weq desity grid done
+2026-06-02 16:13:52,010 - multiBeamGroups.py - 430 - MultiBeamGroups - INFO : time cost: Reading CT 0.62092913 s
+2026-06-02 16:13:52,010 - multiBeamGroups.py - 436 - MultiBeamGroups - INFO : Setting dose grid
+2026-06-02 16:13:52,010 - multiBeamGroups.py - 442 - MultiBeamGroups - INFO : Dose grid size setting: AP 247, LR 247, SI 247.
+2026-06-02 16:13:52,010 - dosecal.py - 136 - DOSECAL - INFO : Resampling dose grid
+2026-06-02 16:13:55,337 - multiBeamGroups.py - 445 - MultiBeamGroups - INFO : time cost: Setting dose grid 3.32682614 s
+2026-06-02 16:13:55,337 - multiBeamGroups.py - 450 - MultiBeamGroups - INFO : Reading structures
+2026-06-02 16:13:55,646 - ctProcess.py - 149 - CT_PROCESS - INFO : [DICOM] /data/app/tps/work//case_231/plan_489/algorithm/rs_540/ data loaded successful.
+2026-06-02 16:13:55,647 - ctProcess.py - 327 - CT_PROCESS - INFO : processed 0/2
+2026-06-02 16:13:55,657 - ctProcess.py - 418 - CT_PROCESS - INFO : VOI_number 1 VOI_name D_PTV loaded.
+2026-06-02 16:13:55,683 - ctProcess.py - 418 - CT_PROCESS - INFO : VOI_number 2 VOI_name contour loaded.
+2026-06-02 16:13:55,683 - ctProcess.py - 445 - CT_PROCESS - INFO : Loading roi indices from /data/app/tps/work//case_231/plan_489/algorithm/dose_grid_roi_541/param.json
+2026-06-02 16:13:55,699 - ctProcess.py - 456 - CT_PROCESS - INFO : Loading roi indices of D_PTV
+2026-06-02 16:13:55,743 - ctProcess.py - 456 - CT_PROCESS - INFO : Loading roi indices of contour
+2026-06-02 16:13:56,526 - multiBeamGroups.py - 509 - MultiBeamGroups - INFO : time cost: Reading structures 1.18878309 s
+2026-06-02 16:13:56,550 - multiBeamGroups.py - 515 - MultiBeamGroups - INFO : SPR max 1.0399999618530273 min 0.0010000000474974513
+2026-06-02 16:13:56,946 - multiBeamGroups.py - 517 - MultiBeamGroups - INFO : time cost: material info 0.41930468 s
+2026-06-02 16:13:56,946 - multiBeamGroups.py - 522 - MultiBeamGroups - INFO : Processing external contour structure
+2026-06-02 16:13:59,897 - multiBeamGroups.py - 148 - MultiBeamGroups - INFO : Reduced ratio 0.23796
+2026-06-02 16:13:59,913 - multiBeamGroups.py - 532 - MultiBeamGroups - INFO : time cost: Processing external contour structure 2.96754046 s
+2026-06-02 16:13:59,914 - multiBeamGroups.py - 583 - MultiBeamGroups - INFO : beam group id 906
+2026-06-02 16:13:59,975 - finalDose.py - 91 - FINALDOSE - INFO : Particle type Protons running.
+2026-06-02 16:13:59,975 - finalDose.py - 116 - FINALDOSE - INFO : Read-in beam info file
+2026-06-02 16:14:00,062 - beamModel.py - 2486 - BEAM_MODEL - INFO : Loading beam model successfully.
+2026-06-02 16:14:00,521 - finalDose.py - 210 - FINALDOSE - INFO : [FINAL_DOSE] Calculating dose for beam ID 1067.
+2026-06-02 16:14:00,541 - beamModel.py - 2486 - BEAM_MODEL - INFO : Loading beam model successfully.
+2026-06-02 16:14:00,542 - dosecal.py - 2231 - DOSECAL - INFO : Beam ID bone_p merging energy index 3
+2026-06-02 16:14:00,542 - dosecal.py - 2231 - DOSECAL - INFO : Beam ID bone_p merging energy index 2
+2026-06-02 16:14:00,542 - dosecal.py - 2231 - DOSECAL - INFO : Beam ID bone_p merging energy index 1
+2026-06-02 16:14:00,543 - dosecal.py - 2231 - DOSECAL - INFO : Beam ID bone_p merging energy index 0
+2026-06-02 16:14:01,065 - dosecal.py - 1576 - DOSECAL - INFO : DIAG sample spot_spacing_x: [4.1, 4.1, 4.1, 4.1, 4.1]
+2026-06-02 16:14:01,068 - dosecal.py - 1577 - DOSECAL - INFO : DIAG sample spot_spacing_z: [4.1, 4.1, 4.1, 4.1, 4.1]
+2026-06-02 16:14:01,069 - dosecal.py - 1581 - DOSECAL - INFO : DIAG x_all sample: [-107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3, -107.3]
+2026-06-02 16:14:01,070 - dosecal.py - 1582 - DOSECAL - INFO : DIAG z_all sample: [-95.5, -91.4, -87.4, -83.3, -79.2, -75.2, -71.1, -67.0, -63.0, -58.9, -54.9, -50.8, -46.7, -42.7, -38.6, -34.5, -30.5, -26.4, -22.4, -18.3]
+2026-06-02 16:14:01,070 - dosecal.py - 1583 - DOSECAL - INFO : DIAG idbeamxy sample: [[12.200000000000003, 13.0], [12.200000000000003, 17.099999999999994], [12.200000000000003, 21.099999999999994], [12.200000000000003, 25.200000000000003], [12.200000000000003, 29.299999999999997], [12.200000000000003, 33.3], [12.200000000000003, 37.400000000000006], [12.200000000000003, 41.5], [12.200000000000003, 45.5], [12.200000000000003, 49.6], [12.200000000000003, 53.6], [12.200000000000003, 57.7], [12.200000000000003, 61.8], [12.200000000000003, 65.8], [12.200000000000003, 69.9], [12.200000000000003, 74.0], [12.200000000000003, 78.0], [12.200000000000003, 82.1], [12.200000000000003, 86.1], [12.200000000000003, 90.2]]
+2026-06-02 16:14:01,070 - dosecal.py - 1588 - DOSECAL - INFO : DIAG rayweq header: [-108.0, 1.0, 217.0, -119.0, 1.0, 239.0]
+cuResample: total size 51002867712, free size 50549030912, needed size 60276892
+max dis 2444.696777 min dis 1932.100098
+[DEBUG][cuFinalDose] build_carbonpbs_context entry debug=0
+[PYBIND_AUDIT] dims raw dtype=int64 ndim=1 shape=(3) strides=(8) itemsize=8 size=3 ptr=0x55ba2f8cc3b0
+[PYBIND_AUDIT] dims cast<float32> len=3 finite=3 nan=0 inf=0 positive=3 zero=0 min=247 max=247 sum=741 sample=[247,247,247]
+[PYBIND_AUDIT] dims converted len=3 positive=3 zero=0 min=247 max=247 sum=741 sample=[247,247,247]
+[PYBIND_AUDIT] corner raw dtype=float64 ndim=2 shape=(3,1) strides=(8,8) itemsize=8 size=3 ptr=0x55ba312a9ce0
+[PYBIND_AUDIT] corner cast<float32> len=3 finite=3 nan=0 inf=0 positive=0 zero=0 min=-574.1 max=-242.8 sum=-1059.7 sample=[-242.8,-242.8,-574.1]
+[PYBIND_AUDIT] corner converted len=3 finite=3 nan=0 inf=0 positive=0 zero=0 min=-574.1 max=-242.8 sum=-1059.7 sample=[-242.8,-242.8,-574.1]
+[PYBIND_AUDIT] resolution raw dtype=float64 ndim=2 shape=(3,1) strides=(8,8) itemsize=8 size=3 ptr=0x55ba2ffdfd90
+[PYBIND_AUDIT] resolution cast<float32> len=3 finite=3 nan=0 inf=0 positive=3 zero=0 min=2 max=2 sum=6 sample=[2,2,2]
+[PYBIND_AUDIT] resolution converted len=3 finite=3 nan=0 inf=0 positive=3 zero=0 min=2 max=2 sum=6 sample=[2,2,2]
+[PYBIND_AUDIT] all_energies converted len=12224 finite=12224 nan=0 inf=0 positive=12224 zero=0 min=226.175 max=240 sum=2.85021e+06 sample=[226.175,226.175,226.175,226.175,226.175,226.175 ... 240,240,240]
+[PYBIND_AUDIT] enelist converted len=4 finite=4 nan=0 inf=0 positive=4 zero=0 min=226.175 max=240 sum=932.176 sample=[226.175,230.68,235.321,240]
+[PYBIND_AUDIT] rayweq raw dtype=float32 ndim=1 shape=(518630009) strides=(4) itemsize=4 size=518630009 ptr=0x7eff660f9010
+[PYBIND_AUDIT] rayweq cast<float32> len=518630009 finite=518630009 nan=0 inf=0 positive=271675344 zero=246954663 min=-119 max=5325 sum=7.31865e+10 sample=[1922.1,0.1,5325,-108,1,217 ... 0,0,0]
+[PYBIND_AUDIT] rayweq converted totalLen=518630009 header=(depth0=1922.1,depthStep=0.1,depthN=5325,y0=-108,yStep=1,yN=217,x0=-119,xStep=1,xN=239) expectedBody=276170475 actualBody=518630000 bodyMatches=0
+[PYBIND_AUDIT] roiIdx raw dtype=int64 ndim=1 shape=(10627200) strides=(8) itemsize=8 size=10627200 ptr=0x7f003abc3010
+[PYBIND_AUDIT] roiIdx cast<float32> len=10627200 finite=10627200 nan=0 inf=0 positive=10612800 zero=14400 min=0 max=245 sum=1.30183e+09 sample=[63,0,63,63,0,64 ... 182,245,182]
+[PYBIND_AUDIT] roiIdx linear converted len=3542400 positive=3542400 zero=0 min=3843630 max=11164335 sum=26582107608000 sample=[3843630,3843631,3843632,3843633,3843634,3843635 ... 11164333,11164334,11164335]
+[PYBIND_AUDIT] layerEnergy converted len=4 finite=4 nan=0 inf=0 positive=4 zero=0 min=226.175 max=240 sum=932.176 sample=[226.175,230.68,235.321,240]
+[PYBIND_AUDIT] layerInfo converted len=4 positive=4 zero=0 min=2976 max=3136 sum=12224 sample=[2976,2976,3136,3136]
+[PYBIND_AUDIT] nPar converted len=12224 finite=12224 nan=0 inf=0 positive=12224 zero=0 min=4.82766e+06 max=4.9885e+06 sum=6.00389e+10 sample=[4.82766e+06,4.82766e+06,4.82766e+06,4.82766e+06,4.82766e+06,4.82766e+06 ... 4.9885e+06,4.9885e+06,4.9885e+06]
+[PYBIND_AUDIT] spotSpacingX converted len=12224 finite=12224 nan=0 inf=0 positive=12224 zero=0 min=4 max=4.1 sum=49491.2 sample=[4.1,4.1,4.1,4.1,4.1,4.1 ... 4,4,4]
+[PYBIND_AUDIT] spotSpacingZ converted len=12224 finite=12224 nan=0 inf=0 positive=12224 zero=0 min=4 max=4.1 sum=49491.2 sample=[4.1,4.1,4.1,4.1,4.1,4.1 ... 4,4,4]
+[INPUT_AUDIT][PYBIND] explicit physical PB spacing spotDelta=(4.1,4.1,0) layerDeltas=4 first=(4.1,4.1) last=(4,4) source=(spotSpacingX,spotSpacingZ) totalSpots=12224 raySpacing=(1,1)
+[PYBIND_AUDIT] idbeamxy raw dtype=float64 ndim=2 shape=(12224,2) strides=(16,8) itemsize=8 size=24448 ptr=0x55ba35fd3670
+[PYBIND_AUDIT] idbeamxy cast<float32> len=24448 finite=24448 nan=0 inf=0 positive=24448 zero=0 min=10.9 max=228.1 sum=2.77479e+06 sample=[12.2,13,12.2,17.1,12.2,21.1 ... 15,228.1,11]
+[PYBIND_AUDIT] idbeamxy converted len=24448 finite=24448 nan=0 inf=0 positive=24448 zero=0 min=10.9 max=228.1 sum=2.77479e+06 sample=[12.2,13,12.2,17.1,12.2,21.1 ... 15,228.1,11]
+[PYBIND_AUDIT] tmpBeamDir raw dtype=float64 ndim=1 shape=(36672) strides=(8) itemsize=8 size=36672 ptr=0x55ba36dce530
+[PYBIND_AUDIT] tmpBeamDir cast<float32> len=36672 finite=36672 nan=0 inf=0 positive=24448 zero=126 min=-0.047682 max=1 sum=12220.9 sample=[-0.0470711,0.998013,0.0418946,-0.0470746,0.998086,0.0400989 ... 0.0476383,0.997949,0.0427692]
+[PYBIND_AUDIT] tmpBeamDir converted len=36672 finite=36672 nan=0 inf=0 positive=24448 zero=126 min=-0.047682 max=1 sum=12220.9 sample=[-0.0470711,0.998013,0.0418946,-0.0470746,0.998086,0.0400989 ... 0.0476383,0.997949,0.0427692]
+[PYBIND_AUDIT] bmxdir raw dtype=float64 ndim=2 shape=(3,1) strides=(8,8) itemsize=8 size=3 ptr=0x55ba35f19790
+[PYBIND_AUDIT] bmxdir cast<float32> len=3 finite=3 nan=0 inf=0 positive=1 zero=2 min=0 max=1 sum=1 sample=[1,0,0]
+[PYBIND_AUDIT] bmydir raw dtype=float64 ndim=2 shape=(3,1) strides=(8,8) itemsize=8 size=3 ptr=0x55ba35f17a40
+[PYBIND_AUDIT] bmydir cast<float32> len=3 finite=3 nan=0 inf=0 positive=0 zero=2 min=-1 max=0 sum=-1 sample=[0,0,-1]
+[PYBIND_AUDIT] sourcePos raw dtype=float64 ndim=1 shape=(3) strides=(8) itemsize=8 size=3 ptr=0x55ba36d86b20
+[PYBIND_AUDIT] sourcePos cast<float32> len=3 finite=3 nan=0 inf=0 positive=1 zero=0 min=-2172.9 max=3 sum=-2499 sample=[3,-2172.9,-329.1]
+[PYBIND_AUDIT] longitudalCutoff converted len=12224 finite=12224 nan=0 inf=0 positive=12224 zero=0 min=640.64 max=707 sum=8.24131e+06 sample=[640.64,640.64,640.64,640.64,640.64,640.64 ... 707,707,707]
+[PYBIND_AUDIT] profiledata raw dtype=float32 ndim=3 shape=(4,800,7) strides=(22400,28,4) itemsize=4 size=22400 ptr=0x55ba3661c320
+[PYBIND_AUDIT] profiledata cast<float32> len=22400 finite=22400 nan=0 inf=0 positive=19624 zero=2776 min=0 max=94.6714 sum=198431 sample=[0.991328,0.00415646,0.00451577,0.118908,9.29055,44.8569 ... 0,0,0]
+[PYBIND_AUDIT] profiledata converted len=22400 finite=22400 nan=0 inf=0 positive=19624 zero=2776 min=0 max=94.6714 sum=198431 sample=[0.991328,0.00415646,0.00451577,0.118908,9.29055,44.8569 ... 0,0,0]
+[PYBIND_AUDIT] profilesetting converted len=3 finite=3 nan=0 inf=0 positive=3 zero=0 min=0.25 max=800 sum=800.75 sample=[0.25,0.5,800]
+[PYBIND_AUDIT] beamparadata converted len=12 finite=12 nan=0 inf=0 positive=12 zero=0 min=4.03513e-06 max=24.2971 sum=94.5177 sample=[24.2971,0.0102549,5.01275e-06,23.8474,0.00994307,4.82162e-06 ... 22.9415,0.00938361,4.03513e-06]
+[PYBIND_AUDIT] subspotdata raw dtype=float32 ndim=3 shape=(4,1,5) strides=(20,20,4) itemsize=4 size=20 ptr=0x55ba35f45340
+[PYBIND_AUDIT] subspotdata cast<float32> len=20 finite=20 nan=0 inf=0 positive=12 zero=8 min=0 max=3.48547 sum=31.4907 sample=[0,0,1,3.48547,3.48547,0 ... 1,3.38685,3.38685]
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs entry
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs enelist.size=4
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs iddsetting.size=3
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs idddata ndim=2 shape=(4,4000) size=16000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs full_rows=4 rows=4 cols=4000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs startRaw=0.05 stepRaw=0.1 logicalCols=4000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs calling energyReader(tables/)
+[DEBUG][energyReader] dataPath='tables/'
+[DEBUG][energyReader] protonFile='tables/proton_cumul_ddd_data.txt' exists=1
+[DEBUG][energyReader] opened protonFile
+[DEBUG][energyReader] proton file header nEnergySamples=1024 nEnergies=147
+[DEBUG][energyReader] densityFile='tables/density_Schneider2000_adj.txt' exists=1
+[DEBUG][energyReader] opened densityFile
+[DEBUG][energyReader] spFile='tables/HU_to_SP_H&N_adj.txt' exists=1
+[DEBUG][energyReader] opened spFile
+[DEBUG][energyReader] rrlFile='tables/radiation_length.txt' exists=1
+[DEBUG][energyReader] opened rrlFile
+[DEBUG][energyReader] finished loading energy tables
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs energyReader returned nEnergySamples=1024 nEnergies=147
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs derived peakDepths size=4
+[INPUT_AUDIT][PYBIND] iddSliceMode=tail rows=4 cols=4000 rawStep=0.1 logicalCols=4000 effectiveStep=0.1
+[INPUT_AUDIT][PYBIND] CIDD Rows
+  row=0 energy=226.175 peakDepth=316.05 cidd_head=[0.0359898, 0.0719796, 0.107969, 0.143959, 0.179951, 0.215969, 0.252035, 0.288152] cidd_peak=[169.875, 169.875, 169.875, 169.875, 169.875, 169.875, 169.875, 169.875] cidd_tail=[169.875, 169.875, 169.875, 169.875, 169.875, 169.875, 169.875, 169.875]
+  row=2 energy=235.321 peakDepth=337.85 cidd_head=[0.0361228, 0.0722455, 0.108368, 0.144491, 0.180616, 0.216766, 0.252965, 0.289215] cidd_peak=[179.576, 179.576, 179.576, 179.577, 179.577, 179.577, 179.577, 179.577] cidd_tail=[179.577, 179.577, 179.577, 179.577, 179.577, 179.577, 179.577, 179.577]
+  row=3 energy=240 peakDepth=349.55 cidd_head=[0.0361393, 0.0722785, 0.108418, 0.144557, 0.180696, 0.21686, 0.253074, 0.289337] cidd_peak=[184.218, 184.218, 184.218, 184.218, 184.218, 184.218, 184.218, 184.218] cidd_tail=[184.218, 184.218, 184.218, 184.218, 184.218, 184.218, 184.218, 184.218]
+[PYBIND_AUDIT] subspotdata LUT converted len=20 finite=20 nan=0 inf=0 positive=12 zero=8 min=0 max=3.48547 sum=31.4907 sample=[0,0,1,3.48547,3.48547,0 ... 1,3.38685,3.38685]
+[INPUT_AUDIT][PYBIND] profileSliceMode=tail profileRowsRaw=4 profileDepthRaw=800 profileChannelsRaw=7 profileDataSize=22400 beamParaRows=4
+[INPUT_AUDIT][PYBIND] Energy Axes
+  layer=0 energy=226.175 energyIdx=0 profileRowIdx=0 longitudalCutoff=640.64
+  layer=2 energy=235.321 energyIdx=2 profileRowIdx=2 longitudalCutoff=684.541
+  layer=3 energy=240 energyIdx=3 profileRowIdx=3 longitudalCutoff=707
+  energiesPerU[0]=226.175 peakDepth=316.05 scaleFact=10
+  energiesPerU[2]=235.321 peakDepth=337.85 scaleFact=10
+  energiesPerU[3]=240 peakDepth=349.55 scaleFact=10
+[INPUT_AUDIT][PYBIND] Profile/BeamPara rows=4 depthN=800 channels=7 profileDepth0=0.25 profileDepthStep=0.5
+  layer=0 energy=226.175 profileRowIdx=0 beamPara=(24.2971,0.0102549,5.01275e-06)
+    depth=0 weights=[0.991328, 0.00415646, 0.00451577] sigmas=[0.118908, 9.29055, 44.8569]
+    depth=400 weights=[0.764941, 0.105375, 0.129684] sigmas=[4.01636, 17.1278, 52.341]
+    depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0]
+  layer=2 energy=235.321 profileRowIdx=2 beamPara=(23.3924,0.00965014,4.49996e-06)
+    depth=0 weights=[0.991124, 0.00408996, 0.00478573] sigmas=[0.12024, 9.4784, 44.8604]
+    depth=400 weights=[0.751939, 0.105173, 0.142887] sigmas=[3.84713, 16.4575, 54.8446]
+    depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0]
+  layer=3 energy=240 profileRowIdx=3 beamPara=(22.9415,0.00938361,4.03513e-06)
+    depth=0 weights=[0.991223, 0.00386053, 0.00491601] sigmas=[0.121021, 9.56204, 44.8625]
+    depth=400 weights=[0.744002, 0.106081, 0.149917] sigmas=[3.78467, 16.0075, 56.2194]
+    depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0]
+[PYBIND_AUDIT] CarbonPBS crosscheck layers=4 layerSpotCounts=4 totalSpots=12224 allEnergies=12224 nPar=12224 idbeamxyRows=12224 beamDirRows=12224 lutLayers=4 maxSubspots=1 subspotExpectedAfterMap=20 subspotActual=20 profileRawShape=(4,800,7) profileData=22400 profileSetting=3 beamParaRows=4 cutoffs=4 roiLinear=3542400
+[INPUT_AUDIT][WRAPPER_ENTRY] beamIdx=0 GRID ctDims=(247,247,247) ctRes=(2,2,2) ctCorner=(-242.8,-242.8,-574.1) doseDims=(247,247,247) doseRes=(2,2,2) doseCorner=(-242.8,-242.8,-574.1)
+[INPUT_AUDIT][WRAPPER_ENTRY] beamIdx=0 GEOM source=(3,-2172.9,-329.1) sad=2275 sourceDist=(0,0) beamDir=(-1.78423e-10,1,0.000441484) bmX=(1,0,0) bmY=(0,0,-1) refPlaneZ=0
+[INPUT_AUDIT][WRAPPER_ENTRY] beamIdx=0 SPOTS numLayers=4 layerSpotCounts=4 totalSpots=12224 spotPosRows=12224 spotWeights=12224 spotDirRows=12224 raySpacing=(1,1) spotDelta=(4.1,4.1,0) layerSpotDeltas=4 maxSubspots=1 layerCutoffs=4 roiLinear=3542400 spotPositionsAreIndices=1
+[INPUT_AUDIT][WRAPPER_ENTRY] beamIdx=0 WEQ activeHeaderLen=9 weqVectorLen=518630009 bodyLen=518630000 header9=(1922.1,0.1,5325,-108,1,217,-119,1,239) spot0Raw=(12.2,13) spot0Floor=(12,13) spot0Origin=(-107.3,-95.5) spot0Centered=(-107.3,-95.5)
+[INPUT_AUDIT][WRAPPER_ENTRY] beamIdx=0 LUT energyRows=4 energySamples=4000 layerEnergies=4 profileEnergyRows=4 profileDepthN=800 profileRaw=22400 beamParaRows=4 subspotExpected=20 subspotActual=20
+  [CARBON_PROFILE] enabled=false rawSize=22400 numLayers=4 profileRows=4 depthN=800 perRow=5600 channels=7 expectedSize=22400 beamParaRows=4 energyTableRows=4 beamPara=true
+  [RTD_DEBUG_GEOM] source_mm=(3,-2172.9,-329.1) iso_mm=(3,102.1,-329.1) sourceDist_mm=(2275,2275)
+  [RTD_DEBUG_FAN] cpbCorner=(-129,-118,0) cpbRes=(1,1,2) rayDims=(288,240) fanCorner_mm=(-129,-118,352.9) fanDelta_mm=(1,1,-0.1)
+  [WEQ_LATERAL_AUDIT] sampling=linearXY rayDims=(288,240) weqDims=(239,217,5325) linearInsideRays=51863 linearOutsideRays=17257 nearestInsideRays=51863 nearestOutsideRays=17257 supportMismatchRays=0 nearestUniqueXY=(239/239,217/217) fracMean=(0,0) fracMax=(0,0) nearestVsLinearSamples=561600 meanAbsWeqDelta=0 maxAbsWeqDelta=0
+[INPUT_AUDIT][WRAPPER][WEPL_BEV_CUMUL_SP] dims=(288,240,5325) zAxis=step sum=7.31865e+10 max=510.886 nonzero(>1e-06)=271675337/368064000 nan=0 inf=0
+  WEPL_BEV_CUMUL_SP z-slice summary (thr=1e-06):
+    activeSlices=5255/5325  activeRange=[70,5324]  maxSumSlice=5070 (sum=2.64524e+07)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5070 sum=2.64524e+07 max=510.886 cnt>thr=51863 nan=0 inf=0
+  WEPL_BEV_CUMUL_SP centerline peak: xy=(144,120) step=5010 value=509.628 nonzero(>1e-06)=5254/5325 nan=0 inf=0 activeRange=[71,5324]
+[INPUT_AUDIT][WRAPPER][WEQ_ALIGN] projectedStart(geom/weq)=(1922.1,1922.1) delta=0 entryProjected(geom/weq)=(1929.2,1929.2) delta=0 beamFirstInside=71 beamFirstOutside=5071 firstPastCutoffAll=5324 beamFirstGuaranteedPassive=5071 weplMin(sample)=(0,0,253.075,509.612)
+[INPUT_AUDIT][WRAPPER][SPOT_SUBSPOT_TO_RAY] dims=(288,240,4) zAxis=layer sum=5.98804e+10 max=369278 nonzero(>1e-06)=204624/276480 nan=0 inf=0
+  SPOT_SUBSPOT_TO_RAY z-slice summary (thr=1e-06):
+    activeSlices=4/4  activeRange=[0,3]  maxSumSlice=3 (sum=1.56069e+10)
+    z=0 sum=1.43251e+10 max=340704 cnt>thr=50939 nan=0 inf=0
+    z=1 sum=1.45038e+10 max=344971 cnt>thr=50939 nan=0 inf=0
+    z=2 sum=1.54447e+10 max=365372 cnt>thr=51373 nan=0 inf=0
+    z=3 sum=1.56069e+10 max=369278 cnt>thr=51373 nan=0 inf=0
+  SPOT_SUBSPOT_TO_RAY centerline peak: xy=(144,120) layer=3 value=360614 nonzero(>1e-06)=4/4 nan=0 inf=0 activeRange=[0,3]
+  [SIGMA_AIR] peakDepth=316.05 rangeStopDepth=331.852 deltaZ=-0.1 cornerZ=352.9 sigmaSqAirLin=0.000794524 sigmaSqAirQuad=8.66635e-08 incDiv(step0)=0.000794438 stepVol0=0.0713821 stepVol1=0.0713895
+  [RTD_DEBUG_VOXEL] layer=0 activeSteps=[71,5070] voxelWidthMean_mm=(0.848,0.957846,1.06774) sigmaAtRad32_mm=(8.97667,10.1667,11.3571) peakDepth=316.05
+  [RTD_HALO_IDD_COMPARE] layer=0 primaryIddSum=2.18801e+13 nucIddSum=3.23032e+11 nucToPrimaryIddSumRatio=0.0147637 nucIddNonzero=8457972 primaryIddNonzero=162888416 nucRSigmaFiniteWhereIddPositive=8457972 nucRSigmaBadWhereIddPositive=0
+[INPUT_AUDIT][WRAPPER][NUC_IDD layer=0] dims=(64,56,5325) zAxis=step sum=3.23032e+11 max=128130 nonzero(>1e-12)=8457972/19084800 nan=0 inf=0
+  NUC_IDD layer=0 z-slice summary (thr=1e-12):
+    activeSlices=3238/5325  activeRange=[83,3320]  maxSumSlice=3133 (sum=2.8404e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3133 sum=2.8404e+08 max=127643 cnt>thr=2645 nan=0 inf=0
+  NUC_IDD layer=0 centerline peak: xy=(32,28) step=3122 value=110968 nonzero(>1e-12)=3197/5325 nan=0 inf=0 activeRange=[85,3281]
+[INPUT_AUDIT][WRAPPER][NUC_RSIGMA layer=0] dims=(64,56,5325) zAxis=step sum=1.51727e+06 max=0.420259 nonzero(>1e-12)=8497346/19084800 nan=0 inf=10587454
+  NUC_RSIGMA layer=0 z-slice summary (thr=1e-12):
+    activeSlices=3251/5325  activeRange=[71,3321]  maxSumSlice=133 (sum=1099.79)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=133 sum=1099.79 max=0.419881 cnt>thr=2647 nan=0 inf=937
+  NUC_RSIGMA layer=0 centerline peak: xy=(32,28) step=114 value=0.419544 nonzero(>1e-12)=3210/5325 nan=0 inf=2115 activeRange=[72,3281]
+[INPUT_AUDIT][WRAPPER][IDD layer=0] dims=(288,240,5325) zAxis=step sum=2.18801e+13 max=403251 nonzero(>1e-12)=162888416/368064000 nan=0 inf=0
+  IDD layer=0 z-slice summary (thr=1e-12):
+    activeSlices=3245/5325  activeRange=[83,3327]  maxSumSlice=3142 (sum=1.67524e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3142 sum=1.67524e+10 max=403007 cnt>thr=50939 nan=0 inf=0
+  IDD layer=0 centerline peak: xy=(144,120) step=3129 value=397966 nonzero(>1e-12)=3197/5325 nan=0 inf=0 activeRange=[84,3280]
+[INPUT_AUDIT][WRAPPER][RSIGMA layer=0] dims=(288,240,5325) zAxis=step sum=7.16429e+07 max=9.99378 nonzero(>1e-12)=163531115/368064000 nan=0 inf=204532885
+  RSIGMA layer=0 z-slice summary (thr=1e-12):
+    activeSlices=3257/5325  activeRange=[71,3327]  maxSumSlice=102 (sum=130022)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=102 sum=130022 max=2.74978 cnt>thr=47285 nan=0 inf=21835
+  RSIGMA layer=0 centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3210/5325 nan=0 inf=2115 activeRange=[71,3280]
+[INPUT_AUDIT][WRAPPER] layer=0 rayWeights(sum,max)=(1.43251e+10,340704) bevIdd(sum,max)=(2.18801e+13,403251)
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] peakstep=3142 peakSum=1.67524e+10 peakMax=403007
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2570 sum=6.89654e+09 max=165144
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2662 sum=7.22913e+09 max=173374
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=3142 sum=1.67524e+10 max=403007
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5324 sum=0 max=0
+[SIGMA_FIELD][before] layer=0 positiveIdd=162888416 finiteSigma=162888416 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.13077,1.05534,2.83546,3.16768,3.1696) minRSigmaEff=0.102844 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER] layer=0 energy=226.175 energyIdx=0 profileRowIdx=0 peakDepth=316.05 longitudalCutoff=640.64 beamPara=(24.2971,0.0102549,5.01275e-06)
+  [INPUT_AUDIT][WRAPPER] profile row=0 depth=0 weights=[0.991328, 0.00415646, 0.00451577] sigmas=[0.118908, 9.29055, 44.8569] overall=1.00365
+  [INPUT_AUDIT][WRAPPER] profile row=0 depth=400 weights=[0.764941, 0.105375, 0.129684] sigmas=[4.01636, 17.1278, 52.341] overall=1.01528
+  [INPUT_AUDIT][WRAPPER] profile row=0 depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0] overall=0
+  [RTD_DEBUG_SIGMA_HOOK] layer=0 profileTex=0 hasBeamParaData=1 profileRows=4 profileDepthN=800 profileChannels=7 profileRowIdx=0 energy=226.175 enabled=0
+  [RTD_DEBUG_SIGMA_HOOK_RESULT] layer=0 beforeCount=0 afterCount=0
+[SIGMA_FIELD][after] layer=0 positiveIdd=162888416 finiteSigma=162888416 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.13077,1.05534,2.83546,3.16768,3.1696) minRSigmaEff=0.102844 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] dims=(288,240,5325) zAxis=step sum=2.18801e+13 max=403251 nonzero(>1e-12)=162888416/368064000 nan=0 inf=0
+  SUPERP_INPUT_IDD z-slice summary (thr=1e-12):
+    activeSlices=3245/5325  activeRange=[83,3327]  maxSumSlice=3142 (sum=1.67524e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3142 sum=1.67524e+10 max=403007 cnt>thr=50939 nan=0 inf=0
+  SUPERP_INPUT_IDD centerline peak: xy=(144,120) step=3129 value=397966 nonzero(>1e-12)=3197/5325 nan=0 inf=0 activeRange=[84,3280]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] peak= (172,55,3140) axis=step value=403251
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=1699 sum=5.91921e+09 max=141146 maxPos=(174,55) nnz(>1e-12)=50939 bbox=[(11,10)-(247,224)] centroid=(129,116.986) sigma=(63.0452,56.3871)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=3327 sum=0.786555 max=0.276953 maxPos=(246,11) nnz(>1e-12)=8 bbox=[(11,10)-(247,224)] centroid=(235.629,15.5429) sigma=(48.3503,31.3713)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] dims=(288,240,5325) zAxis=step sum=7.16429e+07 max=9.99378 nonzero(>1e-12)=163531115/368064000 nan=0 inf=204532885
+  SUPERP_INPUT_RSIGMA z-slice summary (thr=1e-12):
+    activeSlices=3257/5325  activeRange=[71,3327]  maxSumSlice=102 (sum=130022)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=102 sum=130022 max=2.74978 cnt>thr=47285 nan=0 inf=21835
+  SUPERP_INPUT_RSIGMA centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3210/5325 nan=0 inf=2115 activeRange=[71,3280]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] peak= (127,95,71) axis=step value=9.99378
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=71 sum=16839.5 max=9.99378 maxPos=(127,95) nnz(>1e-12)=1685 bbox=[(106,95)-(152,141)] centroid=(129,118) sigma=(11.5799,11.5799)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=1699 sum=13071 max=0.262643 maxPos=(247,10) nnz(>1e-12)=50939 bbox=[(11,10)-(247,224)] centroid=(129,116.989) sigma=(68.5698,62.1759)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=3327 sum=0.829633 max=0.103727 maxPos=(247,11) nnz(>1e-12)=8 bbox=[(11,10)-(247,224)] centroid=(187.502,37.4991) sigma=(101.903,70.4936)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] dims=(352,304,5071) zAxis=step sum=2.18175e+13 max=396717 nonzero(>1e-12)=192207811/542637568 nan=0 inf=0
+  SUPERP_OUTPUT_BEV z-slice summary (thr=1e-12):
+    activeSlices=3245/5071  activeRange=[83,3327]  maxSumSlice=3142 (sum=1.66929e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3142 sum=1.66929e+10 max=396118 cnt>thr=71243 nan=0 inf=0
+  SUPERP_OUTPUT_BEV centerline peak: xy=(176,152) step=3129 value=396397 nonzero(>1e-12)=3201/5071 nan=0 inf=0 activeRange=[83,3283]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] peak= (120,118,3129) axis=step value=396717
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=1699 sum=5.89458e+09 max=139611 maxPos=(66,181) nnz(>1e-12)=58427 bbox=[(3,2)-(255,232)] centroid=(129,116.986) sigma=(63.1108,56.4581)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=3327 sum=0.782403 max=0.00253941 maxPos=(246,11) nnz(>1e-12)=5208 bbox=[(-9,-10)-(267,244)] centroid=(235.629,15.5428) sigma=(48.8171,32.086)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] peakstep=3142 peakSum=1.66929e+10 peakMax=396118
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=1699 sum=5.89458e+09 max=139611
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=2535 sum=6.77057e+09 max=160434
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3142 sum=1.66929e+10 max=396118
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3327 sum=0.782403 max=0.00253941
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] dims=(128,120,5071) zAxis=step sum=3.21963e+11 max=113921 nonzero(>1e-12)=19263935/77890560 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV z-slice summary (thr=1e-12):
+    activeSlices=3238/5071  activeRange=[83,3320]  maxSumSlice=3133 (sum=2.83284e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3133 sum=2.83284e+08 max=113303 cnt>thr=6134 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV centerline peak: xy=(64,60) step=3122 value=113793 nonzero(>1e-12)=3212/5071 nan=0 inf=0 activeRange=[83,3294]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] peak= (25,23,3121) axis=step value=113921
+[INPUT_AUDIT][WRAPPER][SUPERP_PEAK_SHIFT] delta=(-52,63,-11) inputValue=403251 outputValue=396717
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=71 delta skipped (missing active plane)
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=1699 maxShift=(-108,126) bboxGrow(L,R,B,T)=(8,8,8,8) sigmaDelta=(0.0656234,0.0710249) sumRatio=0.995839 heuristic=asymmetric_shift
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=3327 maxShift=(0,0) bboxGrow(L,R,B,T)=(20,20,20,20) sigmaDelta=(0.466732,0.714696) sumRatio=0.994721 heuristic=symmetric_broadening
+[TRANSFER_AUDIT] layer=0 energy=226.175 beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3328 maxSuperpR=32
+  primMinPoint=(43.1148,-3.99991,46.6792) primMaxPoint=(217.056,162.35,196.834)
+  startIdx=(32,0,46) maxIdx=(218,163,197) doseDims=(247,247,247)
+  normDist=(-22750,-22750) globalOffset=(161,150,3458)
+  basisProbe doseOrigin=(125,81,121) -> bev=(165.567,153.262,1629)
+  doseAxisResponse dX=(2.17484,0,0) dY=(-0.00436401,-0.00311279,20) dZ=(0,-2.17485,0)
+    [PROBE] doseIdx=(32,0,46) -> bevIdx=(-53.2868,330.34,8.99805) OUT
+    [PROBE] doseIdx=(125,81,46) -> bevIdx=(165.567,316.376,1629) OUT
+    [PROBE] doseIdx=(218,163,46) -> bevIdx=(352.793,304.282,3269) OUT
+    [PROBE] doseIdx=(32,0,121) -> bevIdx=(-53.2868,153.536,8.99805) OUT
+    [PROBE] doseIdx=(125,81,121) -> bevIdx=(165.567,153.262,1629) IN
+    [PROBE] doseIdx=(218,163,121) -> bevIdx=(352.793,153.025,3269) OUT
+    [PROBE] doseIdx=(32,0,197) -> bevIdx=(-53.2868,-25.6257,8.99805) OUT
+    [PROBE] doseIdx=(125,81,197) -> bevIdx=(165.567,-12.0262,1629) OUT
+    [PROBE] doseIdx=(218,163,197) -> bevIdx=(352.793,-0.248245,3269) OUT
+[TRANSFER_AUDIT][NUC] layer=0 energy=226.175 startIdx=(0,0,0) maxIdx=(246,163,236) grid=(8,21) nucMinPoint=(4.70883,-3.99991,-5.94928) nucMaxPoint=(262.747,162.35,235.835) nucBevDims=(128,120,5071) haloGridDelta=(4.1,4.1) haloOffset=(-107.3,-97.5) physicalPBDelta=(4.1,4.1) beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3328 willLaunch=1
+  [TRANSFER_AUDIT][NUC] normDist=(-22750,-22750) globalOffset=(58.1707,55.7805,3458)
+  [TRANSFER_AUDIT][NUC] basisProbe doseOrigin=(123,81,118) -> nucBev=(58.2238,58.1675,1629)
+  [TRANSFER_AUDIT][NUC] doseAxisResponse dX=(0.530453,0,0) dY=(-4.95911e-05,-0.00227737,20) dZ=(0,-0.530449,0)
+    [PROBE][NUC] doseIdx=(0,0,0) -> nucBevIdx=(-12.4935,126.215,8.99805) texIdx=(-11.9935,126.715,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,81,0) -> nucBevIdx=(58.2238,120.761,1629) texIdx=(58.7238,121.261,1629.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,163,0) -> nucBevIdx=(118.723,116.037,3269) texIdx=(119.223,116.537,3269.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,118) -> nucBevIdx=(-12.4935,58.3679,8.99805) texIdx=(-11.9935,58.8679,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,81,118) -> nucBevIdx=(58.2238,58.1675,1629) texIdx=(58.7238,58.6675,1629.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(246,163,118) -> nucBevIdx=(118.723,57.994,3269) texIdx=(119.223,58.494,3269.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,236) -> nucBevIdx=(-12.4935,-9.479,8.99805) texIdx=(-11.9935,-8.979,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,81,236) -> nucBevIdx=(58.2238,-4.42569,1629) texIdx=(58.7238,-3.92569,1629.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,163,236) -> nucBevIdx=(118.723,-0.0491943,3269) texIdx=(119.223,0.450806,3269.5) IN rawFanIn=0
+[TRANSFER_AUDIT][NUC_DELTA] layer=0 beforeSum=2.3494e+11 afterSum=2.94106e+11 deltaSum=5.91656e+10 beforeMax=396711 afterMax=509847 maxDelta=113563 minDelta=0 positiveDeltaCount=3566462 negativeDeltaCount=0 finiteDeltaCount=15069223
+  [SIGMA_AIR] peakDepth=327.15 rangeStopDepth=343.507 deltaZ=-0.1 cornerZ=352.9 sigmaSqAirLin=0.000767286 sigmaSqAirQuad=8.3682e-08 incDiv(step0)=0.000767203 stepVol0=0.0713821 stepVol1=0.0713895
+[INPUT_AUDIT][WRAPPER][IDD layer=1] dims=(288,240,5325) zAxis=step sum=2.2783e+13 max=431835 nonzero(>1e-12)=168596715/368064000 nan=0 inf=0
+  IDD layer=1 z-slice summary (thr=1e-12):
+    activeSlices=3358/5325  activeRange=[83,3440]  maxSumSlice=3245 (sum=1.79237e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3245 sum=1.79237e+10 max=431418 cnt>thr=50939 nan=0 inf=0
+  IDD layer=1 centerline peak: xy=(144,120) step=3233 value=425890 nonzero(>1e-12)=3309/5325 nan=0 inf=0 activeRange=[84,3392]
+[INPUT_AUDIT][WRAPPER][RSIGMA layer=1] dims=(288,240,5325) zAxis=step sum=7.34434e+07 max=9.99378 nonzero(>1e-12)=169239414/368064000 nan=0 inf=198824586
+  RSIGMA layer=1 z-slice summary (thr=1e-12):
+    activeSlices=3370/5325  activeRange=[71,3440]  maxSumSlice=102 (sum=131674)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=102 sum=131674 max=2.7847 cnt>thr=47285 nan=0 inf=21835
+  RSIGMA layer=1 centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3322/5325 nan=0 inf=2003 activeRange=[71,3392]
+  [SIGMA_AIR] peakDepth=337.85 rangeStopDepth=354.742 deltaZ=-0.1 cornerZ=352.9 sigmaSqAirLin=0.000742741 sigmaSqAirQuad=8.0996e-08 incDiv(step0)=0.00074266 stepVol0=0.0713821 stepVol1=0.0713895
+  [RTD_DEBUG_VOXEL] layer=2 activeSteps=[71,5070] voxelWidthMean_mm=(0.848,0.957846,1.06774) sigmaAtRad32_mm=(8.97667,10.1667,11.3571) peakDepth=337.85
+  [RTD_HALO_IDD_COMPARE] layer=2 primaryIddSum=2.4851e+13 nucIddSum=3.72441e+11 nucToPrimaryIddSumRatio=0.014987 nucIddNonzero=9566424 primaryIddNonzero=175582682 nucRSigmaFiniteWhereIddPositive=9566424 nucRSigmaBadWhereIddPositive=0
+[INPUT_AUDIT][WRAPPER][NUC_IDD layer=2] dims=(64,56,5325) zAxis=step sum=3.72441e+11 max=98618.6 nonzero(>1e-12)=9566424/19084800 nan=0 inf=0
+  NUC_IDD layer=2 z-slice summary (thr=1e-12):
+    activeSlices=3458/5325  activeRange=[83,3540]  maxSumSlice=3352 (sum=2.3376e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3352 sum=2.3376e+08 max=98128.5 cnt>thr=2799 nan=0 inf=0
+  NUC_IDD layer=2 centerline peak: xy=(32,28) step=3337 value=88648.1 nonzero(>1e-12)=3418/5325 nan=0 inf=0 activeRange=[84,3501]
+[INPUT_AUDIT][WRAPPER][NUC_RSIGMA layer=2] dims=(64,56,5325) zAxis=step sum=1.69857e+06 max=0.411242 nonzero(>1e-12)=9607851/19084800 nan=0 inf=9476949
+  NUC_RSIGMA layer=2 z-slice summary (thr=1e-12):
+    activeSlices=3471/5325  activeRange=[71,3541]  maxSumSlice=135 (sum=1134.62)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=135 sum=1134.62 max=0.410958 cnt>thr=2800 nan=0 inf=784
+  NUC_RSIGMA layer=2 centerline peak: xy=(32,28) step=114 value=0.410579 nonzero(>1e-12)=3430/5325 nan=0 inf=1895 activeRange=[72,3501]
+[INPUT_AUDIT][WRAPPER][IDD layer=2] dims=(288,240,5325) zAxis=step sum=2.4851e+13 max=450239 nonzero(>1e-12)=175582682/368064000 nan=0 inf=0
+  IDD layer=2 z-slice summary (thr=1e-12):
+    activeSlices=3466/5325  activeRange=[83,3548]  maxSumSlice=3352 (sum=1.88131e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3352 sum=1.88131e+10 max=450018 cnt>thr=51373 nan=0 inf=0
+  IDD layer=2 centerline peak: xy=(144,120) step=3337 value=440278 nonzero(>1e-12)=3417/5325 nan=0 inf=0 activeRange=[84,3500]
+[INPUT_AUDIT][WRAPPER][RSIGMA layer=2] dims=(288,240,5325) zAxis=step sum=7.57733e+07 max=9.99378 nonzero(>1e-12)=176230872/368064000 nan=0 inf=191833128
+  RSIGMA layer=2 z-slice summary (thr=1e-12):
+    activeSlices=3478/5325  activeRange=[71,3548]  maxSumSlice=103 (sum=133840)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=103 sum=133840 max=2.78551 cnt>thr=48049 nan=0 inf=21071
+  RSIGMA layer=2 centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3430/5325 nan=0 inf=1895 activeRange=[71,3500]
+[INPUT_AUDIT][WRAPPER] layer=2 rayWeights(sum,max)=(1.54447e+10,365372) bevIdd(sum,max)=(2.4851e+13,450239)
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] peakstep=3352 peakSum=1.88131e+10 peakMax=450018
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2570 sum=6.79626e+09 max=161462
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2662 sum=6.99177e+09 max=166241
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=3352 sum=1.88131e+10 max=450018
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5324 sum=0 max=0
+[SIGMA_FIELD][before] layer=2 positiveIdd=175582682 finiteSigma=175582682 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.132401,1.11975,3.02365,3.37848,3.38022) minRSigmaEff=0.0977052 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER] layer=2 energy=235.321 energyIdx=2 profileRowIdx=2 peakDepth=337.85 longitudalCutoff=684.541 beamPara=(23.3924,0.00965014,4.49996e-06)
+  [INPUT_AUDIT][WRAPPER] profile row=2 depth=0 weights=[0.991124, 0.00408996, 0.00478573] sigmas=[0.12024, 9.4784, 44.8604] overall=1.00503
+  [INPUT_AUDIT][WRAPPER] profile row=2 depth=400 weights=[0.751939, 0.105173, 0.142887] sigmas=[3.84713, 16.4575, 54.8446] overall=1.01622
+  [INPUT_AUDIT][WRAPPER] profile row=2 depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0] overall=0
+  [RTD_DEBUG_SIGMA_HOOK] layer=2 profileTex=0 hasBeamParaData=1 profileRows=4 profileDepthN=800 profileChannels=7 profileRowIdx=2 energy=235.321 enabled=0
+  [RTD_DEBUG_SIGMA_HOOK_RESULT] layer=2 beforeCount=0 afterCount=0
+[SIGMA_FIELD][after] layer=2 positiveIdd=175582682 finiteSigma=175582682 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.132401,1.11975,3.02365,3.37848,3.38022) minRSigmaEff=0.0977052 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] dims=(288,240,5325) zAxis=step sum=2.4851e+13 max=450239 nonzero(>1e-12)=175582682/368064000 nan=0 inf=0
+  SUPERP_INPUT_IDD z-slice summary (thr=1e-12):
+    activeSlices=3466/5325  activeRange=[83,3548]  maxSumSlice=3352 (sum=1.88131e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3352 sum=1.88131e+10 max=450018 cnt>thr=51373 nan=0 inf=0
+  SUPERP_INPUT_IDD centerline peak: xy=(144,120) step=3337 value=440278 nonzero(>1e-12)=3417/5325 nan=0 inf=0 activeRange=[84,3500]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] peak= (48,108,3349) axis=step value=450239
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=1809 sum=6.24458e+09 max=148166 maxPos=(48,108) nnz(>1e-12)=51373 bbox=[(10,10)-(248,224)] centroid=(129.001,117.006) sigma=(63.7364,56.3757)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=3548 sum=0.183486 max=0.0835063 maxPos=(248,11) nnz(>1e-12)=3 bbox=[(247,10)-(248,11)] centroid=(247.589,10.4551) sigma=(0.49199,0.497981)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] dims=(288,240,5325) zAxis=step sum=7.57733e+07 max=9.99378 nonzero(>1e-12)=176230872/368064000 nan=0 inf=191833128
+  SUPERP_INPUT_RSIGMA z-slice summary (thr=1e-12):
+    activeSlices=3478/5325  activeRange=[71,3548]  maxSumSlice=103 (sum=133840)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=103 sum=133840 max=2.78551 cnt>thr=48049 nan=0 inf=21071
+  SUPERP_INPUT_RSIGMA centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3430/5325 nan=0 inf=1895 activeRange=[71,3500]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] peak= (127,95,71) axis=step value=9.99378
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=71 sum=16839.5 max=9.99378 maxPos=(127,95) nnz(>1e-12)=1685 bbox=[(106,95)-(152,141)] centroid=(129,118) sigma=(11.5799,11.5799)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=1809 sum=12612.4 max=0.251139 maxPos=(248,10) nnz(>1e-12)=51373 bbox=[(10,10)-(248,224)] centroid=(129,116.99) sigma=(69.1502,62.1763)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=3548 sum=0.295753 max=0.0985975 maxPos=(248,11) nnz(>1e-12)=3 bbox=[(247,10)-(248,11)] centroid=(247.667,10.3334) sigma=(0.471416,0.47142)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] dims=(352,304,5071) zAxis=step sum=2.47787e+13 max=440458 nonzero(>1e-12)=208624475/542637568 nan=0 inf=0
+  SUPERP_OUTPUT_BEV z-slice summary (thr=1e-12):
+    activeSlices=3466/5071  activeRange=[83,3548]  maxSumSlice=3352 (sum=1.87439e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3352 sum=1.87439e+10 max=440086 cnt>thr=73109 nan=0 inf=0
+  SUPERP_OUTPUT_BEV centerline peak: xy=(176,152) step=3339 value=439762 nonzero(>1e-12)=3422/5071 nan=0 inf=0 activeRange=[83,3504]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] peak= (111,106,3339) axis=step value=440458
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=1809 sum=6.23215e+09 max=146273 maxPos=(210,146) nnz(>1e-12)=59869 bbox=[(1,1)-(257,233)] centroid=(129.001,117.006) sigma=(63.8047,56.4516)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=3548 sum=0.18286 max=0.000562055 maxPos=(248,10) nnz(>1e-12)=2115 bbox=[(225,-12)-(270,33)] centroid=(247.589,10.4551) sigma=(7.12887,7.12928)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] peakstep=3352 peakSum=1.87439e+10 peakMax=440086
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=1809 sum=6.23215e+09 max=146273
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=2535 sum=6.71149e+09 max=157266
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3352 sum=1.87439e+10 max=440086
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3548 sum=0.18286 max=0.000562055
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] dims=(128,120,5071) zAxis=step sum=3.71082e+11 max=87489.4 nonzero(>1e-12)=21375394/77890560 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV z-slice summary (thr=1e-12):
+    activeSlices=3458/5071  activeRange=[83,3540]  maxSumSlice=3352 (sum=2.33036e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3352 sum=2.33036e+08 max=87254.8 cnt>thr=5319 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV centerline peak: xy=(64,60) step=3340 value=87488.7 nonzero(>1e-12)=3430/5071 nan=0 inf=0 activeRange=[83,3512]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] peak= (23,28,3341) axis=step value=87489.4
+[INPUT_AUDIT][WRAPPER][SUPERP_PEAK_SHIFT] delta=(63,-2,-10) inputValue=450239 outputValue=440458
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=71 delta skipped (missing active plane)
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=1809 maxShift=(162,38) bboxGrow(L,R,B,T)=(9,9,9,9) sigmaDelta=(0.0683175,0.0758559) sumRatio=0.99801 heuristic=asymmetric_shift
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=3548 maxShift=(0,-1) bboxGrow(L,R,B,T)=(22,22,22,22) sigmaDelta=(6.63688,6.6313) sumRatio=0.996591 heuristic=symmetric_broadening
+[TRANSFER_AUDIT] layer=2 energy=235.321 beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3549 maxSuperpR=32
+  primMinPoint=(42.3328,-3.99991,45.9361) primMaxPoint=(217.979,173.4,197.563)
+  startIdx=(32,0,45) maxIdx=(218,174,198) doseDims=(247,247,247)
+  normDist=(-22750,-22750) globalOffset=(161,150,3458)
+  basisProbe doseOrigin=(125,87,121) -> bev=(165.541,153.244,1749)
+  doseAxisResponse dX=(2.16245,0,0) dY=(-0.00431824,-0.00308228,20) dZ=(0,-2.16245,0)
+    [PROBE] doseIdx=(32,0,45) -> bevIdx=(-53.2868,332.698,8.99805) OUT
+    [PROBE] doseIdx=(125,87,45) -> bevIdx=(165.541,317.589,1749) OUT
+    [PROBE] doseIdx=(218,174,45) -> bevIdx=(350.941,304.789,3489) OUT
+    [PROBE] doseIdx=(32,0,121) -> bevIdx=(-53.2868,153.536,8.99805) OUT
+    [PROBE] doseIdx=(125,87,121) -> bevIdx=(165.541,153.244,1749) IN
+    [PROBE] doseIdx=(218,174,121) -> bevIdx=(350.941,152.996,3489) IN
+    [PROBE] doseIdx=(32,0,198) -> bevIdx=(-53.2868,-27.983,8.99805) OUT
+    [PROBE] doseIdx=(125,87,198) -> bevIdx=(165.541,-13.2646,1749) OUT
+    [PROBE] doseIdx=(218,174,198) -> bevIdx=(350.941,-0.794556,3489) OUT
+[TRANSFER_AUDIT][NUC] layer=2 energy=235.321 startIdx=(0,0,0) maxIdx=(246,174,236) grid=(8,22) nucMinPoint=(4.5012,-3.99991,-2.85462) nucMaxPoint=(258.713,173.4,235.344) nucBevDims=(128,120,5071) haloGridDelta=(4,4) haloOffset=(-108.6,-97.5) physicalPBDelta=(4,4) beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3549 willLaunch=1
+  [TRANSFER_AUDIT][NUC] normDist=(-22750,-22750) globalOffset=(59.15,56.375,3458)
+  [TRANSFER_AUDIT][NUC] basisProbe doseOrigin=(123,87,118) -> nucBev=(59.2041,58.8077,1749)
+  [TRANSFER_AUDIT][NUC] doseAxisResponse dX=(0.540611,0,0) dY=(-5.34058e-05,-0.00231171,20) dZ=(0,-0.540611,0)
+    [PROBE][NUC] doseIdx=(0,0,0) -> nucBevIdx=(-13.2808,128.57,8.99805) texIdx=(-12.7808,129.07,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,87,0) -> nucBevIdx=(59.2041,122.6,1749) texIdx=(59.7041,123.1,1749.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,174,0) -> nucBevIdx=(120.616,117.542,3489) texIdx=(121.116,118.042,3489.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,118) -> nucBevIdx=(-13.2808,59.0271,8.99805) texIdx=(-12.7808,59.5271,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,87,118) -> nucBevIdx=(59.2041,58.8077,1749) texIdx=(59.7041,59.3077,1749.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(246,174,118) -> nucBevIdx=(120.616,58.6219,3489) texIdx=(121.116,59.1219,3489.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,236) -> nucBevIdx=(-13.2808,-10.516,8.99805) texIdx=(-12.7808,-10.016,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,87,236) -> nucBevIdx=(59.2041,-4.98438,1749) texIdx=(59.7041,-4.48438,1749.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,174,236) -> nucBevIdx=(120.616,-0.297787,3489) texIdx=(121.116,0.202213,3489.5) IN rawFanIn=0
+[TRANSFER_AUDIT][NUC_DELTA] layer=2 beforeSum=8.70543e+11 afterSum=9.35872e+11 deltaSum=6.53285e+10 beforeMax=1.09274e+06 afterMax=1.15763e+06 maxDelta=87350 minDelta=0 positiveDeltaCount=3784285 negativeDeltaCount=0 finiteDeltaCount=15069223
+  [SIGMA_AIR] peakDepth=349.55 rangeStopDepth=367.027 deltaZ=-0.1 cornerZ=352.9 sigmaSqAirLin=0.000717639 sigmaSqAirQuad=7.82495e-08 incDiv(step0)=0.000717561 stepVol0=0.0713821 stepVol1=0.0713895
+  [RTD_DEBUG_VOXEL] layer=3 activeSteps=[71,5070] voxelWidthMean_mm=(0.848,0.957846,1.06774) sigmaAtRad32_mm=(8.97667,10.1667,11.3571) peakDepth=349.55
+  [RTD_HALO_IDD_COMPARE] layer=3 primaryIddSum=2.56844e+13 nucIddSum=3.80588e+11 nucToPrimaryIddSumRatio=0.0148179 nucIddNonzero=9897051 primaryIddNonzero=181650948 nucRSigmaFiniteWhereIddPositive=9897051 nucRSigmaBadWhereIddPositive=0
+[INPUT_AUDIT][WRAPPER][NUC_IDD layer=3] dims=(64,56,5325) zAxis=step sum=3.80588e+11 max=98496.4 nonzero(>1e-12)=9897051/19084800 nan=0 inf=0
+  NUC_IDD layer=3 z-slice summary (thr=1e-12):
+    activeSlices=3577/5325  activeRange=[83,3659]  maxSumSlice=3463 (sum=2.33297e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3463 sum=2.33297e+08 max=98223 cnt>thr=2799 nan=0 inf=0
+  NUC_IDD layer=3 centerline peak: xy=(32,28) step=3449 value=88483.1 nonzero(>1e-12)=3536/5325 nan=0 inf=0 activeRange=[84,3619]
+[INPUT_AUDIT][WRAPPER][NUC_RSIGMA layer=3] dims=(64,56,5325) zAxis=step sum=1.77132e+06 max=0.411903 nonzero(>1e-12)=9939477/19084800 nan=0 inf=9145323
+  NUC_RSIGMA layer=3 z-slice summary (thr=1e-12):
+    activeSlices=3589/5325  activeRange=[71,3659]  maxSumSlice=135 (sum=1136.68)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=3584
+    z=135 sum=1136.68 max=0.411596 cnt>thr=2801 nan=0 inf=783
+  NUC_RSIGMA layer=3 centerline peak: xy=(32,28) step=114 value=0.411213 nonzero(>1e-12)=3548/5325 nan=0 inf=1777 activeRange=[72,3619]
+[INPUT_AUDIT][WRAPPER][IDD layer=3] dims=(288,240,5325) zAxis=step sum=2.56844e+13 max=449853 nonzero(>1e-12)=181650948/368064000 nan=0 inf=0
+  IDD layer=3 z-slice summary (thr=1e-12):
+    activeSlices=3584/5325  activeRange=[83,3666]  maxSumSlice=3463 (sum=1.87789e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3463 sum=1.87789e+10 max=449374 cnt>thr=51373 nan=0 inf=0
+  IDD layer=3 centerline peak: xy=(144,120) step=3449 value=439665 nonzero(>1e-12)=3535/5325 nan=0 inf=0 activeRange=[84,3618]
+[INPUT_AUDIT][WRAPPER][RSIGMA layer=3] dims=(288,240,5325) zAxis=step sum=7.76298e+07 max=9.99378 nonzero(>1e-12)=182299138/368064000 nan=0 inf=185764862
+  RSIGMA layer=3 z-slice summary (thr=1e-12):
+    activeSlices=3596/5325  activeRange=[71,3666]  maxSumSlice=103 (sum=135507)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=103 sum=135507 max=2.8202 cnt>thr=48049 nan=0 inf=21071
+  RSIGMA layer=3 centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3548/5325 nan=0 inf=1777 activeRange=[71,3618]
+[INPUT_AUDIT][WRAPPER] layer=3 rayWeights(sum,max)=(1.56069e+10,369278) bevIdd(sum,max)=(2.56844e+13,449853)
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] peakstep=3463 peakSum=1.87789e+10 peakMax=449374
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2570 sum=6.62568e+09 max=157321
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=2662 sum=6.77249e+09 max=160870
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=3463 sum=1.87789e+10 max=449374
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][IDD_DEPTH_PROJECTION] step=5324 sum=0 max=0
+[SIGMA_FIELD][before] layer=3 positiveIdd=181650948 finiteSigma=181650948 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.133213,1.15467,3.12492,3.49188,3.4936) minRSigmaEff=0.0951852 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER] layer=3 energy=240 energyIdx=3 profileRowIdx=3 peakDepth=349.55 longitudalCutoff=707 beamPara=(22.9415,0.00938361,4.03513e-06)
+  [INPUT_AUDIT][WRAPPER] profile row=3 depth=0 weights=[0.991223, 0.00386053, 0.00491601] sigmas=[0.121021, 9.56204, 44.8625] overall=1.00612
+  [INPUT_AUDIT][WRAPPER] profile row=3 depth=400 weights=[0.744002, 0.106081, 0.149917] sigmas=[3.78467, 16.0075, 56.2194] overall=1.01569
+  [INPUT_AUDIT][WRAPPER] profile row=3 depth=799 weights=[0, 0, 0] sigmas=[0, 0, 0] overall=0
+  [RTD_DEBUG_SIGMA_HOOK] layer=3 profileTex=0 hasBeamParaData=1 profileRows=4 profileDepthN=800 profileChannels=7 profileRowIdx=3 energy=240 enabled=0
+  [RTD_DEBUG_SIGMA_HOOK_RESULT] layer=3 beforeCount=0 afterCount=0
+[SIGMA_FIELD][after] layer=3 positiveIdd=181650948 finiteSigma=181650948 overflowLike=0 approxSigma(min,p50,p90,p99,max)=(-0.133213,1.15467,3.12492,3.49188,3.4936) minRSigmaEff=0.0951852 maxMeanWidth=1.0789
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] dims=(288,240,5325) zAxis=step sum=2.56844e+13 max=449853 nonzero(>1e-12)=181650948/368064000 nan=0 inf=0
+  SUPERP_INPUT_IDD z-slice summary (thr=1e-12):
+    activeSlices=3584/5325  activeRange=[83,3666]  maxSumSlice=3463 (sum=1.87789e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3463 sum=1.87789e+10 max=449374 cnt>thr=51373 nan=0 inf=0
+  SUPERP_INPUT_IDD centerline peak: xy=(144,120) step=3449 value=439665 nonzero(>1e-12)=3535/5325 nan=0 inf=0 activeRange=[84,3618]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] peak= (210,90,3464) axis=step value=449853
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=1868 sum=6.23279e+09 max=147871 maxPos=(210,90) nnz(>1e-12)=51373 bbox=[(10,10)-(248,224)] centroid=(128.999,117.006) sigma=(63.7353,56.3745)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_IDD] step=3666 sum=0.13536 max=0.0616308 maxPos=(248,11) nnz(>1e-12)=3 bbox=[(247,10)-(248,11)] centroid=(247.589,10.4553) sigma=(0.492087,0.497999)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] dims=(288,240,5325) zAxis=step sum=7.76298e+07 max=9.99378 nonzero(>1e-12)=182299138/368064000 nan=0 inf=185764862
+  SUPERP_INPUT_RSIGMA z-slice summary (thr=1e-12):
+    activeSlices=3596/5325  activeRange=[71,3666]  maxSumSlice=103 (sum=135507)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=69120
+    z=103 sum=135507 max=2.8202 cnt>thr=48049 nan=0 inf=21071
+  SUPERP_INPUT_RSIGMA centerline peak: xy=(144,120) step=71 value=9.99378 nonzero(>1e-12)=3548/5325 nan=0 inf=1777 activeRange=[71,3618]
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] peak= (127,95,71) axis=step value=9.99378
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=71 sum=16839.5 max=9.99378 maxPos=(127,95) nnz(>1e-12)=1685 bbox=[(106,95)-(152,141)] centroid=(129,118) sigma=(11.5799,11.5799)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=1868 sum=12325.1 max=0.245311 maxPos=(248,10) nnz(>1e-12)=51373 bbox=[(10,10)-(248,224)] centroid=(129,116.99) sigma=(69.1469,62.1738)
+[INPUT_AUDIT][WRAPPER][SUPERP_INPUT_RSIGMA] step=3666 sum=0.288158 max=0.0960686 maxPos=(248,10) nnz(>1e-12)=3 bbox=[(247,10)-(248,11)] centroid=(247.667,10.3333) sigma=(0.471393,0.471397)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] dims=(352,304,5071) zAxis=step sum=2.56079e+13 max=439546 nonzero(>1e-12)=216550266/542637568 nan=0 inf=0
+  SUPERP_OUTPUT_BEV z-slice summary (thr=1e-12):
+    activeSlices=3584/5071  activeRange=[83,3666]  maxSumSlice=3463 (sum=1.86894e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3463 sum=1.86894e+10 max=438814 cnt>thr=73285 nan=0 inf=0
+  SUPERP_OUTPUT_BEV centerline peak: xy=(176,152) step=3450 value=438920 nonzero(>1e-12)=3540/5071 nan=0 inf=0 activeRange=[83,3622]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] peak= (111,106,3451) axis=step value=439546
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=71 no positive finite samples
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=1868 sum=6.21665e+09 max=145834 maxPos=(48,129) nnz(>1e-12)=59869 bbox=[(1,1)-(257,233)] centroid=(128.999,117.006) sigma=(63.8072,56.4541)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV] step=3666 sum=0.134754 max=0.000393718 maxPos=(248,10) nnz(>1e-12)=2115 bbox=[(225,-12)-(270,33)] centroid=(247.589,10.4553) sigma=(7.2993,7.29971)
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] peakstep=3463 peakSum=1.86894e+10 peakMax=438814
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=0 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=71 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=1868 sum=6.21665e+09 max=145834
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=2535 sum=6.55958e+09 max=153650
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3463 sum=1.86894e+10 max=438814
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=3666 sum=0.134754 max=0.000393718
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_BEV_DEPTH] step=5070 sum=0 max=0
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] dims=(128,120,5071) zAxis=step sum=3.79217e+11 max=87384.5 nonzero(>1e-12)=21997630/77890560 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV z-slice summary (thr=1e-12):
+    activeSlices=3577/5071  activeRange=[83,3659]  maxSumSlice=3463 (sum=2.32542e+08)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3463 sum=2.32542e+08 max=87060.6 cnt>thr=5319 nan=0 inf=0
+  SUPERP_OUTPUT_NUC_BEV centerline peak: xy=(64,60) step=3452 value=87365.7 nonzero(>1e-12)=3548/5071 nan=0 inf=0 activeRange=[83,3630]
+[INPUT_AUDIT][WRAPPER][SUPERP_OUTPUT_NUC_BEV] peak= (24,21,3451) axis=step value=87384.5
+[INPUT_AUDIT][WRAPPER][SUPERP_PEAK_SHIFT] delta=(-99,16,-13) inputValue=449853 outputValue=439546
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=71 delta skipped (missing active plane)
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=1868 maxShift=(-162,39) bboxGrow(L,R,B,T)=(9,9,9,9) sigmaDelta=(0.0718628,0.0795553) sumRatio=0.99741 heuristic=asymmetric_shift
+[INPUT_AUDIT][WRAPPER][SUPERP_SLICE_DELTA] step=3666 maxShift=(0,-1) bboxGrow(L,R,B,T)=(22,22,22,22) sigmaDelta=(6.80722,6.80171) sumRatio=0.995522 heuristic=symmetric_broadening
+[TRANSFER_AUDIT] layer=3 energy=240 beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3667 maxSuperpR=32
+  primMinPoint=(41.9152,-3.99991,45.5393) primMaxPoint=(218.472,179.3,197.952)
+  startIdx=(32,0,45) maxIdx=(219,180,198) doseDims=(247,247,247)
+  normDist=(-22750,-22750) globalOffset=(161,150,3458)
+  basisProbe doseOrigin=(125,90,121) -> bev=(165.528,153.234,1809)
+  doseAxisResponse dX=(2.1563,0,0) dY=(-0.00428772,-0.00305176,20) dZ=(0,-2.1563,0)
+    [PROBE] doseIdx=(32,0,45) -> bevIdx=(-53.2868,332.698,8.99805) OUT
+    [PROBE] doseIdx=(125,90,45) -> bevIdx=(165.528,317.113,1809) OUT
+    [PROBE] doseIdx=(219,180,45) -> bevIdx=(351.933,303.978,3609) IN
+    [PROBE] doseIdx=(32,0,121) -> bevIdx=(-53.2868,153.536,8.99805) OUT
+    [PROBE] doseIdx=(125,90,121) -> bevIdx=(165.528,153.234,1809) IN
+    [PROBE] doseIdx=(219,180,121) -> bevIdx=(351.933,152.98,3609) IN
+    [PROBE] doseIdx=(32,0,198) -> bevIdx=(-53.2868,-27.983,8.99805) OUT
+    [PROBE] doseIdx=(125,90,198) -> bevIdx=(165.528,-12.8004,1809) OUT
+    [PROBE] doseIdx=(219,180,198) -> bevIdx=(351.933,-0.00439453,3609) OUT
+[TRANSFER_AUDIT][NUC] layer=3 energy=240 startIdx=(0,0,0) maxIdx=(246,180,236) grid=(8,23) nucMinPoint=(3.8876,-3.99991,-3.50426) nucMaxPoint=(259.417,179.3,235.929) nucBevDims=(128,120,5071) haloGridDelta=(4,4) haloOffset=(-108.6,-97.5) physicalPBDelta=(4,4) beamFirstInside=71 transferFirstStep=0 beamFirstCalculatedPassive=3667 willLaunch=1
+  [TRANSFER_AUDIT][NUC] normDist=(-22750,-22750) globalOffset=(59.15,56.375,3458)
+  [TRANSFER_AUDIT][NUC] basisProbe doseOrigin=(123,90,118) -> nucBev=(59.2039,58.8008,1809)
+  [TRANSFER_AUDIT][NUC] doseAxisResponse dX=(0.539074,0,0) dY=(-4.95911e-05,-0.00229645,20) dZ=(0,-0.539074,0)
+    [PROBE][NUC] doseIdx=(0,0,0) -> nucBevIdx=(-13.2808,128.57,8.99805) texIdx=(-12.7808,129.07,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,90,0) -> nucBevIdx=(59.2039,122.412,1809) texIdx=(59.7039,122.912,1809.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,180,0) -> nucBevIdx=(120.294,117.221,3609) texIdx=(120.794,117.721,3609.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,118) -> nucBevIdx=(-13.2808,59.0271,8.99805) texIdx=(-12.7808,59.5271,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,90,118) -> nucBevIdx=(59.2039,58.8008,1809) texIdx=(59.7039,59.3008,1809.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(246,180,118) -> nucBevIdx=(120.294,58.6102,3609) texIdx=(120.794,59.1102,3609.5) IN rawFanIn=1
+    [PROBE][NUC] doseIdx=(0,0,236) -> nucBevIdx=(-13.2808,-10.516,8.99805) texIdx=(-12.7808,-10.016,9.49805) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(123,90,236) -> nucBevIdx=(59.2039,-4.80991,1809) texIdx=(59.7039,-4.30991,1809.5) OUT rawFanIn=0
+    [PROBE][NUC] doseIdx=(246,180,236) -> nucBevIdx=(120.294,-0.00082016,3609) texIdx=(120.794,0.49918,3609.5) IN rawFanIn=0
+[TRANSFER_AUDIT][NUC_DELTA] layer=3 beforeSum=1.2162e+12 afterSum=1.28322e+12 deltaSum=6.70179e+10 beforeMax=1.3589e+06 afterMax=1.4155e+06 maxDelta=87304.9 minDelta=0 positiveDeltaCount=3928244 negativeDeltaCount=0 finiteDeltaCount=15069223
+[INPUT_AUDIT][WRAPPER][DOSE_PRE_WRITEBACK] dims=(247,247,247) zAxis=z sum=1.28322e+12 max=1.4155e+06 nonzero(>1e-12)=3972210/15069223 nan=0 inf=0
+  DOSE_PRE_WRITEBACK z-slice summary (thr=1e-12):
+    activeSlices=157/247  activeRange=[44,200]  maxSumSlice=127 (sum=1.41187e+10)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=127 sum=1.41187e+10 max=1.41547e+06 cnt>thr=27322 nan=0 inf=0
+  DOSE_PRE_WRITEBACK centerline peak: xy=(123,123) z=128 value=790662 nonzero(>1e-12)=157/247 nan=0 inf=0 activeRange=[44,200]
+[INPUT_AUDIT][WRAPPER][DOSE_PRE_WRITEBACK_DOSE_GRID_SUPPORT] layout=c_order_xyz sum=1.28322e+12 max=1.4155e+06 nonzero(>1e-12)=3972210/15069223 bbox=[(44,4,40)-(200,182,207)]
+  DOSE_PRE_WRITEBACK y-slice support (dose-grid y, thr=1e-12): activeSlices=179/247 activeRange=[4,182] maxSumY=157 (sum=1.4613e+10)
+    y=0 sum=0 cnt>thr=0
+    y=1 sum=0 cnt>thr=0
+    y=14 sum=5.82016e+09 cnt>thr=13782
+    y=15 sum=5.84425e+09 cnt>thr=14122
+    y=18 sum=5.90098e+09 cnt>thr=14738
+    y=93 sum=6.77311e+09 cnt>thr=24782
+    y=94 sum=6.79296e+09 cnt>thr=24782
+    y=120 sum=7.56563e+09 cnt>thr=26058
+    y=146 sum=9.98018e+09 cnt>thr=26058
+2026-06-02 16:17:35,056 - dosecal.py - 2311 - DOSECAL - INFO : Gathering data for beam ID bone_p.
+2026-06-02 16:17:35,080 - dosecal.py - 2348 - DOSECAL - INFO : Dose calculation finished for beam ID bone_p.
+2026-06-02 16:17:35,189 - path_optimizer.py - 48 - BASE - INFO : [SCAN_PATH_OPT] Total 1 beams.
+2026-06-02 16:17:35,189 - path_optimizer.py - 63 - BASE - INFO : [SCAN_PATH_OPT] Reading scan spots info for beam 1067.
+2026-06-02 16:17:35,209 - path_optimizer.py - 91 - BASE - INFO : [SCAN_PATH_OPT] Beam 1067 has 4 energy layers.
+2026-06-02 16:17:35,209 - path_optimizer.py - 94 - BASE - INFO : [SCAN_PATH_OPT] Start 48 pools.
+Registering dose calc PtclTech.CARBON_PBS: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.carbon_pbs_dose_calc.CARBON_PBS_DOSE_CALC'>
+Registering dose calc PtclTech.HELIUM_PBS: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.helium_pbs_dose_calc.HELIUM_PBS_DOSE_CALC'>
+Registering dose calc PtclTech.PROTON_MC: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.proton_mc_dose_calc.PROTON_MC_DOSE_CALC'>
+Registering weight initializer INIT_FLUENCE_MAP: <class 'content.optimizing_operator.opt_pipeline.opt_init_weights.init_weights_with_fluence_map.INIT_FLUENCE_MAP'>
+______________________________________________________________________________________________pencilbeam
+0.0
+2026-06-02 16:18:07,452 - path_optimizer.py - 110 - BASE - INFO : [SCAN_PATH_OPT] Beam 1067 path optimisation finished, took 31.14355182647705 seconds.
+2026-06-02 16:18:07,452 - path_optimizer.py - 111 - BASE - INFO : [SCAN_PATH_OPT] Beam 1067 update spot info json file.
+2026-06-02 16:18:07,455 - path_optimizer.py - 153 - BASE - INFO : [SCAN_PATH_OPT] Beam 1067 scan path optimisation finished. Improvement: 0.0 %
+2026-06-02 16:18:07,456 - path_optimizer.py - 55 - BASE - INFO : [SCAN_PATH_OPT] Scanning path optimisation finished! Total took 32.26639437675476 seconds.
+2026-06-02 16:18:07,470 - multiBeamGroups.py - 680 - MultiBeamGroups - INFO : time cost: PBS.process 247.55646382 s
+2026-06-02 16:18:07,470 - multiBeamGroups.py - 683 - MultiBeamGroups - INFO : {'msg': '', 'calcFlag': -1, 'totalIons': 0, 'uncertainty': 0}
+2026-06-02 16:18:07,470 - multiBeamGroups.py - 652 - MultiBeamGroups - INFO : time cost: process beam group 0 247.55673700 s
+2026-06-02 16:18:07,470 - multiBeamGroups.py - 653 - MultiBeamGroups - INFO : time cost: process beam groups 247.55678292 s
+2026-06-02 16:18:07,471 - multiBeamGroups.py - 687 - MultiBeamGroups - INFO : Test version now. Nothing useful maybe!
+2026-06-02 16:18:07,471 - multiBeamGroups.py - 699 - MultiBeamGroups - INFO : Start saving pickle
+2026-06-02 16:18:07,471 - multiBeamGroups.py - 707 - MultiBeamGroups - INFO : Start saving beam dose.
+2026-06-02 16:18:07,471 - multiBeamGroups.py - 712 - MultiBeamGroups - INFO : Saving beam dose beam ID 1067.
+2026-06-02 16:18:07,538 - multiBeamGroups.py - 736 - MultiBeamGroups - INFO : Saving beam energy_spot_info beam ID 1067.
+2026-06-02 16:18:07,551 - multiBeamGroups.py - 744 - MultiBeamGroups - INFO : Saving beam group dose.
+2026-06-02 16:18:07,622 - multiBeamGroups.py - 759 - MultiBeamGroups - INFO : Have a nice day!
+2026-06-02 16:18:07,622 - multiBeamGroups.py - 667 - MultiBeamGroups - INFO : time cost: saveResults 0.15194328 s
+2026-06-02 16:18:07,622 - multiBeamGroups.py - 668 - MultiBeamGroups - INFO : time cost: MBG.process 256.23364935 s
+Beam group 906 missing valid pickle path: /data/app/tps/work//case_231/plan_489/radiationSet_906/algorithm/algorithm.pickle
+274.24649310112

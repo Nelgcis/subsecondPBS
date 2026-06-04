@@ -1,0 +1,2 @@
+"/usr/bin/gcc-ar" cr libcudaCalDose1_.a CMakeFiles/cudaCalDose1_.dir/cudaCalDose.cpp.o CMakeFiles/cudaCalDose1_.dir/deviceCalDose.cu.o
+"/usr/bin/gcc-ranlib" libcudaCalDose1_.a

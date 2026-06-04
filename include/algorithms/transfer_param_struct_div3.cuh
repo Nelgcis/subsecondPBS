@@ -24,6 +24,7 @@ struct TransferParamStructDiv3 {
     vec3f inc;
     vec3f start;
     vec2f normDist;
+    float avgSourceDist;
     
     __host__ __device__ TransferParamStructDiv3() {}
     
@@ -40,6 +41,15 @@ struct TransferParamStructDiv3 {
         vec3f result = start + vec3f(float(idxK)) * inc;
         result.x *= 1 + result.z / (normDist.x - result.z);
         result.y *= 1 + result.z / (normDist.y - result.z);
+        // Z-divergence: carbonPBS uses divergent projected length (not axial).
+        // Convert axial gantryZ to divergent-equivalent so peripheral rays
+        // sample the correct deeper BEV step for their longer path length.
+        float axialDist = avgSourceDist - result.z;
+        if (axialDist > 0.0f && avgSourceDist > 0.0f) {
+            float divDist = sqrtf(result.x * result.x + result.y * result.y +
+                                  axialDist * axialDist);
+            result.z = avgSourceDist - divDist;
+        }
         result += globalOffset;
         return result;
     }
