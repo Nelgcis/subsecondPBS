@@ -1,0 +1,112 @@
+/**
+ * \file
+ * \brief Backward Compatibility Functions for Test Files
+ * 
+ * This file provides backward compatibility functions for existing test files
+ */
+
+#include "../include/algorithms/convolution.h"
+#include "../include/core/common.cuh"
+#include "../include/utils/utils.h"
+#include <cuda_runtime.h>
+#include <vector>
+
+// ============================================================================
+// Backward Compatibility Functions
+// ============================================================================
+
+// Backward compatible function for subspotToCPBConvolutionGPU
+int subspotToCPBConvolutionGPU(
+    const float* subspotData,
+    int numLayers,
+    int maxSubspotsPerLayer,
+    vec3f cpbCorner,
+    vec3f cpbResolution,
+    vec3i cpbDims,
+    float* cpbWeights,
+    int gpuId
+) {
+    try {
+        // Create texture from subspot data
+        cudaTextureObject_t subspotTex = create3DTexture(
+            subspotData, 
+            make_int3(5, maxSubspotsPerLayer, numLayers), // 5 parameters per subspot
+            cudaFilterModeLinear, 
+            cudaAddressModeClamp
+        );
+        
+        // Default beam parameters - 更合理的设置
+        vec3f beamDirection = make_vec3f(0.0f, 0.0f, 1.0f);
+        vec3f bmXDirection = make_vec3f(1.0f, 0.0f, 0.0f);
+        vec3f bmYDirection = make_vec3f(0.0f, 1.0f, 0.0f);
+        vec3f sourcePosition = make_vec3f(0.0f, 0.0f, -100.0f);
+        float sad = 100.0f;
+        float refPlaneZ = 0.0f;
+        
+        // Call the new function
+        performSubspotToCPBConvolution(
+            subspotTex, numLayers, maxSubspotsPerLayer,
+            cpbCorner, cpbResolution, cpbDims, cpbWeights,
+            beamDirection, bmXDirection, bmYDirection,
+            sourcePosition, sad, refPlaneZ
+        );
+        
+        // Clean up texture
+        destroyTextureObjectAndArray(subspotTex);
+        
+        return 1; // Success
+    } catch (...) {
+        return 0; // Failure
+    }
+}
+
+// Backward compatible function for initializeRayWeightsFromSubspotDataGPU
+int initializeRayWeightsFromSubspotDataGPU(
+    float* rayWeights,
+    vec3i rayDims,
+    vec3f beamDirection,
+    vec3f bmXDirection,
+    vec3f bmYDirection,
+    vec3f sourcePosition,
+    float sad,
+    float refPlaneZ,
+    int gpuId
+) {
+    try {
+        // Create CPB weights based on ROI+margin
+        vec3i cpbDims = make_vec3i(rayDims.x, rayDims.y, 1);
+        vec3f cpbCorner = make_vec3f(-ROI_MARGIN_X, -ROI_MARGIN_Y, 0.0f);
+        vec3f cpbResolution = make_vec3f(
+            2.0f * ROI_MARGIN_X / rayDims.x, 
+            2.0f * ROI_MARGIN_Y / rayDims.y, 
+            1.0f
+        );
+        
+        // 创建有意义的CPB权重分布
+        std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z);
+        for (int y = 0; y < cpbDims.y; y++) {
+            for (int x = 0; x < cpbDims.x; x++) {
+                int idx = y * cpbDims.x + x;
+                // 创建高斯分布权重
+                float dx = (x - cpbDims.x/2.0f) * cpbResolution.x;
+                float dy = (y - cpbDims.y/2.0f) * cpbResolution.y;
+                float dist = sqrtf(dx*dx + dy*dy);
+                cpbWeights[idx] = expf(-dist*dist / 4.0f); // 高斯权重
+            }
+        }
+        
+        // Call the new function
+        performCPBToRayWeightMapping(
+            cpbWeights.data(), cpbDims, cpbCorner, cpbResolution,
+            rayWeights, rayDims,
+            cpbCorner, cpbResolution,
+            0,  // layerIdx (for backward compatibility, use layer 0)
+            beamDirection, bmXDirection, bmYDirection,
+            sourcePosition, sad, refPlaneZ
+        );
+        
+        return 1; // Success
+    } catch (...) {
+        return 0; // Failure
+    }
+}

@@ -1,0 +1,203 @@
+=== Wrapper Integration Test with Subspot to CPB Convolution ===
+Creating test data...
+[TEST] Using reference LUT tables/proton_cumul_ddd_data.txt
+[TEST]   nEnergies=147 nSamples=1024 energiesPerU[min,max]=[62.3866, 226.638]
+[TEST] beam.energies (MeV) = 120, 160, 180
+
+=== DEBUG: LUT Parameters ===
+Energy LUT Structure:
+  nEnergies: 147
+  nEnergySamples: 1024
+  energiesPerU size: 147
+  peakDepths size: 147
+  scaleFacts size: 147
+  ciddMatrix size: 150528
+
+First 3 energies and their parameters:
+  Energy[0]: E=62.386600 MeV, peakDepth=30.023001 mm, scaleFact=27.279100
+    IDD values [0:4]: 0.000e+00 6.416e-09 1.283e-08 1.925e-08 2.569e-08 
+    IDD values [peak±2]: 8.563e-06 8.601e-06 8.638e-06 8.676e-06 8.713e-06 
+  Energy[1]: E=64.439201 MeV, peakDepth=32.023602 mm, scaleFact=25.574900
+    IDD values [0:4]: 0.000e+00 6.660e-09 1.332e-08 1.999e-08 2.667e-08 
+    IDD values [peak±2]: 8.879e-06 8.918e-06 8.957e-06 8.996e-06 9.035e-06 
+  Energy[2]: E=66.442299 MeV, peakDepth=34.024502 mm, scaleFact=24.070900
+    IDD values [0:4]: 0.000e+00 6.891e-09 1.378e-08 2.068e-08 2.759e-08 
+    IDD values [peak±2]: 9.188e-06 9.228e-06 9.268e-06 9.308e-06 9.349e-06 
+
+Last 3 energies and their parameters:
+  Energy[144]: E=224.992004 MeV, peakDepth=315.234009 mm, scaleFact=2.598070
+  Energy[145]: E=225.809998 MeV, peakDepth=317.183990 mm, scaleFact=2.582100
+  Energy[146]: E=226.638000 MeV, peakDepth=319.213013 mm, scaleFact=2.565680
+
+ciddMatrix statistics:
+  Min value: 0.000000e+00
+  Max value: 3.400900e-05
+  Mean value: 1.204992e-05
+  Non-zero values: 150381/150528
+
+scaleFacts statistics:
+  Min: 2.565680e+00
+  Max: 2.727910e+01
+=== END DEBUG ===
+
+Test data created:
+  Image volume: 512x512x256
+  Dose volume: 512x512x256
+  Energy layers: 3
+  Ray steps: 256
+
+Calling subsecondWrapper...
+Starting RTD wrapper with simplified implementation
+CUDA Device Information:
+Number of devices: 1
+[TIMING] printDeviceInfo: 38 μs
+GPU Memory Information:
+  Total: 8150 MB
+  Free: 7062 MB
+  Used: 1088 MB
+[TIMING] printMemoryInfo: 534 μs
+[TIMING] create3DTexture (ultra-optimized): 31523 μs
+[TIMING] create2DTexture: 507 μs
+[TIMING] create1DTexture: 563 μs
+[TIMING] create1DTexture: 17 μs
+[TIMING] create1DTexture: 15 μs
+
+[ENERGY_TABLE] nEnergies=147 nSamples=1024 energiesPerU=[6.238660e+01, 2.266380e+02] order=ascending monotonic=true
+[ENERGY_TABLE] peakDepths=[3.002300e+01, 3.192130e+02] (table units)
+[ENERGY_TABLE] scaleFacts=[2.727910e+01, 2.565680e+00]
+[ENERGY_TABLE] CIDD row0 vs rowLast: meanAbsDiff=1.327635e-05 maxAbsDiff=2.467761e-05
+[ENERGY_TABLE] CIDD samples (row0,rowLast): s0=(0.000000e+00,0.000000e+00) sMid=(3.980460e-06,1.688070e-05) sEnd=(9.331390e-06,3.400900e-05)
+[TIMING] allocateDeviceMemory: 1002 μs
+[TIMING] copyToDevice: 27251 μs
+Processing beam 0 with 3 energy layers
+  [BEAM] energies (first up to 8): 1.200000e+02, 1.600000e+02, 1.800000e+02
+  [ENERGY_UNITS] Auto-detected peakDepth table units as mm (peakMax=3.192130e+02, CT lenToMm=10). Using energyDepthToMm=1.
+  [ENERGY_UNITS] Note: peakDepth max=3.192130e+02 looks like mm while CT uses cm; auto-correct applied (energyDepthToMm=1).
+  [ENERGY_UNITS] energyDepthToMm=1.000000e+00 (peakDepth table units -> mm)
+  [CPB] gantry XY bounds (mm): x=[-2.000000e+02,3.120000e+02] y=[-3.120000e+02,2.000000e+02]
+  [CPB] corner_gantry_cm=(-2.000000e+01, -3.120000e+01, 0.000000e+00) res_cm=(1.000000e-01, 1.000000e-01, 1.000000e-01) dims=(512, 512, 3) cov_cm=(5.120000e+01, 5.120000e+01)
+  [GEOM] gantry Z bounds (mm): z=[-2.560000e+02,0.000000e+00]  startZ=0.000000e+00 stepLen=1.000000e+00 steps=257
+Starting convolution for 3 layers with 16 subspots per layer
+Layer 0 processed in 149 ms
+Layer 1 processed in 0 ms
+Layer 2 processed in 0 ms
+[TIMING] allocateDeviceMemory: 456 μs
+[TIMING] CPB to Ray Weight Mapping execution time: 1.383 ms
+[TIMING] CPB to Ray Weight Mapping execution time: 1.781 ms
+[TIMING] CPB to Ray Weight Mapping execution time: 1.984 ms
+[TIMING] copyToHost: 212 μs
+  [RAY_W] Layer 0 sum=9.959792e+07 max=2.733946e+04 nnz(>0)=13541/262144 nnz(>1e-6)=13541/262144 nan=0 inf=0
+[TIMING] copyToHost: 208 μs
+  [RAY_W] Layer 1 sum=9.957856e+07 max=2.266673e+04 nnz(>0)=17036/262144 nnz(>1e-6)=17036/262144 nan=0 inf=0
+[TIMING] copyToHost: 212 μs
+  [RAY_W] Layer 2 sum=9.956403e+07 max=1.935259e+04 nnz(>0)=20834/262144 nnz(>1e-6)=20834/262144 nan=0 inf=0
+  [RAY_W] All layers total sum=2.987405e+08 global max=2.733946e+04 total nnz(>0)=51411 (note: nnz counts are per-layer, not unique rays)
+
+[ENERGY] Layer 0 E=1.200000e+02 -> energyIdx=3.747699e+01 (floor=37, corr=4.769846e-01, bracket=[1.193990e+02, 1.206590e+02])
+[ENERGY]   scaleFact(table)=7.894281e+00  peakDepth(table)=1.037553e+02  -> scaleFact(mm)=7.894281e+00  peakDepth(mm)=1.037553e+02  (energyDepthToMm=1.000000e+00)
+[TIMING] allocateDeviceMemory: 1962 μs
+[TIMING] allocateDeviceMemory: 2642 μs
+[TIMING] allocateDeviceMemory: 398 μs
+[TIMING] allocateDeviceMemory: 9 μs
+[TIMING] allocateDeviceMemory: 435 μs
+  DensityAndSpTracerParams:
+    steps: 257
+    densityScale: 1.000000e+00
+    spScale: 1.000000e+00
+    fanCorner_mm: (-2.000000e+02, -3.120000e+02, 0.000000e+00)
+    fanDelta_mm : (1.000000e+00, 1.000000e+00, -1.000000e+00)
+    sourceDist_mm: (1.000000e+03, 1.000000e+03)
+    startIdx(0,0): (0.000000e+00, 5.120000e+02, 0.000000e+00)
+    incIdx  (0,0): (-2.000000e-01, 3.120000e-01, 1.000000e+00)
+    stepLen_mm(0,0): 1.066463e+00
+  [SIGMA_AIR] peakDepth=1.037553e+02 deltaZ=-1.000000e+00 cornerZ=0.000000e+00 sigmaSqAirLin=4.394599e-02 sigmaSqAirQuad=2.720257e-05 incDiv(step0)=4.391879e-02 stepVol0=1.000000e+00 stepVol1=1.002001e+00
+[TIMING] allocateDeviceMemory: 2175 μs
+[TIMING] allocateDeviceMemory: 1699 μs
+[TIMING] allocateDeviceMemory: 7 μs
+[TIMING] copyToDevice: 22979 μs
+[TIMING] allocateDeviceMemory: 34 μs
+[TIMING] allocateDeviceMemory: 1 μs
+[TIMING] copyToHost: 99 μs
+[TIMING] copyToHost: 45 μs
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 1 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] copyToHost: 58 μs
+[TIMING] freeDeviceMemory: 1 μs
+  [CUTOFF] maxPeakDepth(table)=2.140538e+02 -> maxPeakDepth(mm)=2.140538e+02  firstPastCutoffAll=256  beamFirstGuaranteedPassive=256  localAfterLast=256  afterLast=256
+  [CUTOFF] maxPeakDepth_table=2.140538e+02 maxPeakDepth_mm=2.140538e+02 firstPastCutoffAll=256 beamFirstGuaranteedPassive=256 localAfterLast=256 afterLast=256
+[TIMING] freeDeviceMemory: 1 μs
+[TIMING] freeDeviceMemory: 4411 μs
+[TIMING] freeDeviceMemory: 3113 μs
+[TIMING] copyToHost: 32139 μs
+[TIMING] copyToHost: 29999 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=3.051784e+03  max=1.492304e-02  minPos=2.643903e-09  nnz(>0)=2972687/67371008  nnz(>1e-15)=2972687/67371008  nnz(>1e-6)=2914812/67371008  nan=0  inf=0
+    Ray Sigma- finiteCount=3496975/67371008  minFinite=0.000000e+00  maxFinite=3.370543e+00  nnz(>1e-6)=2972687/67371008  nan=0  inf=63874033
+    Sigma on active IDD: finite=2972687  bad(nan/inf)=0  min=1.216998e-01  max=3.370543e+00
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 1
+    beamFirstOutside: 256
+    beamFirstPassive: 256
+    beamFirstCalculatedPassive: 256
+[TIMING] copyToHost: 216 μs
+[TIMING] copyToHost: 205 μs
+[TIMING] copyToHost: 196 μs
+    [GEOM] Rays entering medium: 261632/262144 (9.980469e+01%), never-enter: 512/262144, maxFirstInside=1
+    [GEOM] Rays with firstOutside found: 262144/262144, rays with firstPassive found: 262144/262144
+  Allocating BEV dose array with padding:
+    BEV dimensions: (576, 576, 256)
+    Padding: 32 voxels on each side
+[TIMING] allocateDeviceMemory: 2266 μs
+  Superposition tile summary: totalTiles=261120, layerMaxPrimSuperpR=17, rad0=246426, rad1=126, rad2=504
+  Superposition batched launches: [rad=0:246426] [rad=1:126] [rad=2:504] [rad=3:756] [rad=4:1134] [rad=5:1449] [rad=6:1683] [rad=7:1624] [rad=8:1483] [rad=9:1335] [rad=10:1431] [rad=11:997] [rad=12:824] [rad=13:305] [rad=14:285] [rad=15:293] [rad=16:267] [rad=17:198]
+[TIMING] Complete Tile-Based Superposition execution time: 11.582 ms
+  BEV Dose Analysis after Superposition:
+    sumFinite=3.044937e+03  maxFinite=9.283588e-03  minPos=2.305573e-17  nnz(>0)=4355007/84934656  nnz(>1e-6)=3526747/84934656  nan=0  inf=0
+  BEV dose z-slice summary (thr=1.000000e-15):
+    activeSlices=255/256  activeRange=[1,255]  maxSumSlice=1 (sum=3.068513e+01)
+    z=0 sum=0.000000e+00 max=0.000000e+00 cnt>thr=0 nan=0 inf=0
+    z=1 sum=3.068513e+01 max=9.283588e-03 cnt>thr=14105 nan=0 inf=0
+    z=2 sum=1.535213e+01 max=4.334897e-03 cnt>thr=14105 nan=0 inf=0
+    z=3 sum=1.535732e+01 max=4.317570e-03 cnt>thr=14676 nan=0 inf=0
+    z=4 sum=1.534260e+01 max=4.273888e-03 cnt>thr=14676 nan=0 inf=0
+    z=5 sum=1.535833e+01 max=4.276027e-03 cnt>thr=14676 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 2578 μs
+  Launching primTransfDiv kernel:
+    Grid: (32, 32)
+    Block: (16, 16)
+    startIdx: (0, 0, 1)
+    maxZ: 255
+  [TRANSF] normDist=(-1.000000e+03, -1.000000e+03)  globalOffset=(2.320000e+02, 3.440000e+02, -1.000000e+00)
+    [PROBE] doseIdx=(0,0,1) -> bevIdx=(3.219980e+01,5.438002e+02,0.000000e+00) IN
+    [PROBE] doseIdx=(256,256,1) -> bevIdx=(2.879441e+02,2.880559e+02,0.000000e+00) IN
+    [PROBE] doseIdx=(511,511,1) -> bevIdx=(5.426893e+02,3.331067e+01,0.000000e+00) IN
+    [PROBE] doseIdx=(0,0,255) -> bevIdx=(7.263745e+01,5.033625e+02,2.540000e+02) IN
+    [PROBE] doseIdx=(256,256,255) -> bevIdx=(2.766215e+02,2.993785e+02,2.540000e+02) IN
+    [PROBE] doseIdx=(511,511,255) -> bevIdx=(4.798088e+02,9.619122e+01,2.540000e+02) IN
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+[TIMING] freeDeviceMemory: 4336 μs
+[TIMING] freeDeviceMemory: 2217 μs
+[TIMING] freeDeviceMemory: 7 μs
+[TIMING] freeDeviceMemory: 211 μs
+[TIMING] freeDeviceMemory: 195 μs
+[TIMING] freeDeviceMemory: 2748 μs
+
+[ENERGY] Layer 1 E=1.600000e+02 -> energyIdx=7.261613e+01 (floor=72, corr=6.161258e-01, bracket=[1.593580e+02, 1.604000e+02])
+[ENERGY]   scaleFact(table)=4.709250e+00  peakDepth(table)=1.739187e+02  -> scaleFact(mm)=4.709250e+00  peakDepth(mm)=1.739187e+02  (energyDepthToMm=1.000000e+00)
+[TIMING] allocateDeviceMemory: 2829 μs
+[TIMING] allocateDeviceMemory: 1934 μs
+[TIMING] allocateDeviceMemory: 418 μs
+[TIMING] allocateDeviceMemory: 6 μs
+[TIMING] allocateDeviceMemory: 286 μs
+  DensityAndSpTracerParams:
+    steps: 257
+    densityScale: 1.000000e+00
+    spScale: 1.000000e+00
+    fanCorner_mm: (-2.000000e+02, -3.120000e+02, 0.000000e+00)
+    fanDelta_mm : (1.000000e+00, 1.000000e+00, -1.000000e+00)
+    sourceDist_mm: (1.000000e+03, 1.000000e+03)
+    startIdx(0,0): (0.000000e+00, 5.120000e+02, 0.000000e+00)
+    incIdx  (0,0): (-2.000000e-01, 3.120000e-01, 1.000000e+00)
+    stepLen_mm(0,0): 1.066463e+00

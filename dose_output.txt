@@ -1,0 +1,1040 @@
+=== Wrapper Integration Test with Subspot to CPB Convolution ===
+Creating test data...
+Test data created:
+  Image volume: 64x64x32
+  Dose volume: 400x400x32
+  Energy layers: 3
+  Ray steps: 100
+
+Calling subsecondWrapper...
+Starting RTD wrapper with simplified implementation
+CUDA Device Information:
+Number of devices: 1
+[TIMING] printDeviceInfo: 48 μs
+GPU Memory Information:
+  Total: 24252 MB
+  Free: 23991 MB
+  Used: 260 MB
+[TIMING] printMemoryInfo: 47 μs
+[TIMING] create3DTexture (ultra-optimized): 340 μs
+[TIMING] create2DTexture: 28 μs
+[TIMING] create1DTexture: 12 μs
+[TIMING] create1DTexture: 11 μs
+[TIMING] create1DTexture: 10 μs
+[TIMING] allocateDeviceMemory: 118 μs
+Debug: devDoseVol allocated successfully, size: 5120000 elements
+[TIMING] copyToDevice: 5186 μs
+Processing beam 0 with 3 energy layers
+  Layer 0: 100 MeV
+Debug: rayDims = (400, 400)
+[TIMING] allocateDeviceMemory: 151 μs
+[TIMING] allocateDeviceMemory: 138 μs
+[TIMING] allocateDeviceMemory: 124 μs
+[TIMING] allocateDeviceMemory: 4 μs
+[TIMING] allocateDeviceMemory: 2 μs
+[TIMING] allocateDeviceMemory: 100 μs
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Kernel: readSubspotDataKernel called with nsubspot=10, layerIdx=0
+GPU Debug: subspotIdx=0, eneIdx=0, deltaX=-4.996713, deltaY=0.245871, weight=1.603135
+GPU Debug: SubspotInfo isValid=1, weight=1.603135, effectiveSigma=1.449000
+GPU Debug: SubspotInfo isValid=1, weight=1.268477, effectiveSigma=1.527194
+GPU Debug: SubspotInfo isValid=1, weight=1.850817, effectiveSigma=1.480113
+GPU Debug: SubspotInfo isValid=1, weight=0.984986, effectiveSigma=1.620118
+GPU Debug: SubspotInfo isValid=1, weight=1.605528, effectiveSigma=1.454919
+GPU Debug: SubspotInfo isValid=1, weight=1.196895, effectiveSigma=1.587764
+GPU Debug: SubspotInfo isValid=1, weight=0.534539, effectiveSigma=2.076612
+GPU Debug: SubspotInfo isValid=1, weight=1.653861, effectiveSigma=1.616330
+GPU Debug: SubspotInfo isValid=1, weight=1.027605, effectiveSigma=1.634452
+GPU Debug: SubspotInfo isValid=1, weight=0.736549, effectiveSigma=1.520235
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 0
+GPU Debug: Subspot 0 - pos=(-4.997,0.246), sigma=(0.984,1.063), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-7.950, maxX=-2.044, minY=-2.944, maxY=3.436
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=41, maxX=160, minY=141, maxY=269
+Host: subspotRanges for layer 0:
+  Subspot 0: minX=41, maxX=160, minY=141, maxY=269
+  Subspot 1: minX=68, maxX=210, minY=236, maxY=354
+  Subspot 2: minX=54, maxX=189, minY=204, maxY=322
+  Subspot 3: minX=97, maxX=202, minY=55, maxY=220
+  Subspot 4: minX=155, maxX=259, minY=198, maxY=340
+  Subspot 5: minX=58, maxX=195, minY=205, maxY=340
+  Subspot 6: minX=56, maxX=237, minY=16, maxY=189
+  Subspot 7: minX=182, maxX=332, minY=151, maxY=277
+  Subspot 8: minX=100, maxX=251, minY=90, maxY=217
+  Subspot 9: minX=43, maxX=178, minY=143, maxY=268
+GPU Debug: Subspot 0 - processing range: minX=41, maxX=160, minY=141, maxY=269
+GPU Debug: Subspot 0 - processing CPB point (41,141)
+GPU Debug: Subspot 0 - processing CPB point (42,141)
+GPU Debug: Subspot 0 - processing CPB point (43,141)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=1.979789, effectiveSigma=1.463372
+GPU Debug: SubspotInfo isValid=1, weight=1.552346, effectiveSigma=1.503340
+GPU Debug: SubspotInfo isValid=1, weight=1.526394, effectiveSigma=1.546458
+GPU Debug: SubspotInfo isValid=1, weight=1.716172, effectiveSigma=1.617109
+GPU Debug: SubspotInfo isValid=1, weight=1.456153, effectiveSigma=1.444523
+GPU Debug: SubspotInfo isValid=1, weight=0.655291, effectiveSigma=1.818146
+GPU Debug: SubspotInfo isValid=1, weight=1.499665, effectiveSigma=1.828719
+GPU Debug: SubspotInfo isValid=1, weight=1.200956, effectiveSigma=1.803070
+GPU Debug: SubspotInfo isValid=1, weight=1.613961, effectiveSigma=1.821431
+GPU Debug: SubspotInfo isValid=1, weight=1.015170, effectiveSigma=1.507999
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 1
+GPU Debug: Subspot 0 - pos=(-3.072,-4.353), sigma=(1.182,0.862), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-6.619, maxX=0.475, minY=-6.940, maxY=-1.765
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=67, maxX=210, minY=61, maxY=165
+Host: subspotRanges for layer 1:
+  Subspot 0: minX=67, maxX=210, minY=61, maxY=165
+  Subspot 1: minX=242, maxX=355, minY=115, maxY=258
+  Subspot 2: minX=234, maxX=364, minY=71, maxY=205
+  Subspot 3: minX=167, maxX=332, minY=83, maxY=188
+  Subspot 4: minX=41, maxX=170, minY=68, maxY=186
+  Subspot 5: minX=112, maxX=291, minY=141, maxY=267
+  Subspot 6: minX=167, maxX=341, minY=85, maxY=221
+  Subspot 7: minX=99, maxX=278, minY=222, maxY=346
+  Subspot 8: minX=187, maxX=331, minY=190, maxY=356
+  Subspot 9: minX=145, maxX=268, minY=94, maxY=229
+GPU Debug: Subspot 0 - processing range: minX=67, maxX=210, minY=61, maxY=165
+GPU Debug: Subspot 0 - processing CPB point (67,61)
+GPU Debug: Subspot 0 - processing CPB point (68,61)
+GPU Debug: Subspot 0 - processing CPB point (69,61)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=0.594379, effectiveSigma=1.599704
+GPU Debug: SubspotInfo isValid=1, weight=1.082386, effectiveSigma=1.832027
+GPU Debug: SubspotInfo isValid=1, weight=0.938782, effectiveSigma=1.457757
+GPU Debug: SubspotInfo isValid=1, weight=1.903345, effectiveSigma=1.395472
+GPU Debug: SubspotInfo isValid=1, weight=0.688975, effectiveSigma=1.399739
+GPU Debug: SubspotInfo isValid=1, weight=0.614381, effectiveSigma=1.599046
+GPU Debug: SubspotInfo isValid=1, weight=0.971109, effectiveSigma=1.551111
+GPU Debug: SubspotInfo isValid=1, weight=0.794579, effectiveSigma=1.715027
+GPU Debug: SubspotInfo isValid=1, weight=1.037207, effectiveSigma=1.389857
+GPU Debug: SubspotInfo isValid=1, weight=1.588617, effectiveSigma=1.679643
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 2
+GPU Debug: Subspot 0 - pos=(0.668,1.525), sigma=(1.143,1.119), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-2.761, maxX=4.096, minY=-1.833, maxY=4.883
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=144, maxX=282, minY=163, maxY=298
+Host: subspotRanges for layer 2:
+  Subspot 0: minX=144, maxX=282, minY=163, maxY=298
+  Subspot 1: minX=35, maxX=169, minY=152, maxY=328
+  Subspot 2: minX=59, maxX=191, minY=127, maxY=244
+  Subspot 3: minX=124, maxX=222, minY=173, maxY=311
+  Subspot 4: minX=199, maxX=330, minY=153, maxY=260
+  Subspot 5: minX=189, maxX=336, minY=116, maxY=241
+  Subspot 6: minX=76, maxX=225, minY=120, maxY=234
+  Subspot 7: minX=81, maxX=233, minY=228, maxY=368
+  Subspot 8: minX=199, maxX=315, minY=64, maxY=186
+  Subspot 9: minX=60, maxX=207, minY=221, maxY=362
+GPU Debug: Subspot 0 - processing range: minX=144, maxX=282, minY=163, maxY=298
+GPU Debug: Subspot 0 - processing CPB point (144,163)
+GPU Debug: Subspot 0 - processing CPB point (145,163)
+GPU Debug: Subspot 0 - processing CPB point (146,163)
+[TIMING] Subspot to CPB Convolution execution time: 31.828 ms
+[TIMING] copyToHost: 423 μs
+  CPB Weights Analysis:
+    Total CPB weights: 36.7177, Max: 0.00116589, Non-zero: 211992/480000
+  CPB Weights Spatial Distribution:
+    CPB(131,16,0) = 1.0139e-06 at world(-3.45,-9.2)
+    CPB(132,16,0) = 1.03069e-06 at world(-3.4,-9.2)
+    CPB(133,16,0) = 1.04659e-06 at world(-3.35,-9.2)
+    CPB(134,16,0) = 1.06154e-06 at world(-3.3,-9.2)
+    CPB(135,16,0) = 1.07551e-06 at world(-3.25,-9.2)
+    CPB(136,16,0) = 1.08845e-06 at world(-3.2,-9.2)
+    CPB(137,16,0) = 1.10031e-06 at world(-3.15,-9.2)
+    CPB(138,16,0) = 1.11105e-06 at world(-3.1,-9.2)
+    CPB(139,16,0) = 1.12065e-06 at world(-3.05,-9.2)
+    CPB(140,16,0) = 1.12907e-06 at world(-3,-9.2)
+    Max weight 0.00116589 at CPB(125,269,0)
+Host Debug: rayDims=(400,400), blockSize=(16,16), gridSize=(25,25)
+GPU Debug: blockIdx=(0,0), threadIdx=(0,4), rayX=0, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(1,4), rayX=1, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(2,4), rayX=2, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(3,4), rayX=3, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(4,4), rayX=4, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(0,0), rayX=0, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(1,0), rayX=1, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(2,0), rayX=2, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(3,0), rayX=3, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(4,0), rayX=4, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(0,1), rayX=0, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(1,1), rayX=1, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(2,1), rayX=2, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(3,1), rayX=3, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(4,1), rayX=4, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(0,2), rayX=0, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(1,2), rayX=1, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(2,2), rayX=2, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(3,2), rayX=3, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(4,2), rayX=4, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(0,3), rayX=0, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(1,3), rayX=1, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(2,3), rayX=2, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(3,3), rayX=3, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(4,3), rayX=4, rayY=3
+GPU Debug: Ray 0 - rayX=0, rayY=0, rayXPos=-10.000, rayYPos=-10.000
+GPU Debug: Ray 1 - rayX=1, rayY=0, rayXPos=-9.950, rayYPos=-10.000
+GPU Debug: Ray 2 - rayX=2, rayY=0, rayXPos=-9.900, rayYPos=-10.000
+GPU Debug: Ray 0 - cpbX=0, cpbY=0, bounds check: 1
+GPU Debug: Ray 1 - cpbX=1, cpbY=0, bounds check: 1
+GPU Debug: Ray 2 - cpbX=2, cpbY=0, bounds check: 1
+[TIMING] CPB to Ray Weight Mapping execution time: 0.531 ms
+[TIMING] copyToHost: 151 μs
+  Ray Weights Analysis:
+    Total ray weights: 36.7131, Max: 0.00167246, Non-zero: 95261/160000
+  DensityAndSpTracerParams:
+    steps: 100
+    densityScale: 1
+    spScale: 1
+    startPos: (-20, -20, 0)
+    raySpacing: (0.1, 0.1)
+    stepInc: (0, 0, 0.1)
+    stepLength: 0.1
+[TIMING] allocateDeviceMemory: 117 μs
+[TIMING] allocateDeviceMemory: 95 μs
+[TIMING] allocateDeviceMemory: 4 μs
+[TIMING] copyToDevice: 142 μs
+Debug: rayTracingBEVKernel called for thread (0,4)
+Debug: rayTracingBEVKernel called for thread (1,4)
+Debug: rayTracingBEVKernel called for thread (2,4)
+Debug: rayTracingBEVKernel called for thread (3,4)
+Debug: rayTracingBEVKernel called for thread (4,4)
+Debug: rayTracingBEVKernel called for thread (0,0)
+Debug: rayTracingBEVKernel called for thread (1,0)
+Debug: rayTracingBEVKernel called for thread (2,0)
+Debug: rayTracingBEVKernel called for thread (3,0)
+Debug: rayTracingBEVKernel called for thread (4,0)
+Debug: rayTracingBEVKernel called for thread (0,1)
+Debug: rayTracingBEVKernel called for thread (1,1)
+Debug: rayTracingBEVKernel called for thread (2,1)
+Debug: rayTracingBEVKernel called for thread (3,1)
+Debug: rayTracingBEVKernel called for thread (4,1)
+Debug: rayTracingBEVKernel called for thread (0,2)
+Debug: rayTracingBEVKernel called for thread (1,2)
+Debug: rayTracingBEVKernel called for thread (2,2)
+Debug: rayTracingBEVKernel called for thread (3,2)
+Debug: rayTracingBEVKernel called for thread (4,2)
+Debug: rayTracingBEVKernel called for thread (0,3)
+Debug: rayTracingBEVKernel called for thread (1,3)
+Debug: rayTracingBEVKernel called for thread (2,3)
+Debug: rayTracingBEVKernel called for thread (3,3)
+Debug: rayTracingBEVKernel called for thread (4,3)
+Debug: simpleIddCalculationKernel called for thread (0,4)
+Debug: simpleIddCalculationKernel called for thread (1,4)
+Debug: simpleIddCalculationKernel called for thread (2,4)
+Debug: simpleIddCalculationKernel called for thread (3,4)
+Debug: simpleIddCalculationKernel called for thread (4,4)
+Debug: simpleIddCalculationKernel called for thread (0,0)
+Debug: simpleIddCalculationKernel called for thread (1,0)
+Debug: simpleIddCalculationKernel called for thread (2,0)
+Debug: simpleIddCalculationKernel called for thread (3,0)
+Debug: simpleIddCalculationKernel called for thread (4,0)
+Debug: simpleIddCalculationKernel called for thread (0,1)
+Debug: simpleIddCalculationKernel called for thread (1,1)
+Debug: simpleIddCalculationKernel called for thread (2,1)
+Debug: simpleIddCalculationKernel called for thread (3,1)
+Debug: simpleIddCalculationKernel called for thread (4,1)
+Debug: simpleIddCalculationKernel called for thread (0,2)
+Debug: simpleIddCalculationKernel called for thread (1,2)
+Debug: simpleIddCalculationKernel called for thread (2,2)
+Debug: simpleIddCalculationKernel called for thread (3,2)
+Debug: simpleIddCalculationKernel called for thread (4,2)
+Debug: simpleIddCalculationKernel called for thread (0,3)
+Debug: simpleIddCalculationKernel called for thread (1,3)
+Debug: simpleIddCalculationKernel called for thread (2,3)
+Debug: simpleIddCalculationKernel called for thread (3,3)
+Debug: simpleIddCalculationKernel called for thread (4,3)
+Debug: thread (0,4) - rayWeight=0.000000
+Debug: thread (1,4) - rayWeight=0.000000
+Debug: thread (2,4) - rayWeight=0.000000
+Debug: thread (3,4) - rayWeight=0.000000
+Debug: thread (4,4) - rayWeight=0.000000
+Debug: thread (0,2) - rayWeight=0.000000
+Debug: thread (1,2) - rayWeight=0.000000
+Debug: thread (2,2) - rayWeight=0.000000
+Debug: thread (3,2) - rayWeight=0.000000
+Debug: thread (4,2) - rayWeight=0.000000
+Debug: thread (0,3) - rayWeight=0.000000
+Debug: thread (1,3) - rayWeight=0.000000
+Debug: thread (2,3) - rayWeight=0.000000
+Debug: thread (3,3) - rayWeight=0.000000
+Debug: thread (4,3) - rayWeight=0.000000
+Debug: thread (0,0) - rayWeight=0.000000
+Debug: thread (1,0) - rayWeight=0.000000
+Debug: thread (2,0) - rayWeight=0.000000
+Debug: thread (3,0) - rayWeight=0.000000
+Debug: thread (4,0) - rayWeight=0.000000
+Debug: thread (0,1) - rayWeight=0.000000
+Debug: thread (1,1) - rayWeight=0.000000
+Debug: thread (2,1) - rayWeight=0.000000
+Debug: thread (3,1) - rayWeight=0.000000
+Debug: thread (4,1) - rayWeight=0.000000
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 131 μs
+[TIMING] freeDeviceMemory: 1155 μs
+[TIMING] copyToHost: 6144 μs
+[TIMING] copyToHost: 7077 μs
+  Ray Tracing Results Analysis:
+    Ray IDD - Total: 686.288, Max: 0.00100101, Non-zero: 2295600/16000000
+    Ray Sigma - Total: nan, Max: 6688.74, Non-zero: 2955647/16000000
+[TIMING] copyToDevice: 119 μs
+[TIMING] copyToDevice: 126 μs
+[TIMING] copyToDevice: 124 μs
+[TIMING] allocateDeviceMemory: 41 μs
+[TIMING] copyToHost: 5468 μs
+[TIMING] copyToHost: 7740 μs
+[TIMING] allocateDeviceMemory: 24 μs
+[TIMING] allocateDeviceMemory: 368 μs
+[TIMING] copyToDevice: 129 μs
+[TIMING] copyToDevice: 159 μs
+[TIMING] Kernel Superposition execution time: 0.081 ms
+[TIMING] copyToHost: 153 μs
+  BEV Primary Dose Analysis:
+    Total BEV dose: 688.238
+    Max BEV dose: 0.100101
+    Non-zero BEV voxels: 22956/160000
+  Dose accumulation parameters:
+    doseVolDims: (400, 400, 32)
+    doseSize: 5120000
+    rayDims: (400, 400)
+    center: (200, 200, 16)
+Debug: x=195, y=195, doseX=195, doseY=195
+Debug: z=0, doseIdx=78195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=1, doseIdx=238195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=2, doseIdx=398195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=3, doseIdx=558195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=4, doseIdx=718195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=5, doseIdx=878195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=6, doseIdx=1038195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=7, doseIdx=1198195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=8, doseIdx=1358195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=9, doseIdx=1518195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+  Dose accumulation debug:
+    Accumulated voxels: 734592
+    Total accumulated dose: 21996.9
+  Dose accumulation completed
+[TIMING] freeDeviceMemory: 16 μs
+[TIMING] freeDeviceMemory: 198 μs
+[TIMING] freeDeviceMemory: 1152 μs
+[TIMING] freeDeviceMemory: 7 μs
+[TIMING] freeDeviceMemory: 1030 μs
+[TIMING] freeDeviceMemory: 5 μs
+[TIMING] freeDeviceMemory: 2 μs
+  Layer 1: 120 MeV
+Debug: rayDims = (400, 400)
+[TIMING] allocateDeviceMemory: 16 μs
+[TIMING] allocateDeviceMemory: 444 μs
+[TIMING] allocateDeviceMemory: 103 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 3 μs
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Kernel: readSubspotDataKernel called with nsubspot=10, layerIdx=0
+GPU Debug: subspotIdx=0, eneIdx=0, deltaX=-4.996713, deltaY=0.245871, weight=1.603135
+GPU Debug: SubspotInfo isValid=1, weight=1.603135, effectiveSigma=1.449000
+GPU Debug: SubspotInfo isValid=1, weight=1.268477, effectiveSigma=1.527194
+GPU Debug: SubspotInfo isValid=1, weight=1.850817, effectiveSigma=1.480113
+GPU Debug: SubspotInfo isValid=1, weight=0.984986, effectiveSigma=1.620118
+GPU Debug: SubspotInfo isValid=1, weight=1.605528, effectiveSigma=1.454919
+GPU Debug: SubspotInfo isValid=1, weight=1.196895, effectiveSigma=1.587764
+GPU Debug: SubspotInfo isValid=1, weight=0.534539, effectiveSigma=2.076612
+GPU Debug: SubspotInfo isValid=1, weight=1.653861, effectiveSigma=1.616330
+GPU Debug: SubspotInfo isValid=1, weight=1.027605, effectiveSigma=1.634452
+GPU Debug: SubspotInfo isValid=1, weight=0.736549, effectiveSigma=1.520235
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 0
+GPU Debug: Subspot 0 - pos=(-4.997,0.246), sigma=(0.984,1.063), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-7.950, maxX=-2.044, minY=-2.944, maxY=3.436
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=41, maxX=160, minY=141, maxY=269
+Host: subspotRanges for layer 0:
+  Subspot 0: minX=41, maxX=160, minY=141, maxY=269
+  Subspot 1: minX=68, maxX=210, minY=236, maxY=354
+  Subspot 2: minX=54, maxX=189, minY=204, maxY=322
+  Subspot 3: minX=97, maxX=202, minY=55, maxY=220
+  Subspot 4: minX=155, maxX=259, minY=198, maxY=340
+  Subspot 5: minX=58, maxX=195, minY=205, maxY=340
+  Subspot 6: minX=56, maxX=237, minY=16, maxY=189
+  Subspot 7: minX=182, maxX=332, minY=151, maxY=277
+  Subspot 8: minX=100, maxX=251, minY=90, maxY=217
+  Subspot 9: minX=43, maxX=178, minY=143, maxY=268
+GPU Debug: Subspot 0 - processing range: minX=41, maxX=160, minY=141, maxY=269
+GPU Debug: Subspot 0 - processing CPB point (41,141)
+GPU Debug: Subspot 0 - processing CPB point (42,141)
+GPU Debug: Subspot 0 - processing CPB point (43,141)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=1.979789, effectiveSigma=1.463372
+GPU Debug: SubspotInfo isValid=1, weight=1.552346, effectiveSigma=1.503340
+GPU Debug: SubspotInfo isValid=1, weight=1.526394, effectiveSigma=1.546458
+GPU Debug: SubspotInfo isValid=1, weight=1.716172, effectiveSigma=1.617109
+GPU Debug: SubspotInfo isValid=1, weight=1.456153, effectiveSigma=1.444523
+GPU Debug: SubspotInfo isValid=1, weight=0.655291, effectiveSigma=1.818146
+GPU Debug: SubspotInfo isValid=1, weight=1.499665, effectiveSigma=1.828719
+GPU Debug: SubspotInfo isValid=1, weight=1.200956, effectiveSigma=1.803070
+GPU Debug: SubspotInfo isValid=1, weight=1.613961, effectiveSigma=1.821431
+GPU Debug: SubspotInfo isValid=1, weight=1.015170, effectiveSigma=1.507999
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 1
+GPU Debug: Subspot 0 - pos=(-3.072,-4.353), sigma=(1.182,0.862), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-6.619, maxX=0.475, minY=-6.940, maxY=-1.765
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=67, maxX=210, minY=61, maxY=165
+Host: subspotRanges for layer 1:
+  Subspot 0: minX=67, maxX=210, minY=61, maxY=165
+  Subspot 1: minX=242, maxX=355, minY=115, maxY=258
+  Subspot 2: minX=234, maxX=364, minY=71, maxY=205
+  Subspot 3: minX=167, maxX=332, minY=83, maxY=188
+  Subspot 4: minX=41, maxX=170, minY=68, maxY=186
+  Subspot 5: minX=112, maxX=291, minY=141, maxY=267
+  Subspot 6: minX=167, maxX=341, minY=85, maxY=221
+  Subspot 7: minX=99, maxX=278, minY=222, maxY=346
+  Subspot 8: minX=187, maxX=331, minY=190, maxY=356
+  Subspot 9: minX=145, maxX=268, minY=94, maxY=229
+GPU Debug: Subspot 0 - processing range: minX=67, maxX=210, minY=61, maxY=165
+GPU Debug: Subspot 0 - processing CPB point (67,61)
+GPU Debug: Subspot 0 - processing CPB point (68,61)
+GPU Debug: Subspot 0 - processing CPB point (69,61)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=0.594379, effectiveSigma=1.599704
+GPU Debug: SubspotInfo isValid=1, weight=1.082386, effectiveSigma=1.832027
+GPU Debug: SubspotInfo isValid=1, weight=0.938782, effectiveSigma=1.457757
+GPU Debug: SubspotInfo isValid=1, weight=1.903345, effectiveSigma=1.395472
+GPU Debug: SubspotInfo isValid=1, weight=0.688975, effectiveSigma=1.399739
+GPU Debug: SubspotInfo isValid=1, weight=0.614381, effectiveSigma=1.599046
+GPU Debug: SubspotInfo isValid=1, weight=0.971109, effectiveSigma=1.551111
+GPU Debug: SubspotInfo isValid=1, weight=0.794579, effectiveSigma=1.715027
+GPU Debug: SubspotInfo isValid=1, weight=1.037207, effectiveSigma=1.389857
+GPU Debug: SubspotInfo isValid=1, weight=1.588617, effectiveSigma=1.679643
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 2
+GPU Debug: Subspot 0 - pos=(0.668,1.525), sigma=(1.143,1.119), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-2.761, maxX=4.096, minY=-1.833, maxY=4.883
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=144, maxX=282, minY=163, maxY=298
+Host: subspotRanges for layer 2:
+  Subspot 0: minX=144, maxX=282, minY=163, maxY=298
+  Subspot 1: minX=35, maxX=169, minY=152, maxY=328
+  Subspot 2: minX=59, maxX=191, minY=127, maxY=244
+  Subspot 3: minX=124, maxX=222, minY=173, maxY=311
+  Subspot 4: minX=199, maxX=330, minY=153, maxY=260
+  Subspot 5: minX=189, maxX=336, minY=116, maxY=241
+  Subspot 6: minX=76, maxX=225, minY=120, maxY=234
+  Subspot 7: minX=81, maxX=233, minY=228, maxY=368
+  Subspot 8: minX=199, maxX=315, minY=64, maxY=186
+  Subspot 9: minX=60, maxX=207, minY=221, maxY=362
+GPU Debug: Subspot 0 - processing range: minX=144, maxX=282, minY=163, maxY=298
+GPU Debug: Subspot 0 - processing CPB point (144,163)
+GPU Debug: Subspot 0 - processing CPB point (145,163)
+GPU Debug: Subspot 0 - processing CPB point (146,163)
+[TIMING] Subspot to CPB Convolution execution time: 23.133 ms
+[TIMING] copyToHost: 575 μs
+  CPB Weights Analysis:
+    Total CPB weights: 36.7177, Max: 0.00116589, Non-zero: 211992/480000
+  CPB Weights Spatial Distribution:
+    CPB(131,16,0) = 1.0139e-06 at world(-3.45,-9.2)
+    CPB(132,16,0) = 1.03069e-06 at world(-3.4,-9.2)
+    CPB(133,16,0) = 1.04659e-06 at world(-3.35,-9.2)
+    CPB(134,16,0) = 1.06154e-06 at world(-3.3,-9.2)
+    CPB(135,16,0) = 1.07551e-06 at world(-3.25,-9.2)
+    CPB(136,16,0) = 1.08845e-06 at world(-3.2,-9.2)
+    CPB(137,16,0) = 1.10031e-06 at world(-3.15,-9.2)
+    CPB(138,16,0) = 1.11105e-06 at world(-3.1,-9.2)
+    CPB(139,16,0) = 1.12065e-06 at world(-3.05,-9.2)
+    CPB(140,16,0) = 1.12907e-06 at world(-3,-9.2)
+    Max weight 0.00116589 at CPB(125,269,0)
+Host Debug: rayDims=(400,400), blockSize=(16,16), gridSize=(25,25)
+GPU Debug: blockIdx=(0,0), threadIdx=(0,4), rayX=0, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(1,4), rayX=1, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(2,4), rayX=2, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(3,4), rayX=3, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(4,4), rayX=4, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(0,0), rayX=0, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(1,0), rayX=1, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(2,0), rayX=2, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(3,0), rayX=3, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(4,0), rayX=4, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(0,1), rayX=0, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(1,1), rayX=1, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(2,1), rayX=2, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(3,1), rayX=3, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(4,1), rayX=4, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(0,2), rayX=0, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(1,2), rayX=1, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(2,2), rayX=2, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(3,2), rayX=3, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(4,2), rayX=4, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(0,3), rayX=0, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(1,3), rayX=1, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(2,3), rayX=2, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(3,3), rayX=3, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(4,3), rayX=4, rayY=3
+GPU Debug: Ray 0 - rayX=0, rayY=0, rayXPos=-10.000, rayYPos=-10.000
+GPU Debug: Ray 1 - rayX=1, rayY=0, rayXPos=-9.950, rayYPos=-10.000
+GPU Debug: Ray 2 - rayX=2, rayY=0, rayXPos=-9.900, rayYPos=-10.000
+GPU Debug: Ray 0 - cpbX=0, cpbY=0, bounds check: 1
+GPU Debug: Ray 1 - cpbX=1, cpbY=0, bounds check: 1
+GPU Debug: Ray 2 - cpbX=2, cpbY=0, bounds check: 1
+[TIMING] CPB to Ray Weight Mapping execution time: 0.759 ms
+[TIMING] copyToHost: 152 μs
+  Ray Weights Analysis:
+    Total ray weights: 36.7131, Max: 0.00167246, Non-zero: 95261/160000
+  DensityAndSpTracerParams:
+    steps: 100
+    densityScale: 1
+    spScale: 1
+    startPos: (-20, -20, 0)
+    raySpacing: (0.1, 0.1)
+    stepInc: (0, 0, 0.1)
+    stepLength: 0.1
+[TIMING] allocateDeviceMemory: 114 μs
+[TIMING] allocateDeviceMemory: 93 μs
+[TIMING] allocateDeviceMemory: 5 μs
+[TIMING] copyToDevice: 142 μs
+Debug: rayTracingBEVKernel called for thread (0,4)
+Debug: rayTracingBEVKernel called for thread (1,4)
+Debug: rayTracingBEVKernel called for thread (2,4)
+Debug: rayTracingBEVKernel called for thread (3,4)
+Debug: rayTracingBEVKernel called for thread (4,4)
+Debug: rayTracingBEVKernel called for thread (0,2)
+Debug: rayTracingBEVKernel called for thread (1,2)
+Debug: rayTracingBEVKernel called for thread (2,2)
+Debug: rayTracingBEVKernel called for thread (3,2)
+Debug: rayTracingBEVKernel called for thread (4,2)
+Debug: rayTracingBEVKernel called for thread (0,3)
+Debug: rayTracingBEVKernel called for thread (1,3)
+Debug: rayTracingBEVKernel called for thread (2,3)
+Debug: rayTracingBEVKernel called for thread (3,3)
+Debug: rayTracingBEVKernel called for thread (4,3)
+Debug: rayTracingBEVKernel called for thread (0,0)
+Debug: rayTracingBEVKernel called for thread (1,0)
+Debug: rayTracingBEVKernel called for thread (2,0)
+Debug: rayTracingBEVKernel called for thread (3,0)
+Debug: rayTracingBEVKernel called for thread (4,0)
+Debug: rayTracingBEVKernel called for thread (0,1)
+Debug: rayTracingBEVKernel called for thread (1,1)
+Debug: rayTracingBEVKernel called for thread (2,1)
+Debug: rayTracingBEVKernel called for thread (3,1)
+Debug: rayTracingBEVKernel called for thread (4,1)
+Debug: simpleIddCalculationKernel called for thread (0,4)
+Debug: simpleIddCalculationKernel called for thread (1,4)
+Debug: simpleIddCalculationKernel called for thread (2,4)
+Debug: simpleIddCalculationKernel called for thread (3,4)
+Debug: simpleIddCalculationKernel called for thread (4,4)
+Debug: simpleIddCalculationKernel called for thread (0,0)
+Debug: simpleIddCalculationKernel called for thread (1,0)
+Debug: simpleIddCalculationKernel called for thread (2,0)
+Debug: simpleIddCalculationKernel called for thread (3,0)
+Debug: simpleIddCalculationKernel called for thread (4,0)
+Debug: simpleIddCalculationKernel called for thread (0,1)
+Debug: simpleIddCalculationKernel called for thread (1,1)
+Debug: simpleIddCalculationKernel called for thread (2,1)
+Debug: simpleIddCalculationKernel called for thread (3,1)
+Debug: simpleIddCalculationKernel called for thread (4,1)
+Debug: simpleIddCalculationKernel called for thread (0,2)
+Debug: simpleIddCalculationKernel called for thread (1,2)
+Debug: simpleIddCalculationKernel called for thread (2,2)
+Debug: simpleIddCalculationKernel called for thread (3,2)
+Debug: simpleIddCalculationKernel called for thread (4,2)
+Debug: simpleIddCalculationKernel called for thread (0,3)
+Debug: simpleIddCalculationKernel called for thread (1,3)
+Debug: simpleIddCalculationKernel called for thread (2,3)
+Debug: simpleIddCalculationKernel called for thread (3,3)
+Debug: simpleIddCalculationKernel called for thread (4,3)
+Debug: thread (0,4) - rayWeight=0.000000
+Debug: thread (1,4) - rayWeight=0.000000
+Debug: thread (2,4) - rayWeight=0.000000
+Debug: thread (3,4) - rayWeight=0.000000
+Debug: thread (4,4) - rayWeight=0.000000
+Debug: thread (0,0) - rayWeight=0.000000
+Debug: thread (1,0) - rayWeight=0.000000
+Debug: thread (2,0) - rayWeight=0.000000
+Debug: thread (3,0) - rayWeight=0.000000
+Debug: thread (4,0) - rayWeight=0.000000
+Debug: thread (0,1) - rayWeight=0.000000
+Debug: thread (1,1) - rayWeight=0.000000
+Debug: thread (2,1) - rayWeight=0.000000
+Debug: thread (3,1) - rayWeight=0.000000
+Debug: thread (4,1) - rayWeight=0.000000
+Debug: thread (0,2) - rayWeight=0.000000
+Debug: thread (1,2) - rayWeight=0.000000
+Debug: thread (2,2) - rayWeight=0.000000
+Debug: thread (3,2) - rayWeight=0.000000
+Debug: thread (4,2) - rayWeight=0.000000
+Debug: thread (0,3) - rayWeight=0.000000
+Debug: thread (1,3) - rayWeight=0.000000
+Debug: thread (2,3) - rayWeight=0.000000
+Debug: thread (3,3) - rayWeight=0.000000
+Debug: thread (4,3) - rayWeight=0.000000
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 125 μs
+[TIMING] freeDeviceMemory: 1145 μs
+[TIMING] copyToHost: 9485 μs
+[TIMING] copyToHost: 7579 μs
+  Ray Tracing Results Analysis:
+    Ray IDD - Total: 686.288, Max: 0.00100101, Non-zero: 2295600/16000000
+    Ray Sigma - Total: nan, Max: 6688.74, Non-zero: 2955647/16000000
+[TIMING] copyToDevice: 98 μs
+[TIMING] copyToDevice: 114 μs
+[TIMING] copyToDevice: 113 μs
+[TIMING] allocateDeviceMemory: 319 μs
+[TIMING] copyToHost: 8141 μs
+[TIMING] copyToHost: 6264 μs
+[TIMING] allocateDeviceMemory: 29 μs
+[TIMING] allocateDeviceMemory: 4 μs
+[TIMING] copyToDevice: 193 μs
+[TIMING] copyToDevice: 228 μs
+[TIMING] Kernel Superposition execution time: 0.060 ms
+[TIMING] copyToHost: 189 μs
+  BEV Primary Dose Analysis:
+    Total BEV dose: 688.238
+    Max BEV dose: 0.100101
+    Non-zero BEV voxels: 22956/160000
+  Dose accumulation parameters:
+    doseVolDims: (400, 400, 32)
+    doseSize: 5120000
+    rayDims: (400, 400)
+    center: (200, 200, 16)
+Debug: x=195, y=195, doseX=195, doseY=195
+Debug: z=0, doseIdx=78195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=1, doseIdx=238195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=2, doseIdx=398195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=3, doseIdx=558195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=4, doseIdx=718195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=5, doseIdx=878195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=6, doseIdx=1038195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=7, doseIdx=1198195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=8, doseIdx=1358195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=9, doseIdx=1518195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+  Dose accumulation debug:
+    Accumulated voxels: 734592
+    Total accumulated dose: 21996.9
+  Dose accumulation completed
+[TIMING] freeDeviceMemory: 22 μs
+[TIMING] freeDeviceMemory: 301 μs
+[TIMING] freeDeviceMemory: 1154 μs
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 2 μs
+[TIMING] freeDeviceMemory: 5 μs
+[TIMING] freeDeviceMemory: 4 μs
+  Layer 2: 140 MeV
+Debug: rayDims = (400, 400)
+[TIMING] allocateDeviceMemory: 14 μs
+[TIMING] allocateDeviceMemory: 298 μs
+[TIMING] allocateDeviceMemory: 100 μs
+[TIMING] allocateDeviceMemory: 7 μs
+[TIMING] allocateDeviceMemory: 1 μs
+[TIMING] allocateDeviceMemory: 3 μs
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Kernel: readSubspotDataKernel called with nsubspot=10, layerIdx=0
+GPU Debug: subspotIdx=0, eneIdx=0, deltaX=-4.996713, deltaY=0.245871, weight=1.603135
+GPU Debug: SubspotInfo isValid=1, weight=1.603135, effectiveSigma=1.449000
+GPU Debug: SubspotInfo isValid=1, weight=1.268477, effectiveSigma=1.527194
+GPU Debug: SubspotInfo isValid=1, weight=1.850817, effectiveSigma=1.480113
+GPU Debug: SubspotInfo isValid=1, weight=0.984986, effectiveSigma=1.620118
+GPU Debug: SubspotInfo isValid=1, weight=1.605528, effectiveSigma=1.454919
+GPU Debug: SubspotInfo isValid=1, weight=1.196895, effectiveSigma=1.587764
+GPU Debug: SubspotInfo isValid=1, weight=0.534539, effectiveSigma=2.076612
+GPU Debug: SubspotInfo isValid=1, weight=1.653861, effectiveSigma=1.616330
+GPU Debug: SubspotInfo isValid=1, weight=1.027605, effectiveSigma=1.634452
+GPU Debug: SubspotInfo isValid=1, weight=0.736549, effectiveSigma=1.520235
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 0
+GPU Debug: Subspot 0 - pos=(-4.997,0.246), sigma=(0.984,1.063), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-7.950, maxX=-2.044, minY=-2.944, maxY=3.436
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=41, maxX=160, minY=141, maxY=269
+Host: subspotRanges for layer 0:
+  Subspot 0: minX=41, maxX=160, minY=141, maxY=269
+  Subspot 1: minX=68, maxX=210, minY=236, maxY=354
+  Subspot 2: minX=54, maxX=189, minY=204, maxY=322
+  Subspot 3: minX=97, maxX=202, minY=55, maxY=220
+  Subspot 4: minX=155, maxX=259, minY=198, maxY=340
+  Subspot 5: minX=58, maxX=195, minY=205, maxY=340
+  Subspot 6: minX=56, maxX=237, minY=16, maxY=189
+  Subspot 7: minX=182, maxX=332, minY=151, maxY=277
+  Subspot 8: minX=100, maxX=251, minY=90, maxY=217
+  Subspot 9: minX=43, maxX=178, minY=143, maxY=268
+GPU Debug: Subspot 0 - processing range: minX=41, maxX=160, minY=141, maxY=269
+GPU Debug: Subspot 0 - processing CPB point (41,141)
+GPU Debug: Subspot 0 - processing CPB point (42,141)
+GPU Debug: Subspot 0 - processing CPB point (43,141)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=1.979789, effectiveSigma=1.463372
+GPU Debug: SubspotInfo isValid=1, weight=1.552346, effectiveSigma=1.503340
+GPU Debug: SubspotInfo isValid=1, weight=1.526394, effectiveSigma=1.546458
+GPU Debug: SubspotInfo isValid=1, weight=1.716172, effectiveSigma=1.617109
+GPU Debug: SubspotInfo isValid=1, weight=1.456153, effectiveSigma=1.444523
+GPU Debug: SubspotInfo isValid=1, weight=0.655291, effectiveSigma=1.818146
+GPU Debug: SubspotInfo isValid=1, weight=1.499665, effectiveSigma=1.828719
+GPU Debug: SubspotInfo isValid=1, weight=1.200956, effectiveSigma=1.803070
+GPU Debug: SubspotInfo isValid=1, weight=1.613961, effectiveSigma=1.821431
+GPU Debug: SubspotInfo isValid=1, weight=1.015170, effectiveSigma=1.507999
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 1
+GPU Debug: Subspot 0 - pos=(-3.072,-4.353), sigma=(1.182,0.862), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-6.619, maxX=0.475, minY=-6.940, maxY=-1.765
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=67, maxX=210, minY=61, maxY=165
+Host: subspotRanges for layer 1:
+  Subspot 0: minX=67, maxX=210, minY=61, maxY=165
+  Subspot 1: minX=242, maxX=355, minY=115, maxY=258
+  Subspot 2: minX=234, maxX=364, minY=71, maxY=205
+  Subspot 3: minX=167, maxX=332, minY=83, maxY=188
+  Subspot 4: minX=41, maxX=170, minY=68, maxY=186
+  Subspot 5: minX=112, maxX=291, minY=141, maxY=267
+  Subspot 6: minX=167, maxX=341, minY=85, maxY=221
+  Subspot 7: minX=99, maxX=278, minY=222, maxY=346
+  Subspot 8: minX=187, maxX=331, minY=190, maxY=356
+  Subspot 9: minX=145, maxX=268, minY=94, maxY=229
+GPU Debug: Subspot 0 - processing range: minX=67, maxX=210, minY=61, maxY=165
+GPU Debug: Subspot 0 - processing CPB point (67,61)
+GPU Debug: Subspot 0 - processing CPB point (68,61)
+GPU Debug: Subspot 0 - processing CPB point (69,61)
+Host: Launching readSubspotDataKernel with gridSize=1, blockSize=256
+GPU Debug: SubspotInfo isValid=1, weight=0.594379, effectiveSigma=1.599704
+GPU Debug: SubspotInfo isValid=1, weight=1.082386, effectiveSigma=1.832027
+GPU Debug: SubspotInfo isValid=1, weight=0.938782, effectiveSigma=1.457757
+GPU Debug: SubspotInfo isValid=1, weight=1.903345, effectiveSigma=1.395472
+GPU Debug: SubspotInfo isValid=1, weight=0.688975, effectiveSigma=1.399739
+GPU Debug: SubspotInfo isValid=1, weight=0.614381, effectiveSigma=1.599046
+GPU Debug: SubspotInfo isValid=1, weight=0.971109, effectiveSigma=1.551111
+GPU Debug: SubspotInfo isValid=1, weight=0.794579, effectiveSigma=1.715027
+GPU Debug: SubspotInfo isValid=1, weight=1.037207, effectiveSigma=1.389857
+GPU Debug: SubspotInfo isValid=1, weight=1.588617, effectiveSigma=1.679643
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Device code: HERE SubspotInfo_texture constructor is running
+Host: readSubspotDataKernel completed for layer 2
+GPU Debug: Subspot 0 - pos=(0.668,1.525), sigma=(1.143,1.119), cutoff=3.000
+GPU Debug: Subspot 0 - world range: minX=-2.761, maxX=4.096, minY=-1.833, maxY=4.883
+GPU Debug: Subspot 0 - CPB corner=(-10.000,-10.000), resolution=(0.050,0.050), dims=(400,400)
+GPU Debug: Subspot 0 - CPB indices: minX=144, maxX=282, minY=163, maxY=298
+Host: subspotRanges for layer 2:
+  Subspot 0: minX=144, maxX=282, minY=163, maxY=298
+  Subspot 1: minX=35, maxX=169, minY=152, maxY=328
+  Subspot 2: minX=59, maxX=191, minY=127, maxY=244
+  Subspot 3: minX=124, maxX=222, minY=173, maxY=311
+  Subspot 4: minX=199, maxX=330, minY=153, maxY=260
+  Subspot 5: minX=189, maxX=336, minY=116, maxY=241
+  Subspot 6: minX=76, maxX=225, minY=120, maxY=234
+  Subspot 7: minX=81, maxX=233, minY=228, maxY=368
+  Subspot 8: minX=199, maxX=315, minY=64, maxY=186
+  Subspot 9: minX=60, maxX=207, minY=221, maxY=362
+GPU Debug: Subspot 0 - processing range: minX=144, maxX=282, minY=163, maxY=298
+GPU Debug: Subspot 0 - processing CPB point (144,163)
+GPU Debug: Subspot 0 - processing CPB point (145,163)
+GPU Debug: Subspot 0 - processing CPB point (146,163)
+[TIMING] Subspot to CPB Convolution execution time: 22.983 ms
+[TIMING] copyToHost: 409 μs
+  CPB Weights Analysis:
+    Total CPB weights: 36.7177, Max: 0.00116589, Non-zero: 211992/480000
+  CPB Weights Spatial Distribution:
+    CPB(131,16,0) = 1.0139e-06 at world(-3.45,-9.2)
+    CPB(132,16,0) = 1.03069e-06 at world(-3.4,-9.2)
+    CPB(133,16,0) = 1.04659e-06 at world(-3.35,-9.2)
+    CPB(134,16,0) = 1.06154e-06 at world(-3.3,-9.2)
+    CPB(135,16,0) = 1.07551e-06 at world(-3.25,-9.2)
+    CPB(136,16,0) = 1.08845e-06 at world(-3.2,-9.2)
+    CPB(137,16,0) = 1.10031e-06 at world(-3.15,-9.2)
+    CPB(138,16,0) = 1.11105e-06 at world(-3.1,-9.2)
+    CPB(139,16,0) = 1.12065e-06 at world(-3.05,-9.2)
+    CPB(140,16,0) = 1.12907e-06 at world(-3,-9.2)
+    Max weight 0.00116589 at CPB(125,269,0)
+Host Debug: rayDims=(400,400), blockSize=(16,16), gridSize=(25,25)
+GPU Debug: blockIdx=(0,0), threadIdx=(0,4), rayX=0, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(1,4), rayX=1, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(2,4), rayX=2, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(3,4), rayX=3, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(4,4), rayX=4, rayY=4
+GPU Debug: blockIdx=(0,0), threadIdx=(0,0), rayX=0, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(1,0), rayX=1, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(2,0), rayX=2, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(3,0), rayX=3, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(4,0), rayX=4, rayY=0
+GPU Debug: blockIdx=(0,0), threadIdx=(0,1), rayX=0, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(1,1), rayX=1, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(2,1), rayX=2, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(3,1), rayX=3, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(4,1), rayX=4, rayY=1
+GPU Debug: blockIdx=(0,0), threadIdx=(0,2), rayX=0, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(1,2), rayX=1, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(2,2), rayX=2, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(3,2), rayX=3, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(4,2), rayX=4, rayY=2
+GPU Debug: blockIdx=(0,0), threadIdx=(0,3), rayX=0, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(1,3), rayX=1, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(2,3), rayX=2, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(3,3), rayX=3, rayY=3
+GPU Debug: blockIdx=(0,0), threadIdx=(4,3), rayX=4, rayY=3
+GPU Debug: Ray 0 - rayX=0, rayY=0, rayXPos=-10.000, rayYPos=-10.000
+GPU Debug: Ray 1 - rayX=1, rayY=0, rayXPos=-9.950, rayYPos=-10.000
+GPU Debug: Ray 2 - rayX=2, rayY=0, rayXPos=-9.900, rayYPos=-10.000
+GPU Debug: Ray 0 - cpbX=0, cpbY=0, bounds check: 1
+GPU Debug: Ray 1 - cpbX=1, cpbY=0, bounds check: 1
+GPU Debug: Ray 2 - cpbX=2, cpbY=0, bounds check: 1
+[TIMING] CPB to Ray Weight Mapping execution time: 0.479 ms
+[TIMING] copyToHost: 151 μs
+  Ray Weights Analysis:
+    Total ray weights: 36.7131, Max: 0.00167246, Non-zero: 95261/160000
+  DensityAndSpTracerParams:
+    steps: 100
+    densityScale: 1
+    spScale: 1
+    startPos: (-20, -20, 0)
+    raySpacing: (0.1, 0.1)
+    stepInc: (0, 0, 0.1)
+    stepLength: 0.1
+[TIMING] allocateDeviceMemory: 115 μs
+[TIMING] allocateDeviceMemory: 94 μs
+[TIMING] allocateDeviceMemory: 5 μs
+[TIMING] copyToDevice: 141 μs
+Debug: rayTracingBEVKernel called for thread (0,4)
+Debug: rayTracingBEVKernel called for thread (1,4)
+Debug: rayTracingBEVKernel called for thread (2,4)
+Debug: rayTracingBEVKernel called for thread (3,4)
+Debug: rayTracingBEVKernel called for thread (4,4)
+Debug: rayTracingBEVKernel called for thread (0,0)
+Debug: rayTracingBEVKernel called for thread (1,0)
+Debug: rayTracingBEVKernel called for thread (2,0)
+Debug: rayTracingBEVKernel called for thread (3,0)
+Debug: rayTracingBEVKernel called for thread (4,0)
+Debug: rayTracingBEVKernel called for thread (0,1)
+Debug: rayTracingBEVKernel called for thread (1,1)
+Debug: rayTracingBEVKernel called for thread (2,1)
+Debug: rayTracingBEVKernel called for thread (3,1)
+Debug: rayTracingBEVKernel called for thread (4,1)
+Debug: rayTracingBEVKernel called for thread (0,2)
+Debug: rayTracingBEVKernel called for thread (1,2)
+Debug: rayTracingBEVKernel called for thread (2,2)
+Debug: rayTracingBEVKernel called for thread (3,2)
+Debug: rayTracingBEVKernel called for thread (4,2)
+Debug: rayTracingBEVKernel called for thread (0,3)
+Debug: rayTracingBEVKernel called for thread (1,3)
+Debug: rayTracingBEVKernel called for thread (2,3)
+Debug: rayTracingBEVKernel called for thread (3,3)
+Debug: rayTracingBEVKernel called for thread (4,3)
+Debug: simpleIddCalculationKernel called for thread (0,4)
+Debug: simpleIddCalculationKernel called for thread (1,4)
+Debug: simpleIddCalculationKernel called for thread (2,4)
+Debug: simpleIddCalculationKernel called for thread (3,4)
+Debug: simpleIddCalculationKernel called for thread (4,4)
+Debug: simpleIddCalculationKernel called for thread (0,0)
+Debug: simpleIddCalculationKernel called for thread (1,0)
+Debug: simpleIddCalculationKernel called for thread (2,0)
+Debug: simpleIddCalculationKernel called for thread (3,0)
+Debug: simpleIddCalculationKernel called for thread (4,0)
+Debug: simpleIddCalculationKernel called for thread (0,1)
+Debug: simpleIddCalculationKernel called for thread (1,1)
+Debug: simpleIddCalculationKernel called for thread (2,1)
+Debug: simpleIddCalculationKernel called for thread (3,1)
+Debug: simpleIddCalculationKernel called for thread (4,1)
+Debug: simpleIddCalculationKernel called for thread (0,2)
+Debug: simpleIddCalculationKernel called for thread (1,2)
+Debug: simpleIddCalculationKernel called for thread (2,2)
+Debug: simpleIddCalculationKernel called for thread (3,2)
+Debug: simpleIddCalculationKernel called for thread (4,2)
+Debug: simpleIddCalculationKernel called for thread (0,3)
+Debug: simpleIddCalculationKernel called for thread (1,3)
+Debug: simpleIddCalculationKernel called for thread (2,3)
+Debug: simpleIddCalculationKernel called for thread (3,3)
+Debug: simpleIddCalculationKernel called for thread (4,3)
+Debug: thread (0,4) - rayWeight=0.000000
+Debug: thread (1,4) - rayWeight=0.000000
+Debug: thread (2,4) - rayWeight=0.000000
+Debug: thread (3,4) - rayWeight=0.000000
+Debug: thread (4,4) - rayWeight=0.000000
+Debug: thread (0,0) - rayWeight=0.000000
+Debug: thread (1,0) - rayWeight=0.000000
+Debug: thread (2,0) - rayWeight=0.000000
+Debug: thread (3,0) - rayWeight=0.000000
+Debug: thread (4,0) - rayWeight=0.000000
+Debug: thread (0,1) - rayWeight=0.000000
+Debug: thread (1,1) - rayWeight=0.000000
+Debug: thread (2,1) - rayWeight=0.000000
+Debug: thread (3,1) - rayWeight=0.000000
+Debug: thread (4,1) - rayWeight=0.000000
+Debug: thread (0,2) - rayWeight=0.000000
+Debug: thread (1,2) - rayWeight=0.000000
+Debug: thread (2,2) - rayWeight=0.000000
+Debug: thread (3,2) - rayWeight=0.000000
+Debug: thread (4,2) - rayWeight=0.000000
+Debug: thread (0,3) - rayWeight=0.000000
+Debug: thread (1,3) - rayWeight=0.000000
+Debug: thread (2,3) - rayWeight=0.000000
+Debug: thread (3,3) - rayWeight=0.000000
+Debug: thread (4,3) - rayWeight=0.000000
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 130 μs
+[TIMING] freeDeviceMemory: 1146 μs
+[TIMING] copyToHost: 5809 μs
+[TIMING] copyToHost: 6441 μs
+  Ray Tracing Results Analysis:
+    Ray IDD - Total: 686.288, Max: 0.00100101, Non-zero: 2295600/16000000
+    Ray Sigma - Total: nan, Max: 6688.74, Non-zero: 2955647/16000000
+[TIMING] copyToDevice: 108 μs
+[TIMING] copyToDevice: 110 μs
+[TIMING] copyToDevice: 115 μs
+[TIMING] allocateDeviceMemory: 41 μs
+[TIMING] copyToHost: 5694 μs
+[TIMING] copyToHost: 5882 μs
+[TIMING] allocateDeviceMemory: 344 μs
+[TIMING] allocateDeviceMemory: 6 μs
+[TIMING] copyToDevice: 125 μs
+[TIMING] copyToDevice: 149 μs
+[TIMING] Kernel Superposition execution time: 0.066 ms
+[TIMING] copyToHost: 175 μs
+  BEV Primary Dose Analysis:
+    Total BEV dose: 688.238
+    Max BEV dose: 0.100101
+    Non-zero BEV voxels: 22956/160000
+  Dose accumulation parameters:
+    doseVolDims: (400, 400, 32)
+    doseSize: 5120000
+    rayDims: (400, 400)
+    center: (200, 200, 16)
+Debug: x=195, y=195, doseX=195, doseY=195
+Debug: z=0, doseIdx=78195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=1, doseIdx=238195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=2, doseIdx=398195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=3, doseIdx=558195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=4, doseIdx=718195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=5, doseIdx=878195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=6, doseIdx=1038195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=7, doseIdx=1198195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=8, doseIdx=1358195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+Debug: z=9, doseIdx=1518195, doseSize=5120000
+Debug: bevDose=0.0424498, devDoseVol pointer=0x154f20400000
+  Dose accumulation debug:
+    Accumulated voxels: 734592
+    Total accumulated dose: 21996.9
+  Dose accumulation completed
+[TIMING] freeDeviceMemory: 13 μs
+[TIMING] freeDeviceMemory: 173 μs
+[TIMING] freeDeviceMemory: 1146 μs
+[TIMING] freeDeviceMemory: 5 μs
+[TIMING] freeDeviceMemory: 3 μs
+[TIMING] freeDeviceMemory: 1 μs
+[TIMING] freeDeviceMemory: 4 μs
+[TIMING] freeDeviceMemory: 273 μs
+[TIMING] RTD Wrapper execution time: 1285 ms (CPU)
+Wrapper completed successfully!
+
+Debug: First 10 dose values: 0 0 0 0 0 0 0 0 0 0 
+
+Dose Analysis:
+  Total dose: 66042.4
+  Max dose: 0.300303
+  Non-zero voxels: 734592/5120000
+  Average dose: 0.0899036
+
+Total execution time: 1374527 μs
+=== Test Complete ===

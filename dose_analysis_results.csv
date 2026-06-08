@@ -1,0 +1,17 @@
+Parameter,Value
+Total Dose,407.61792401598115
+Max Dose,1.597583478825749
+Min Dose,1.0242099266355554e-10
+Non-zero Voxels,2722
+Amplitude,1.7625233566525105
+Center X (cm),4.6406181112767775e-17
+Center Y (cm),0.006664615218662739
+Sigma X (cm),0.9710781737020393
+Sigma Y (cm),0.4060001340576703
+Offset,-0.00016758484160549173
+R-squared,0.9437335405864173
+Is Gaussian,True
+Wrapper Total Dose,66042.4
+Wrapper Max Dose,0.300303
+Wrapper Non-zero Voxels,734592
+Execution Time (μs),1477476.0

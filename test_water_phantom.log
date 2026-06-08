@@ -1,0 +1,5 @@
+=== Wrapper Integration Test with Subspot to CPB Convolution ===
+Creating test data...
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Failed to open ../tables/proton_cumul_ddd_data.txt
+timeout: the monitored command dumped core

@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.20)
+project(TPSAlgorithms C CXX CUDA)
+
+set(CMAKE_CUDA_STANDARD 14)
+
+if(MSVC)
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(COMMON_CXX_FLAGS "/MDd /openmp /EHsc /source-charset:utf-8")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(COMMON_CXX_FLAGS "/MD /openmp /EHsc /source-charset:utf-8")
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_CXX_FLAGS}")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=\"${COMMON_CXX_FLAGS}\"")
+endif()
+
+find_package(Python3 3.6.8 EXACT COMPONENTS Interpreter Development)
+if (${CMAKE_VERSION} VERSION_GREATER 3.10)
+    find_package(CUDAToolkit 11.8 EXACT)
+    set(CUDA_INCLUDE_DIRS ${CUDAToolkit_INCLUDE_DIRS})
+else()
+    find_package(CUDA 11.8 EXACT) # Deprecated since version 3.10 https://cmake.org/cmake/help/latest/module/FindCUDA.html
+endif()
+
+add_subdirectory(pybind11)
+add_subdirectory(owl)
+add_subdirectory(carbonPBS)
+# add_subdirectory(kernel_performance_test)
+
