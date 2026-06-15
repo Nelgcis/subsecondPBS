@@ -1804,6 +1804,7 @@ class DOSECAL(BASE):
                 0.00005,
                 beamParaPos,
                 0,
+                verbose=0,
                 spotSpacingX=spot_spacing_x_all,
                 spotSpacingZ=spot_spacing_z_all,
             )

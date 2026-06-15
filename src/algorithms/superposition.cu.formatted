@@ -1,0 +1,331 @@
+/**
+ * \file
+ * \brief Unified Superposition Algorithm Implementation
+ *
+ * This file combines enhanced superposition and kernel superposition algorithms
+ */
+
+#include "../include/algorithms/superposition.h"
+#include "../include/core/common.cuh"
+#include "../include/core/Macro.cuh"
+#include "../include/utils/debug_tools.h"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <texture_indirect_functions.h>
+
+// ============================================================================
+// Enhanced Superposition Algorithm
+// ============================================================================
+
+// 优化的erf近似函数
+__device__ __forceinline__ float erfApprox(float x) {
+    // 快速erf近似，适用于GPU
+    float a1 = 0.254829592f;
+    float a2 = -0.284496736f;
+    float a3 = 1.421413741f;
+    float a4 = -1.453152027f;
+    float a5 = 1.061405429f;
+    float p = 0.3275911f;
+
+    int sign = (x >= 0) ? 1 : -1;
+    x = fabsf(x);
+
+    float t = 1.0f / (1.0f + p * x);
+    float y = 1.0f - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * expf(-x * x);
+
+    return sign * y;
+}
+
+// 计算tile半径的kernel
+template<unsigned int blockY>
+__global__ void calculateTileRadiusKernel(
+    float* const sigmaEffArray,
+    const int startZ,
+    int* const tileRadiusCounters,
+    int2* const inOutIdcs,
+    const int maxTiles
+) {
+    __shared__ float tileMinSigma[SUPERP_TILE_X * blockY];
+
+    const int tileIdx = SUPERP_TILE_X * threadIdx.y + threadIdx.x;
+    const int pitch = gridDim.x * SUPERP_TILE_X;
+    const int inIdx = (startZ + blockIdx.z) * (gridDim.y * SUPERP_TILE_Y * pitch) +
+                      (blockIdx.y * SUPERP_TILE_Y + threadIdx.y) * pitch +
+                      blockIdx.x * SUPERP_TILE_X + threadIdx.x;
+
+    // 在tile部分中找到最小sigma
+    tileMinSigma[tileIdx] = sigmaEffArray[inIdx];
+    __syncthreads();
+
+    // 归约找到tile中的最小sigma
+    for (unsigned int s = (SUPERP_TILE_X * blockY) / 2; s > 0; s >>= 1) {
+        if (tileIdx < s) {
+            tileMinSigma[tileIdx] = fminf(tileMinSigma[tileIdx], tileMinSigma[tileIdx + s]);
+        }
+        __syncthreads();
+    }
+
+    if (tileIdx == 0) {
+        float minSigma = tileMinSigma[0];
+        if (minSigma > 1e-6f) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+            int radius = (int)ceilf(SUPERP_TILE_X * minSigma);
+            radius = min(radius, MAX_SUPERP_RADIUS);
+
+            int counterIdx = radius;
+            int tileCounterIdx = atomicAdd(&tileRadiusCounters[counterIdx], 1);
+
+            if (tileCounterIdx < maxTiles) {
+                inOutIdcs[counterIdx * maxTiles + tileCounterIdx] = make_int2(
+                    blockIdx.x + blockIdx.y * gridDim.x + blockIdx.z * gridDim.x * gridDim.y,
+                    radius
+                );
+            }
+        }
+    }
+}
+
+// 优化的superposition kernel
+__global__ void kernelSuperpositionCarbon(
+    float const* __restrict__ inDose,
+    float const* __restrict__ inRSigmaEff,
+    float* const outDose,
+    const int inDosePitch,
+    const int rayDimsX,
+    const int rayDimsY,
+    const int startZ,
+    const int2* const inOutIdcs,
+    const int* const tileRadiusCounters,
+    const int maxTiles
+) {
+    const int tileIdx = blockIdx.x;
+    const int radius = blockIdx.y;
+
+    if (tileIdx >= tileRadiusCounters[radius]) return;
+
+    const int2 tileInfo = inOutIdcs[radius * maxTiles + tileIdx];
+    const int globalTileIdx = tileInfo.x;
+    const int actualRadius = tileInfo.y;
+
+    const int tileX = globalTileIdx % gridDim.x;
+    const int tileY = (globalTileIdx / gridDim.x) % gridDim.y;
+    const int tileZ = globalTileIdx / (gridDim.x * gridDim.y);
+
+    const int startX = tileX * SUPERP_TILE_X;
+    const int startY = tileY * SUPERP_TILE_Y;
+    const int z = startZ + tileZ;
+
+    const int x = startX + threadIdx.x;
+    const int y = startY + threadIdx.y;
+
+    if (x >= rayDimsX || y >= rayDimsY) return;
+
+    const int inIdx = z * (rayDimsY * inDosePitch) + y * inDosePitch + x;
+    const int outIdx = y * rayDimsX + x;
+
+    float dose = inDose[inIdx];
+    float rSigmaEff = inRSigmaEff[inIdx];
+
+    if (rSigmaEff < 1e6f) {
+            float sigma = 1.0f / (rSigmaEff * 1.41421356f); // sqrt(2)
+
+        // 应用高斯卷积
+        float totalWeight = 0.0f;
+        float weightedDose = 0.0f;
+
+        for (int dx = -actualRadius; dx <= actualRadius; ++dx) {
+            for (int dy = -actualRadius; dy <= actualRadius; ++dy) {
+                int nx = x + dx;
+                int ny = y + dy;
+
+                if (nx >= 0 && nx < rayDimsX && ny >= 0 && ny < rayDimsY) {
+                    float distSq = dx * dx + dy * dy;
+                    if (distSq <= actualRadius * actualRadius) {
+                        float gaussianWeight = expf(-0.5f * distSq / (sigma * sigma));
+                        weightedDose += gaussianWeight * dose;
+                        totalWeight += gaussianWeight;
+                    }
+                }
+            }
+        }
+
+        if (totalWeight > 1e-6f) {
+            atomicAdd(&outDose[outIdx], weightedDose / totalWeight);
+        }
+    }
+}
+
+// ============================================================================
+// Kernel Superposition Algorithm
+// ============================================================================
+
+// Template-based superposition kernel implementation
+template<int RADIUS>
+__global__ void kernelSuperposition(
+    float const* __restrict__ inDose,
+    float const* __restrict__ inRSigmaEff,
+    float* const outDose,
+    const int inDosePitch,
+    const int rayDimsX,
+    const int rayDimsY) {
+
+    const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int x = tid % rayDimsX;
+    const unsigned int y = tid / rayDimsX;
+
+    if (x < rayDimsX && y < rayDimsY) {
+        float dose = inDose[y * rayDimsX + x];
+        float rSigmaEff = inRSigmaEff[y * rayDimsX + x];
+
+        if (rSigmaEff < 1e6f) {
+            float sigma = 1.0f / (rSigmaEff * 1.41421356f); // sqrt(2)
+
+            // Apply Gaussian convolution with radius RADIUS
+            float totalWeight = 0.0f;
+            float weightedDose = 0.0f;
+
+            for (int dx = -RADIUS; dx <= RADIUS; ++dx) {
+                for (int dy = -RADIUS; dy <= RADIUS; ++dy) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+
+                    if (nx >= 0 && nx < rayDimsX && ny >= 0 && ny < rayDimsY) {
+                        float distSq = dx * dx + dy * dy;
+                        if (distSq <= RADIUS * RADIUS) {
+                            float gaussianWeight = expf(-0.5f * distSq / (sigma * sigma));
+                            weightedDose += gaussianWeight * dose;
+                            totalWeight += gaussianWeight;
+                        }
+                    }
+                }
+            }
+
+            if (totalWeight > 1e-6f) {
+                outDose[y * rayDimsX + x] = weightedDose / totalWeight;
+            }
+        }
+    }
+}
+
+// 显式实例化不同半径的kernel
+template __global__ void kernelSuperposition<1>(float const*, float const*, float*, int, int, int);
+template __global__ void kernelSuperposition<2>(float const*, float const*, float*, int, int, int);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+template __global__ void kernelSuperposition<4>(float const*, float const*, float*, int, int, int);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+template __global__ void kernelSuperposition<8>(float const*, float const*, float*, int, int, int);
+template __global__ void kernelSuperposition<16>(float const*, float const*, float*, int, int, int);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+template __global__ void kernelSuperposition<32>(float const*, float const*, float*, int, int, int);
+
+// ============================================================================
+// Host Functions
+// ============================================================================
+
+// 执行优化的superposition算法
+void performEnhancedSuperposition(
+    float* inDose,
+    float* inRSigmaEff,
+    float* outDose,
+    int inDosePitch,
+    int rayDimsX,
+    int rayDimsY,
+    int numLayers,
+    int startZ
+) {
+    GPU_TIMER_START();
+
+    // 分配内存用于tile半径计算
+    int* d_tileRadiusCounters;
+    int2* d_inOutIdcs;
+    const int maxTiles = 1000;
+
+    checkCudaErrors(cudaMalloc(&d_tileRadiusCounters, (MAX_SUPERP_RADIUS + 1) * sizeof(int)));
+    checkCudaErrors(cudaMalloc(&d_inOutIdcs, (MAX_SUPERP_RADIUS + 1) * maxTiles * sizeof(int2)));
+    checkCudaErrors(cudaMemset(d_tileRadiusCounters, 0, (MAX_SUPERP_RADIUS + 1) * sizeof(int)));
+
+    // 计算tile半径
+    dim3 blockSize(SUPERP_TILE_X, SUPERP_TILE_Y);
+    dim3 gridSize((rayDimsX + SUPERP_TILE_X - 1) / SUPERP_TILE_X,
+                  (rayDimsY + SUPERP_TILE_Y - 1) / SUPERP_TILE_Y,
+                  numLayers);
+
+    calculateTileRadiusKernel<SUPERP_TILE_Y><<<gridSize, blockSize>>>(
+        inRSigmaEff, startZ, d_tileRadiusCounters, d_inOutIdcs, maxTiles
+    );
+    checkCudaErrors(cudaDeviceSynchronize());
+
+    // 执行superposition
+    for (int radius = 1; radius <= MAX_SUPERP_RADIUS; radius++) {
+        int numTiles = 0;
+        checkCudaErrors(cudaMemcpy(&numTiles, &d_tileRadiusCounters[radius], sizeof(int), cudaMemcpyDeviceToHost));
+
+        if (numTiles > 0) {
+            dim3 superpBlockSize(SUPERP_TILE_X, SUPERP_TILE_Y);
+            dim3 superpGridSize(numTiles, radius);
+
+            kernelSuperpositionCarbon<<<superpGridSize, superpBlockSize>>>(
+                inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY,
+                startZ, d_inOutIdcs, d_tileRadiusCounters, maxTiles
+            );
+            checkCudaErrors(cudaDeviceSynchronize());
+        }
+    }
+
+    // 清理内存
+    checkCudaErrors(cudaFree(d_tileRadiusCounters));
+    checkCudaErrors(cudaFree(d_inOutIdcs));
+
+    GPU_TIMER_END("Enhanced Superposition");
+}
+
+// 执行基础superposition算法
+void performKernelSuperposition(
+    float* inDose,
+    float* inRSigmaEff,
+    float* outDose,
+    int inDosePitch,
+    int rayDimsX,
+    int rayDimsY,
+    int radius
+) {
+    GPU_TIMER_START();
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    dim3 blockSize(256);
+    dim3 gridSize((rayDimsX * rayDimsY + blockSize.x - 1) / blockSize.x);
+
+    // 根据半径选择对应的kernel
+    switch (radius) {
+        case 1:
+            kernelSuperposition<1><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+        case 2:
+            kernelSuperposition<2><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        case 4:
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            kernelSuperposition<4><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        case 8:
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            kernelSuperposition<8><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+        case 16:
+            kernelSuperposition<16><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        case 32:
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            kernelSuperposition<32><<<gridSize, blockSize>>>(inDose, inRSigmaEff, outDose, inDosePitch, rayDimsX, rayDimsY);
+            break;
+        default:
+            printf("Unsupported radius: %d\n", radius);
+            return;
+    }
+
+    checkCudaErrors(cudaDeviceSynchronize());
+    GPU_TIMER_END("Kernel Superposition");
+}

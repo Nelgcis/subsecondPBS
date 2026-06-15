@@ -1,0 +1,143 @@
+//
+// Created by 王子路 on 2022/5/24.
+//
+
+#ifndef CUDACMC__MACRO_H_
+#define CUDACMC__MACRO_H_
+
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define INF 1.0e20
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define WATERDENSITY 1.0 // g/cm^3
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MP 938.272046   //proton mass, in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define CP 1.00000 //proton charge
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ME 0.510998928  //electron mass, in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MO 14903.3460795634 //oxygen mass in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MINELECTRONENERGY 0.1 // MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define TWOPIRE2MENEW 0.08515495201157892 //2pi*r_e^2*m_e*n_{ew}, where r_e in cm, m_e in eV, n_ew = 3.34e23/cm^3
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define XW 36.514   //radiation length of water, in cm
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define PI 3.1415926535897932384626433
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SECONDPARTICLEVOLUME 10000
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define EMINPOI 1.0 //minimun energy used in p-o inelastic event, in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define EBIND 3.0   //initial binding energy used in p-o inelastic, in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MAXSTEP 0.32 //in cm
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MAXENERGYRATIO 0.2 //Max energy decay ratio of initial energy in a step
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MINSECONDENERGY 1.0 //Min proton energy to transport
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ZERO 1e-7
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define EPSILON 1e-5
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MC 11174.86339 //carbon mass in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define CC 6.0000      //carbon charge
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ES 25          //MeV, ES parameter for secondary particles
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MINCARBONENERGY 5.0 //Min carbon energy to transport in MeV
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define PPETHRESHOLD 10.0 // energy threshold of proton proton interaction
+
+// ROI and convolution related macros
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ROI_MARGIN_DEFAULT 5.0f  // Default margin for ROI calculation
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define WEIGHT_CUTOFF 1e-6f      // Weight threshold for subspot filtering
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SIGMA_CUTOFF_DEFAULT 3.0f // Default sigma cutoff for convolution
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define BP_DEPTH_CUTOFF 1.05f    // Depth cutoff as a percentage relative to the Bragg peak depth
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define POETHRESHOLD 7.0 // energy threshold of proton oxygen elastic interaction
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define POITHRESHOLD 20.0 // energy threshold of proton oxygen inelastic interaction
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define NDOSECOUNTERS 1 // number of dosecounters
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define PARTICLESCORETYPES 8//
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define OXYGEN 15.9994 // oxygen atomic mass
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define HYDROGEN 1.00794 //hydrogen atomic mass
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define BEAM_PARTICLE_CUTOFF 5 //ray weight (by particles num)
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MAX_TRACE_STEPS 1000 //ray tracing from effective source(x0,y0) to the last inside, maximum total steps
+//#define GRIDDIM 256
+//#define BLOCKDIM 128
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SECONDARYCATEGORIES 8
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define EXCITATION 75.0e-6
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MEV2JOULES 1.6021773e-13
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define BATCHSIZE 65536
+
+// ROI and margin constants
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ROI_MARGIN_X 5.0f  // ROI margin in X direction (cm)
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ROI_MARGIN_Y 5.0f  // ROI margin in Y direction (cm)
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ROI_MARGIN_Z 2.0f  // ROI margin in Z direction (cm)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define MIN(a,b) (a > b ? b : a)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define MIN3(a,b,c) (a > b ? b : a) > c ? c : (a > b ? b : a)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define ABS(a) a > 0 ? a : -a
+// #define WEIGHT_CUTOFF 0.001f  // Commented out to avoid redefinition
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SIGMA_CUTOFF 3.0f
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define ROI_MARGIN 2.0f  // ROI边界扩展margin (cm)
+
+// Superposition算法相关常量
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MAX_SUPERP_RADIUS 32
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SUPERP_TILE_X 32  // 等于warp大小
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define SUPERP_TILE_Y 8   // 优化内存合并访问
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MIN_TILES_IN_BATCH 16
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define KS_SIGMA_CUTOFF 3.0f
+
+#define __IFGPU__ 1
+#define __LINUX__ 1
+
+#define __SCOREDOSE2WATER__ 0
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+//  if __SCOREDOSE2WATER__ is turned on, 1--on, 0--off
+#define __ONLYEM__ 0
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+//  if only EM interaction is turned on, 1--on, 0--off
+
+#endif //CUDACMC__MACRO_H_
+
+// Minimal float3 helpers if not already available
+#ifndef CUDA_CALLABLE_MEMBER
+#define CUDA_CALLABLE_MEMBER __host__ __device__
+#endif
+
+
+#ifndef HALF
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define HALF 0.5f
+#endif

@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include "../include/utils/debug_tools.h"
 
 // Texture pool configuration
 struct TexturePoolConfig {

@@ -1,0 +1,100 @@
+/**
+ * \file
+ * \brief Utility Functions for RTD Integration
+ *
+ * Includes error checking, memory management, and helper functions
+ */
+
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <iostream>
+#include <cuda_runtime.h>
+#include <texture_types.h>
+
+// CUDA error checking macro
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define cudaErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+}
+
+// Texture creation utilities
+// Helper-created textures are array-backed and must be released with
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// destroyTextureObjectAndArray(...) to free both the texture object and
+// its backing cudaArray.
+cudaTextureObject_t create3DTexture(const float* data, const int3& dims,
+                                   cudaTextureFilterMode filterMode = cudaFilterModeLinear,
+                                   cudaTextureAddressMode addressMode = cudaAddressModeBorder);
+
+cudaTextureObject_t create2DTexture(const float* data, const int2& dims,
+                                   cudaTextureFilterMode filterMode = cudaFilterModeLinear,
+                                   cudaTextureAddressMode addressMode = cudaAddressModeClamp);
+
+cudaTextureObject_t create1DTexture(const float* data, int size,
+                                   cudaTextureFilterMode filterMode = cudaFilterModeLinear,
+                                   cudaTextureAddressMode addressMode = cudaAddressModeClamp);
+void destroyTextureObjectAndArray(cudaTextureObject_t texObj);
+
+// Memory management utilities
+void* allocateDeviceMemory(size_t size);
+void freeDeviceMemory(void* ptr);
+void copyToDevice(void* dst, const void* src, size_t size);
+void copyFromDevice(void* dst, const void* src, size_t size);
+void copyToHost(void* dst, const void* src, size_t size);
+
+// Grid and block size calculation utilities
+dim3 calculateGridSize(const dim3& blockSize, const int3& problemSize);
+dim3 calculateGridSize(const dim3& blockSize, const int2& problemSize);
+
+// Timing utilities
+class CudaTimer {
+private:
+    cudaEvent_t start, stop;
+    bool started, stopped;
+
+public:
+    CudaTimer() : started(false), stopped(false) {
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+    }
+
+    ~CudaTimer() {
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+    }
+
+    void startTimer() {
+        cudaEventRecord(start, 0);
+        started = true;
+        stopped = false;
+    }
+
+    void stopTimer() {
+        if (started) {
+            cudaEventRecord(stop, 0);
+            stopped = true;
+        }
+    }
+
+    float getElapsedTime() {
+        if (started && stopped) {
+            float elapsedTime;
+            cudaEventSynchronize(stop);
+            cudaEventElapsedTime(&elapsedTime, start, stop);
+            return elapsedTime;
+        }
+        return 0.0f;
+    }
+};
+
+// Debug utilities
+void printDeviceInfo();
+void printMemoryInfo();
+void checkCudaError(const char* message = "");
+
+#endif // UTILS_H

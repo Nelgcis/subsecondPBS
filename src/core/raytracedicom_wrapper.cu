@@ -4030,6 +4030,7 @@ void subsecondWrapper(
     setRTDVerbose(verbose);
     const bool fineTiming = rtdVerboseFineTiming();  // verbose==1 only; verbose>=2 is summary-only
     const bool haloAudit = rtdHaloAuditEnabled();
+    const bool heavyValidationAudit = rtdInputAuditEnabled();
     const bool perfProfile = rtdPerfProfileEnabled();
     const bool perfProfileLayers = rtdPerfProfileLayersEnabled();
     if (fineTiming) {
@@ -5223,13 +5224,15 @@ void subsecondWrapper(
             checkCudaErrors(cudaDeviceSynchronize());
         }
         beamTiming.bevTraceMs += perfElapsedMs(bevTracePerfStart);
-        assertDeviceFloatBufferFinite(
-            "BEV_WEPL",
-            devBevCumulSp,
-            raySize,
-            beamIdx,
-            -1,
-            1.0e-6f);
+        if (heavyValidationAudit) {
+            assertDeviceFloatBufferFinite(
+                "BEV_WEPL",
+                devBevCumulSp,
+                raySize,
+                beamIdx,
+                -1,
+                1.0e-6f);
+        }
 
         int beamFirstInsideRT = 0;
         int beamFirstOutsideRT = tracerSteps;
@@ -5473,15 +5476,17 @@ void subsecondWrapper(
         }
 
         beamTiming.rayWeightMs += perfElapsedMs(rayWeightPerfStart);
-        assertDeviceFloatBufferFinite(
-            "RAY_WEIGHT",
-            devRayWeightsAllLayers,
-            static_cast<size_t>(numLayers) *
-                static_cast<size_t>(rayDims.x) *
-                static_cast<size_t>(rayDims.y),
-            beamIdx,
-            -1,
-            1.0e-6f);
+        if (heavyValidationAudit) {
+            assertDeviceFloatBufferFinite(
+                "RAY_WEIGHT",
+                devRayWeightsAllLayers,
+                static_cast<size_t>(numLayers) *
+                    static_cast<size_t>(rayDims.x) *
+                    static_cast<size_t>(rayDims.y),
+                beamIdx,
+                -1,
+                1.0e-6f);
+        }
 
         if (fineTiming) {
             const int nRays = rayDims.x * rayDims.y;
@@ -6140,23 +6145,25 @@ if (fineTiming) {
             layerPerf.activeFirst = static_cast<int>(iddParams.first);
             layerPerf.activeLast = std::max(layerPerf.activeFirst, static_cast<int>(iddParams.afterLast) - 1);
             layerPerf.activeCount = std::max(0, static_cast<int>(iddParams.afterLast) - layerPerf.activeFirst);
-            validateIddSigmaTransportInvariants(
-                devBevDensity,
-                devBevCumulSp,
-                devRayWeights,
-                devBeamFirstInside,
-                devFirstStepOutside,
-                iddParams,
-                rayDims.x,
-                rayDims.y,
-                rRadiationLengthTex,
+            if (heavyValidationAudit) {
+                validateIddSigmaTransportInvariants(
+                    devBevDensity,
+                    devBevCumulSp,
+                    devRayWeights,
+                    devBeamFirstInside,
+                    devFirstStepOutside,
+                    iddParams,
+                    rayDims.x,
+                    rayDims.y,
+                    rRadiationLengthTex,
 #ifdef NUCLEAR_CORR
-                runtimeNuclearEnabled,
-                runtimeNuclearEnabled ? devNucSpotIdx : nullptr,
-                runtimeNuclearEnabled ? nucSqSigmaTex : 0,
+                    runtimeNuclearEnabled,
+                    runtimeNuclearEnabled ? devNucSpotIdx : nullptr,
+                    runtimeNuclearEnabled ? nucSqSigmaTex : 0,
 #endif
-                beamIdx,
-                static_cast<int>(layerIdx));
+                    beamIdx,
+                    static_cast<int>(layerIdx));
+            }
 
             if (fineTiming) {
                 const int activeFirst = iddParams.first;
@@ -6690,15 +6697,17 @@ if (fineTiming) {
                 );
                 checkCudaErrors(cudaDeviceSynchronize());
             }
-            assertDeviceIddSigmaFiniteOnActive(
-                "IDD_SIGMA",
-                devRayIdd,
-                devRayRSigmaEff,
-                raySize,
-                beamIdx,
-                static_cast<int>(layerIdx));
+            if (heavyValidationAudit) {
+                assertDeviceIddSigmaFiniteOnActive(
+                    "IDD_SIGMA",
+                    devRayIdd,
+                    devRayRSigmaEff,
+                    raySize,
+                    beamIdx,
+                    static_cast<int>(layerIdx));
+            }
 #ifdef NUCLEAR_CORR
-            if (runtimeNuclearEnabled) {
+            if (heavyValidationAudit && runtimeNuclearEnabled) {
                 assertDeviceIddSigmaFiniteOnActive(
                     "NUC_IDD_SIGMA",
                     devNucIdd,
@@ -7102,17 +7111,19 @@ if (fineTiming) {
 #endif
             layerPerf.superpositionMs += perfElapsedMs(superpositionPerfStart);
             beamTiming.superpositionMs += layerPerf.superpositionMs;
-            assertDeviceFloatBufferFinite(
-                "SUPERPOSITION_BEV",
-                devBevPrimDose,
-                static_cast<size_t>(bevDoseX) *
-                    static_cast<size_t>(bevDoseY) *
-                    static_cast<size_t>(bevDoseZ),
-                beamIdx,
-                static_cast<int>(layerIdx),
-                1.0e-12f);
+            if (heavyValidationAudit) {
+                assertDeviceFloatBufferFinite(
+                    "SUPERPOSITION_BEV",
+                    devBevPrimDose,
+                    static_cast<size_t>(bevDoseX) *
+                        static_cast<size_t>(bevDoseY) *
+                        static_cast<size_t>(bevDoseZ),
+                    beamIdx,
+                    static_cast<int>(layerIdx),
+                    1.0e-12f);
+            }
 #ifdef NUCLEAR_CORR
-            if (runtimeNuclearEnabled) {
+            if (heavyValidationAudit && runtimeNuclearEnabled) {
                 assertDeviceFloatBufferFinite(
                     "NUC_SUPERPOSITION_BEV",
                     devBevNucDose,
@@ -7461,13 +7472,15 @@ if (fineTiming) {
             } else if (fineTiming) {
                 std::cout << "  [TRANSF] Skipping primTransfDiv because projected dose box is empty" << std::endl;
             }
-            assertDeviceFloatBufferFinite(
-                "BEV_TO_DOSE_PRIMARY",
-                devDoseVol,
-                doseSize,
-                beamIdx,
-                static_cast<int>(layerIdx),
-                1.0e-12f);
+            if (heavyValidationAudit) {
+                assertDeviceFloatBufferFinite(
+                    "BEV_TO_DOSE_PRIMARY",
+                    devDoseVol,
+                    doseSize,
+                    beamIdx,
+                    static_cast<int>(layerIdx),
+                    1.0e-12f);
+            }
 
 #ifdef NUCLEAR_CORR
             if (runtimeNuclearEnabled) {
@@ -7647,13 +7660,15 @@ if (fineTiming) {
                 } else if (fineTiming) {
                     std::cout << "  [TRANSF] Skipping nucTransfDiv because projected halo dose box is empty" << std::endl;
                 }
-                assertDeviceFloatBufferFinite(
-                    "BEV_TO_DOSE_NUCLEAR",
-                    devDoseVol,
-                    doseSize,
-                    beamIdx,
-                    static_cast<int>(layerIdx),
-                    1.0e-12f);
+                if (heavyValidationAudit) {
+                    assertDeviceFloatBufferFinite(
+                        "BEV_TO_DOSE_NUCLEAR",
+                        devDoseVol,
+                        doseSize,
+                        beamIdx,
+                        static_cast<int>(layerIdx),
+                        1.0e-12f);
+                }
 
                 if (nuclearTransferAuditLayer) {
                     std::vector<float> hDoseAfterNuc(doseSize);

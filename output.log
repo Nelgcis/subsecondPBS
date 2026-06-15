@@ -1,0 +1,886 @@
+2026-06-05 13:33:43,595 - dosecal.py - 124 - DOSECAL - INFO : 
+                ***********************
+                ALL units of angle are radiant
+                All units of distance, resolution are millimeter!!!
+                ***********************
+
+2026-06-05 13:33:43,595 - multiBeamGroups.py - 86 - MultiBeamGroups - INFO : MBG initialized
+2026-06-05 13:33:43,595 - multiBeamGroups.py - 96 - MultiBeamGroups - INFO : [USCAL] GPU ID 0
+2026-06-05 13:33:43,595 - multiBeamGroups.py - 359 - MultiBeamGroups - INFO : Reading CT
+2026-06-05 13:33:43,595 - multiBeamGroups.py - 415 - MultiBeamGroups - INFO : Not DoseRecalculation. Use normal CT.
+2026-06-05 13:33:43,709 - ctProcess.py - 135 - CT_PROCESS - INFO : [DICOM] /data/app/tps/dicom/root/patient_183/study_231/examination_544/ data loaded successful.
+2026-06-05 13:33:43,709 - ctProcess.py - 153 - CT_PROCESS - INFO : Start getting ct HU
+2026-06-05 13:33:43,879 - ctProcess.py - 295 - CT_PROCESS - INFO : Start transforming HU to StopppingPower
+2026-06-05 13:33:43,928 - ctProcess.py - 303 - CT_PROCESS - INFO : Making CT weq desity grid done
+2026-06-05 13:33:43,929 - multiBeamGroups.py - 430 - MultiBeamGroups - INFO : time cost: Reading CT 0.33389359 s
+2026-06-05 13:33:43,929 - multiBeamGroups.py - 436 - MultiBeamGroups - INFO : Setting dose grid
+2026-06-05 13:33:43,929 - multiBeamGroups.py - 442 - MultiBeamGroups - INFO : Dose grid size setting: AP 189, LR 189, SI 189.
+2026-06-05 13:33:43,929 - dosecal.py - 137 - DOSECAL - INFO : Resampling dose grid
+2026-06-05 13:33:46,990 - multiBeamGroups.py - 445 - MultiBeamGroups - INFO : time cost: Setting dose grid 3.06107513 s
+2026-06-05 13:33:46,991 - multiBeamGroups.py - 450 - MultiBeamGroups - INFO : Reading structures
+2026-06-05 13:33:47,040 - ctProcess.py - 149 - CT_PROCESS - INFO : [DICOM] /data/app/tps/work//case_231/plan_492/algorithm/rs_543/ data loaded successful.
+2026-06-05 13:33:47,040 - ctProcess.py - 327 - CT_PROCESS - INFO : processed 0/2
+2026-06-05 13:33:47,044 - ctProcess.py - 418 - CT_PROCESS - INFO : VOI_number 1 VOI_name D_PTV loaded.
+2026-06-05 13:33:47,054 - ctProcess.py - 418 - CT_PROCESS - INFO : VOI_number 2 VOI_name contour loaded.
+2026-06-05 13:33:47,054 - ctProcess.py - 445 - CT_PROCESS - INFO : Loading roi indices from /data/app/tps/work//case_231/plan_492/algorithm/dose_grid_roi_544/param.json
+2026-06-05 13:33:47,054 - ctProcess.py - 456 - CT_PROCESS - INFO : Loading roi indices of D_PTV
+2026-06-05 13:33:47,060 - ctProcess.py - 456 - CT_PROCESS - INFO : Loading roi indices of contour
+2026-06-05 13:33:47,283 - multiBeamGroups.py - 509 - MultiBeamGroups - INFO : time cost: Reading structures 0.29250085 s
+2026-06-05 13:33:47,293 - multiBeamGroups.py - 515 - MultiBeamGroups - INFO : SPR max 1.5783014297485352 min 0.0010000000474974513
+2026-06-05 13:33:47,556 - multiBeamGroups.py - 517 - MultiBeamGroups - INFO : time cost: material info 0.27199079 s
+2026-06-05 13:33:47,556 - multiBeamGroups.py - 522 - MultiBeamGroups - INFO : Processing external contour structure
+2026-06-05 13:33:48,841 - multiBeamGroups.py - 148 - MultiBeamGroups - INFO : Reduced ratio 0.40619
+2026-06-05 13:33:48,856 - multiBeamGroups.py - 532 - MultiBeamGroups - INFO : time cost: Processing external contour structure 1.30009910 s
+2026-06-05 13:33:48,856 - multiBeamGroups.py - 583 - MultiBeamGroups - INFO : beam group id 909
+2026-06-05 13:33:49,033 - finalDose.py - 91 - FINALDOSE - INFO : Particle type Protons running.
+2026-06-05 13:33:49,033 - finalDose.py - 116 - FINALDOSE - INFO : Read-in beam info file
+2026-06-05 13:33:49,048 - beamModel.py - 2486 - BEAM_MODEL - INFO : Loading beam model successfully.
+2026-06-05 13:33:49,237 - finalDose.py - 210 - FINALDOSE - INFO : [FINAL_DOSE] Calculating dose for beam ID 1070.
+2026-06-05 13:33:49,255 - beamModel.py - 2486 - BEAM_MODEL - INFO : Loading beam model successfully.
+2026-06-05 13:33:49,255 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 7
+2026-06-05 13:33:49,255 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 6
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 5
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 4
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 3
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 2
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 1
+2026-06-05 13:33:49,256 - dosecal.py - 2232 - DOSECAL - INFO : Beam ID large merging energy index 0
+2026-06-05 13:33:50,187 - dosecal.py - 1577 - DOSECAL - INFO : DIAG sample spot_spacing_x: [4.5, 4.5, 4.5, 4.5, 4.5]
+2026-06-05 13:33:50,189 - dosecal.py - 1578 - DOSECAL - INFO : DIAG sample spot_spacing_z: [4.5, 4.5, 4.5, 4.5, 4.5]
+2026-06-05 13:33:50,189 - dosecal.py - 1582 - DOSECAL - INFO : DIAG x_all sample: [-84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1, -84.1]
+2026-06-05 13:33:50,190 - dosecal.py - 1583 - DOSECAL - INFO : DIAG z_all sample: [-74.5, -70.0, -65.5, -61.0, -56.5, -52.0, -47.4, -42.9, -38.4, -33.9, -29.4, -24.8, -20.3, -15.8, -11.3, -6.8, -2.3, 2.3, 6.8, 11.3]
+2026-06-05 13:33:50,190 - dosecal.py - 1584 - DOSECAL - INFO : DIAG idbeamxy sample: [[11.400000000000006, 13.0], [11.400000000000006, 17.5], [11.400000000000006, 22.0], [11.400000000000006, 26.5], [11.400000000000006, 31.0], [11.400000000000006, 35.5], [11.400000000000006, 40.1], [11.400000000000006, 44.6], [11.400000000000006, 49.1], [11.400000000000006, 53.6], [11.400000000000006, 58.1], [11.400000000000006, 62.7], [11.400000000000006, 67.2], [11.400000000000006, 71.7], [11.400000000000006, 76.2], [11.400000000000006, 80.7], [11.400000000000006, 85.2], [11.400000000000006, 89.8], [11.400000000000006, 94.3], [11.400000000000006, 98.8]]
+2026-06-05 13:33:50,190 - dosecal.py - 1589 - DOSECAL - INFO : DIAG rayweq header: [-87.0, 1.0, 175.0, -95.0, 1.0, 191.0]
+cuResample: total size 51002867712, free size 50549030912, needed size 27005076
+max dis 2402.687012 min dis 2015.900024
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs entry
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs enelist.size=8
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs iddsetting.size=3
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs idddata ndim=2 shape=(8,4000) size=32000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs full_rows=8 rows=8 cols=4000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs startRaw=0.05 stepRaw=0.1 logicalCols=4000
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs calling energyReader(tables/)
+[DEBUG][energyReader] dataPath='tables/'
+[DEBUG][energyReader] protonFile='tables/proton_cumul_ddd_data.txt' exists=1
+[DEBUG][energyReader] opened protonFile
+[DEBUG][energyReader] proton file header nEnergySamples=1024 nEnergies=147
+[DEBUG][energyReader] densityFile='tables/density_Schneider2000_adj.txt' exists=1
+[DEBUG][energyReader] opened densityFile
+[DEBUG][energyReader] spFile='tables/HU_to_SP_H&N_adj.txt' exists=1
+[DEBUG][energyReader] opened spFile
+[DEBUG][energyReader] rrlFile='tables/radiation_length.txt' exists=1
+[DEBUG][energyReader] opened rrlFile
+[DEBUG][energyReader] finished loading energy tables
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs energyReader returned nEnergySamples=1024 nEnergies=147
+[DEBUG][cuFinalDose] build_energy_from_carbonpbs derived peakDepths size=8
+Starting RTD wrapper
+CUDA Device Information:
+Number of devices: 1
+[TIMING] printDeviceInfo: 8 μs
+GPU Memory Information:
+  Total: 48640 MB
+  Free: 48207 MB
+  Used: 432 MB
+[TIMING] printMemoryInfo: 60 μs
+[TIMING] create3DTexture (ultra-optimized): 4309 μs
+[TIMING] create2DTexture: 171 μs
+[TIMING] create1DTexture: 10 μs
+[TIMING] create1DTexture: 8 μs
+[TIMING] create1DTexture: 13 μs
+[TIMING] create2DTexture: 19 μs
+[TIMING] create2DTexture: 23 μs
+
+[ENERGY_TABLE] nEnergies=8 nSamples=4000 energiesPerU=[181.207, 211.793] order=ascending monotonic=true
+[ENERGY_TABLE] peakDepths=[215.05, 282.05] (table units)
+[ENERGY_TABLE] scaleFacts=[10, 10]
+[ENERGY_TABLE] CIDD row0 vs rowLast: meanAbsDiff=13.0105 maxAbsDiff=32.4186
+[ENERGY_TABLE] CIDD samples (row0,rowLast): s0=(0.0352397,0.0357305) sMid=(96.0332,85.7123) sEnd=(121.725,154.144)
+[TIMING] allocateDeviceMemory: 111 μs
+[TIMING] copyToDevice: 2661 μs
+Processing beam 0 with 8 energy layers
+  [BEAM] energies (first up to 8): 181.207, 185.587, 190.079, 194.495, 198.794, 203.115, 207.458, 211.793
+  [GEOMETRY_UNITS] lenToMm=1 (geometry length units -> mm)
+  [ENERGY_UNITS] energyDepthToMm=1 (peakDepth table units -> mm)
+  [CARBON_PROFILE] enabled=false rawSize=44800 numLayers=8 profileRows=8 depthN=800 perRow=5600 channels=7 expectedSize=44800 beamParaRows=8 energyTableRows=8 beamPara=true
+  [BEAM_BASIS] beamDirW=(-6.40097e-11,1,0.000485146) crossXY=(-0,1,0) bmZ=(-0,1,0)
+  [BEAM_BASIS] source_mm=(6.2,-2197.2,-670.2) sad_mm=2275 iso_mm=(6.2,77.8,-670.2)
+  [RTD_SPOT_GRID_AUDIT] source=rayweq_index dims=(191,175,8) offset=(-95,-87,0) delta=(1,1,0) positiveInputSpots=12690 activeCells=44961 totalWeightIn=5.60274e+10 totalWeightRasterized=5.60274e+10 skippedZeroWeightSpots=0
+    [RTD_SPOT_GRID_AUDIT] layer=0 inputSpots=1496 positiveInputSpots=1496 zeroWeightSpots=0 activeCells=5334 occupancy=0.159581 weightIn=6.2449e+09 weightRasterized=6.2449e+09 decodedBounds=(-84.1,84.1,-76.8,74.5)
+    [RTD_SPOT_GRID_AUDIT] layer=4 inputSpots=1610 positiveInputSpots=1610 zeroWeightSpots=0 activeCells=5985 occupancy=0.179058 weightIn=7.16391e+09 weightRasterized=7.16391e+09 decodedBounds=(-84.3,84.3,-75.7,73.5)
+    [RTD_SPOT_GRID_AUDIT] layer=7 inputSpots=1692 positiveInputSpots=1692 zeroWeightSpots=0 activeCells=5412 occupancy=0.161915 weightIn=7.84515e+09 weightRasterized=7.84515e+09 decodedBounds=(-84.4,84.4,-76.2,74.1)
+  [CPB_ALIGN] rawSpotPhase ref=(-95,-87) step=(1,1) stepRangeX=[-12,202] stepRangeY=[-12,186] corner=(-107,-99)
+  [CPB] gantry XY bounds (mm): x=[-187.6,188.4] y=[-188,188]
+  [CPB] corner_gantry_cm=(-107, -99, 0) res_cm=(1, 1, 2) dims=(224, 200, 8) cov_cm=(224, 200)
+  [ROI] projected dose ROI bounds idx min=(34,1,35) max=(153,187,153)
+  [SOURCE_DIST] explicit=(0,0) inferred=(2275,2275) used_mm=(2275,2275)
+  [GEOM] gantry Z bounds (mm): z=[-112.9,263.1]  startZ=269.1 stepLen=0.1 steps=4067  [WEQ depth sampling + CT entry plane]
+  [WEQ_ALIGN] startZ ct_maxGZ=263.1 -> weq_aligned=269.1 delta=5.99994 (weqHeader[0]_mm=2005.9 meanSourceDist_mm=2275)
+[TIMING] allocateDeviceMemory: 159 μs
+  [RTD_HALO] layer=0 nucRayDims=(64,40) rawDims=(39,35,1) spotOffset=(-84.1,-76.8,0) spotDelta=(4.5,4.5,0) inputSpots=1496 positiveInputSpots=1496 inputWeightSum=6.2449e+09 rasterizedWeightSum=6.2449e+09 activeSpots=1365 mappedRayCenters=1365 decodedBounds=(-84.1,84.1,-76.8,74.5) fractionalOffsetMax=(0.488892,0.488888) fractionalOffsetMean=(0.25101,0.24902) offLatticeInputSpots=1493 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=1 nucRayDims=(64,40) rawDims=(40,35,1) spotOffset=(-84.2,-75.1,0) spotDelta=(4.4,4.4,0) inputSpots=1530 positiveInputSpots=1530 inputWeightSum=6.48286e+09 rasterizedWeightSum=6.48286e+09 activeSpots=1400 mappedRayCenters=1400 decodedBounds=(-84.2,84.2,-75.1,72.9) fractionalOffsetMax=(0.477276,0.5) fractionalOffsetMean=(0.253535,0.244935) offLatticeInputSpots=1526 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=2 nucRayDims=(64,40) rawDims=(40,35,1) spotOffset=(-84.2,-75.1,0) spotDelta=(4.4,4.4,0) inputSpots=1530 positiveInputSpots=1530 inputWeightSum=6.58166e+09 rasterizedWeightSum=6.58166e+09 activeSpots=1400 mappedRayCenters=1400 decodedBounds=(-84.2,84.2,-75.1,72.9) fractionalOffsetMax=(0.477276,0.5) fractionalOffsetMean=(0.253535,0.244935) offLatticeInputSpots=1526 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=3 nucRayDims=(64,40) rawDims=(40,35,1) spotOffset=(-84.2,-75.1,0) spotDelta=(4.4,4.4,0) inputSpots=1530 positiveInputSpots=1530 inputWeightSum=6.69632e+09 rasterizedWeightSum=6.69632e+09 activeSpots=1400 mappedRayCenters=1400 decodedBounds=(-84.2,84.2,-75.1,72.9) fractionalOffsetMax=(0.477276,0.5) fractionalOffsetMean=(0.253535,0.244935) offLatticeInputSpots=1526 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=4 nucRayDims=(64,40) rawDims=(41,36,1) spotOffset=(-84.3,-75.7,0) spotDelta=(4.3,4.3,0) inputSpots=1610 positiveInputSpots=1610 inputWeightSum=7.16391e+09 rasterizedWeightSum=7.16391e+09 activeSpots=1476 mappedRayCenters=1476 decodedBounds=(-84.3,84.3,-75.7,73.5) fractionalOffsetMax=(0.488373,0.488373) fractionalOffsetMean=(0.252275,0.248505) offLatticeInputSpots=1608 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=5 nucRayDims=(64,40) rawDims=(41,36,1) spotOffset=(-84.3,-75.7,0) spotDelta=(4.3,4.3,0) inputSpots=1610 positiveInputSpots=1610 inputWeightSum=7.26863e+09 rasterizedWeightSum=7.26863e+09 activeSpots=1476 mappedRayCenters=1476 decodedBounds=(-84.3,84.3,-75.7,73.5) fractionalOffsetMax=(0.488373,0.488373) fractionalOffsetMean=(0.252275,0.248505) offLatticeInputSpots=1608 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=6 nucRayDims=(64,40) rawDims=(42,37,1) spotOffset=(-84.4,-76.2,0) spotDelta=(4.2,4.2,0) inputSpots=1692 positiveInputSpots=1692 inputWeightSum=7.74398e+09 rasterizedWeightSum=7.74398e+09 activeSpots=1554 mappedRayCenters=1554 decodedBounds=(-84.4,84.4,-76.2,74.1) fractionalOffsetMax=(0.499999,0.5) fractionalOffsetMean=(0.250253,0.245694) offLatticeInputSpots=1686 source=explicit_physical_pb_rasterized_lattice
+  [RTD_HALO] layer=7 nucRayDims=(64,40) rawDims=(42,37,1) spotOffset=(-84.4,-76.2,0) spotDelta=(4.2,4.2,0) inputSpots=1692 positiveInputSpots=1692 inputWeightSum=7.84515e+09 rasterizedWeightSum=7.84515e+09 activeSpots=1554 mappedRayCenters=1554 decodedBounds=(-84.4,84.4,-76.2,74.1) fractionalOffsetMax=(0.499999,0.5) fractionalOffsetMean=(0.250253,0.245694) offLatticeInputSpots=1686 source=explicit_physical_pb_rasterized_lattice
+[TIMING] allocateDeviceMemory: 154 μs
+[TIMING] allocateDeviceMemory: 96 μs
+[TIMING] allocateDeviceMemory: 4 μs
+[TIMING] allocateDeviceMemory: 1 μs
+[GEOM] Warning: Ray grid does not overlap CT volume (XY). This usually indicates a coordinate/unit mismatch and will produce near-zero dose.
+       RayX idx range: [46.6283, 144.939] vs CT [0, 188]
+       RayY idx range: [-2.99997, -2.99997] vs CT [0, 188]
+  DensityAndSpTracerParams:
+    steps: 4067
+    densityScale: 1
+    spScale: 1
+    fanCorner_mm: (-107, -99, 269.1)
+    fanDelta_mm : (1, 1, -0.1)
+    sourceDist_mm: (2275, 2275)
+    startIdx(0,0): (46.6283, -2.99997, 137.645)
+    incIdx  (0,0): (-0.00235165, 0.05, 0.00217582)
+    stepLen_mm(0,0): 0.100205
+  [WEQ_LATERAL_AUDIT] sampling=linearXY rayDims=(224,200) weqDims=(191,175,4067) linearInsideRays=33425 linearOutsideRays=11375 nearestInsideRays=33425 nearestOutsideRays=11375 supportMismatchRays=0 nearestUniqueXY=(191/191,175/175) fracMean=(0,0) fracMax=(0,0) nearestVsLinearSamples=498432 meanAbsWeqDelta=0 maxAbsWeqDelta=0
+  [WEQ] Imported full WEQ volume: bodyCount=334250000 usedElems=135939475 weqDims=(191,175,4067) storedSteps=4067 activeSteps=4067 tracerSteps=4067 exactTiling=false ignoredTail=198310525 firstPositive=83 lastPositive=4066 maxWeq=380.903
+[TIMING] allocateDeviceMemory: 247 μs
+[TIMING] copyToDevice: 138421 μs
+[TIMING] freeDeviceMemory: 383 μs
+[TIMING] copyToHost: 48064 μs
+[TIMING] allocateDeviceMemory: 80 μs
+[TIMING] allocateDeviceMemory: 11 μs
+[TIMING] copyToHost: 30 μs
+[TIMING] copyToHost: 7 μs
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 2 μs
+[TIMING] copyToHost: 16 μs
+[TIMING] freeDeviceMemory: 2 μs
+[TIMING] allocateDeviceMemory: 2 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 316 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] copyToDevice: 28 μs
+[TIMING] copyToDevice: 4 μs
+[TIMING] copyToDevice: 21 μs
+[TIMING] copyToDevice: 11 μs
+[TIMING] copyToDevice: 20 μs
+[TIMING] copyToDevice: 14 μs
+[TIMING] copyToDevice: 18 μs
+[TIMING] copyToDevice: 18 μs
+[TIMING] copyToDevice: 19 μs
+[TIMING] copyToDevice: 14 μs
+[TIMING] copyToDevice: 22 μs
+[TIMING] copyToDevice: 13 μs
+[TIMING] copyToDevice: 22 μs
+[TIMING] copyToDevice: 12 μs
+[TIMING] copyToDevice: 23 μs
+[TIMING] copyToDevice: 13 μs
+[TIMING] freeDeviceMemory: 4 μs
+[TIMING] freeDeviceMemory: 3 μs
+[TIMING] freeDeviceMemory: 4 μs
+[TIMING] freeDeviceMemory: 107 μs
+[TIMING] freeDeviceMemory: 3 μs
+  [RTD_CONV] entryZ_mm=264 pxSpMult=(0.883956,0.883956) mode=per-layer-sigma subspotAvailable=1 using beamFirstInside=51
+[TIMING] copyToHost: 663 μs
+[TIMING] copyToHost: 97 μs
+  [RAY_W] Layer 0 sum=6.21238e+09 max=237991 nnz(>0)=33027/44800 nnz(>1e-6)=33027/44800 nan=0 inf=0
+[TIMING] copyToHost: 30 μs
+  [RAY_W] Layer 1 sum=6.45058e+09 max=253953 nnz(>0)=32454/44800 nnz(>1e-6)=32454/44800 nan=0 inf=0
+[TIMING] copyToHost: 33 μs
+  [RAY_W] Layer 2 sum=6.55045e+09 max=257875 nnz(>0)=32454/44800 nnz(>1e-6)=32454/44800 nan=0 inf=0
+[TIMING] copyToHost: 40 μs
+  [RAY_W] Layer 3 sum=6.6661e+09 max=262418 nnz(>0)=32454/44800 nnz(>1e-6)=32454/44800 nan=0 inf=0
+[TIMING] copyToHost: 31 μs
+  [RAY_W] Layer 4 sum=7.13315e+09 max=277734 nnz(>0)=32645/44800 nnz(>1e-6)=32645/44800 nan=0 inf=0
+[TIMING] copyToHost: 34 μs
+  [RAY_W] Layer 5 sum=7.23904e+09 max=281888 nnz(>0)=32645/44800 nnz(>1e-6)=32645/44800 nan=0 inf=0
+[TIMING] copyToHost: 32 μs
+  [RAY_W] Layer 6 sum=7.71418e+09 max=297109 nnz(>0)=33019/44800 nnz(>1e-6)=33019/44800 nan=0 inf=0
+[TIMING] copyToHost: 29 μs
+  [RAY_W] Layer 7 sum=7.81677e+09 max=301120 nnz(>0)=33019/44800 nnz(>1e-6)=33019/44800 nan=0 inf=0
+  [RAY_W] All layers total sum=5.57826e+10 global max=301120 total nnz(>0)=261717 (note: nnz counts are per-layer, not unique rays)
+[TIMING] allocateDeviceMemory: 187 μs
+[TIMING] allocateDeviceMemory: 107 μs
+[TIMING] allocateDeviceMemory: 4 μs
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] allocateDeviceMemory: 120 μs
+[TIMING] allocateDeviceMemory: 5 μs
+[TIMING] allocateDeviceMemory: 63 μs
+[TIMING] allocateDeviceMemory: 72 μs
+[TIMING] allocateDeviceMemory: 80 μs
+[TIMING] allocateDeviceMemory: 84 μs
+
+[ENERGY] Layer 0 E=181.207 -> energyIdx=0 (floor=0, corr=0, bracket=[181.207, 185.587]) CLAMP_LOW
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=215.05  -> scaleFact(mm)=10  peakDepth(mm)=215.05  rangeStopDepth(mm)=225.802  externalLongitudalCutoff(mm)=438.069  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1558 μs
+[TIMING] copyToDevice: 24 μs
+[TIMING] copyToHost: 135 μs
+  [RTD_HALO_AUDIT] layer=0 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.5,4.5) physicalPBDelta=(4.5,4.5) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.5 expectedSpotDistInRays=4.5 expectedPhysicalSpotDistInRays=4.5 nucRayDims=(64,40) validMapped=1365 invalidMapped=43435 mappedWeightNonzero=1365 mappedWeightSum=6.2449e+09 mappedPrimaryRayWeightNonzero=1365 mappedPrimaryRayWeightSum=3.02132e+08 primaryRayWeightSum=6.21238e+09 paddedNonzero=1365 paddedTotal=2560 paddedWeightSum=6.2449e+09 occupancy=0.533203
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=438.069  externalLayerCutoffMm=438.069  afterLast=3869
+[TIMING] allocateDeviceMemory: 3 μs
+[TIMING] copyToDevice: 6 μs
+[TIMING] copyToHost: 8 μs
+[TIMING] freeDeviceMemory: 4 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=0 sum_rayWeight=6.2449e+09 sum_nucRayWeight=6.2449e+09 spotDistSq=20.25 nuc/ray_should_be_1=1 expectedNucSourceScale=3.0839e+08 expectedNucVsRayScale=0.0493827 nucWeightRow=0 nucWeightRange=(0.0918206,0.225794) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.5,4.5) haloGridDelta=(4.5,4.5)
+[TIMING] copyToHost: 46854 μs
+[TIMING] copyToHost: 43520 μs
+[TIMING] copyToHost: 3181 μs
+[TIMING] copyToHost: 3211 μs
+[TIMING] copyToHost: 53569 μs
+[TIMING] copyToHost: 50986 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=6.23441e+12  max=281113  minPos=0.0385157  nnz(>0)=67360322/182201600  nnz(>1e-15)=67360322/182201600  nnz(>1e-6)=67360322/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=79123814/182201600  minFinite=0.134055  maxFinite=10.4175  nnz(>1e-6)=79123814/182201600  nan=0  inf=103077786
+    Sigma on active IDD: finite=67360322  bad(nan/inf)=0  min=0.134055  max=2.32943
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2479
+    beamFirstCalculatedPassive: 2479
+[TIMING] copyToHost: 72 μs
+[TIMING] copyToHost: 94 μs
+[TIMING] copyToHost: 55 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=330312, skippedNoDoseTiles=94588, layerMaxSuperpR=16, rad0=0, rad1=10220, rad2=31507
+  Primary superposition batched launches: [rad=1:10220] [rad=2:31507] [rad=3:34888] [rad=4:1061] [rad=5:12108] [rad=6:30696] [rad=7:28601] [rad=8:26294] [rad=9:24083] [rad=10:22066] [rad=11:20331] [rad=12:18818] [rad=13:17434] [rad=14:16119] [rad=15:14704] [rad=16:21382]
+[TIMING] Primary Tile-Based Superposition execution time: 13.681 ms
+  Nuclear superposition tile summary: totalTiles=24280, layerMaxSuperpR=10, rad0=173, rad1=0, rad2=0, rad4=0, rad8=5491, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:173] [rad=5:765] [rad=6:1086] [rad=7:2485] [rad=8:5491] [rad=9:4934] [rad=10:9346]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.106 ms
+[TIMING] copyToHost: 106584 μs
+[TIMING] copyToHost: 19478 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=6.21617e+12  maxFinite=277116  minPos=2.10975e-08  nnz(>0)=80794845/294167808  nnz(>1e-6)=80789083/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2105/3869  activeRange=[82,2478]  maxSumSlice=2357 (sum=7.26865e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2357 sum=7.26865e+09 max=276889 cnt>thr=45699 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 1103 μs
+[TIMING] create3DTexture (ultra-optimized): 150 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 28)
+    doseBox maxIdx: (168, 121, 159)
+    Grid: (6, 16)
+    Block: (32, 8)
+    maxZ: 159
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,28) -> bevIdx=(-73.1328,280.262,53.1472) OUT
+    [PROBE] doseIdx=(84,60,28) -> bevIdx=(118.084,271.86,1257.26) OUT
+    [PROBE] doseIdx=(168,121,28) -> bevIdx=(288.789,264.236,2471.93) OUT
+    [PROBE] doseIdx=(0,0,93) -> bevIdx=(-73.1328,133.262,55.4148) OUT
+    [PROBE] doseIdx=(84,60,93) -> bevIdx=(118.084,133.134,1259.94) IN
+    [PROBE] doseIdx=(168,121,93) -> bevIdx=(288.789,133.019,2475.49) OUT
+    [PROBE] doseIdx=(0,0,159) -> bevIdx=(-73.1328,-16.0004,53.2156) OUT
+    [PROBE] doseIdx=(84,60,159) -> bevIdx=(118.084,-7.72603,1257.34) OUT
+    [PROBE] doseIdx=(168,121,159) -> bevIdx=(288.789,-0.21701,2472.04) OUT
+[TIMING] copyToHost: 3031 μs
+[TIMING] copyToHost: 3083 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 1 E=185.587 -> energyIdx=1 (floor=0, corr=1, bracket=[181.207, 185.587])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=224.15  -> scaleFact(mm)=10  peakDepth(mm)=224.15  rangeStopDepth(mm)=235.357  externalLongitudalCutoff(mm)=456.465  (energyDepthToMm=1)
+[TIMING] copyToDevice: 942 μs
+[TIMING] copyToDevice: 237 μs
+[TIMING] copyToHost: 1020 μs
+  [RTD_HALO_AUDIT] layer=1 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.4,4.4) physicalPBDelta=(4.4,4.4) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.4 expectedSpotDistInRays=4.4 expectedPhysicalSpotDistInRays=4.4 nucRayDims=(64,40) validMapped=1400 invalidMapped=43400 mappedWeightNonzero=1400 mappedWeightSum=6.48286e+09 mappedPrimaryRayWeightNonzero=1400 mappedPrimaryRayWeightSum=3.27999e+08 primaryRayWeightSum=6.45058e+09 paddedNonzero=1400 paddedTotal=2560 paddedWeightSum=6.48286e+09 occupancy=0.546875
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=456.465  externalLayerCutoffMm=456.465  afterLast=3869
+[TIMING] allocateDeviceMemory: 117 μs
+[TIMING] copyToDevice: 20 μs
+[TIMING] copyToHost: 10 μs
+[TIMING] freeDeviceMemory: 6 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=1 sum_rayWeight=6.48286e+09 sum_nucRayWeight=6.48286e+09 spotDistSq=19.36 nuc/ray_should_be_1=1 expectedNucSourceScale=3.34858e+08 expectedNucVsRayScale=0.0516529 nucWeightRow=0 nucWeightRange=(0.0918206,0.225794) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.4,4.4) haloGridDelta=(4.4,4.4)
+[TIMING] copyToHost: 119229 μs
+[TIMING] copyToHost: 68610 μs
+[TIMING] copyToHost: 3328 μs
+[TIMING] copyToHost: 3334 μs
+[TIMING] copyToHost: 59669 μs
+[TIMING] copyToHost: 55580 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=6.68253e+12  max=295976  minPos=0.0209871  nnz(>0)=69062671/182201600  nnz(>1e-15)=69062671/182201600  nnz(>1e-6)=69062671/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=80621969/182201600  minFinite=0.130718  maxFinite=10.4175  nnz(>1e-6)=80621969/182201600  nan=0  inf=101579631
+    Sigma on active IDD: finite=69062671  bad(nan/inf)=0  min=0.130718  max=2.36776
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2567
+    beamFirstCalculatedPassive: 2567
+[TIMING] copyToHost: 54 μs
+[TIMING] copyToHost: 55 μs
+[TIMING] copyToHost: 55 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=329579, skippedNoDoseTiles=110721, layerMaxSuperpR=16, rad0=0, rad1=10527, rad2=31082
+  Primary superposition batched launches: [rad=1:10527] [rad=2:31082] [rad=4:32692] [rad=5:15251] [rad=6:29866] [rad=7:27728] [rad=8:25465] [rad=9:23309] [rad=10:21401] [rad=11:19769] [rad=12:18352] [rad=13:17069] [rad=14:15851] [rad=15:14606] [rad=16:26611]
+[TIMING] Primary Tile-Based Superposition execution time: 14.058 ms
+  Nuclear superposition tile summary: totalTiles=25160, layerMaxSuperpR=10, rad0=162, rad1=0, rad2=0, rad4=0, rad8=2178, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:162] [rad=5:680] [rad=6:978] [rad=7:1866] [rad=8:2178] [rad=9:5871] [rad=10:13425]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.102 ms
+[TIMING] copyToHost: 89914 μs
+[TIMING] copyToHost: 16026 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=6.66319e+12  maxFinite=290443  minPos=2.04857e-11  nnz(>0)=83329165/294167808  nnz(>1e-6)=83321561/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2193/3869  activeRange=[82,2566]  maxSumSlice=2440 (sum=7.42813e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2440 sum=7.42813e+09 max=289093 cnt>thr=45030 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 502 μs
+[TIMING] create3DTexture (ultra-optimized): 124 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 28)
+    doseBox maxIdx: (168, 126, 160)
+    Grid: (6, 16)
+    Block: (32, 8)
+    maxZ: 160
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,28) -> bevIdx=(-73.1328,280.262,53.1472) OUT
+    [PROBE] doseIdx=(84,63,28) -> bevIdx=(118.143,271.465,1317.23) OUT
+    [PROBE] doseIdx=(168,126,28) -> bevIdx=(288.128,263.647,2571.67) OUT
+    [PROBE] doseIdx=(0,0,94) -> bevIdx=(-73.1328,131,55.4153) OUT
+    [PROBE] doseIdx=(84,63,94) -> bevIdx=(118.143,131,1319.94) IN
+    [PROBE] doseIdx=(168,126,94) -> bevIdx=(288.128,131,2575.34) OUT
+    [PROBE] doseIdx=(0,0,160) -> bevIdx=(-73.1328,-18.2619,53.1472) OUT
+    [PROBE] doseIdx=(84,63,160) -> bevIdx=(118.143,-9.46495,1317.23) OUT
+    [PROBE] doseIdx=(168,126,160) -> bevIdx=(288.128,-1.6472,2571.67) OUT
+[TIMING] copyToHost: 2877 μs
+[TIMING] copyToHost: 2802 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 2 E=190.079 -> energyIdx=2 (floor=1, corr=1, bracket=[185.587, 190.079])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=233.65  -> scaleFact(mm)=10  peakDepth(mm)=233.65  rangeStopDepth(mm)=245.333  externalLongitudalCutoff(mm)=475.348  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1677 μs
+[TIMING] copyToDevice: 28 μs
+[TIMING] copyToHost: 214 μs
+  [RTD_HALO_AUDIT] layer=2 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.4,4.4) physicalPBDelta=(4.4,4.4) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.4 expectedSpotDistInRays=4.4 expectedPhysicalSpotDistInRays=4.4 nucRayDims=(64,40) validMapped=1400 invalidMapped=43400 mappedWeightNonzero=1400 mappedWeightSum=6.58166e+09 mappedPrimaryRayWeightNonzero=1400 mappedPrimaryRayWeightSum=3.33133e+08 primaryRayWeightSum=6.55045e+09 paddedNonzero=1400 paddedTotal=2560 paddedWeightSum=6.58166e+09 occupancy=0.546875
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=475.348  externalLayerCutoffMm=475.348  afterLast=3869
+[TIMING] allocateDeviceMemory: 16 μs
+[TIMING] copyToDevice: 7 μs
+[TIMING] copyToHost: 9 μs
+[TIMING] freeDeviceMemory: 6 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=2 sum_rayWeight=6.58166e+09 sum_nucRayWeight=6.58166e+09 spotDistSq=19.36 nuc/ray_should_be_1=1 expectedNucSourceScale=3.39962e+08 expectedNucVsRayScale=0.0516529 nucWeightRow=1 nucWeightRange=(0.0919763,0.221945) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.4,4.4) haloGridDelta=(4.4,4.4)
+[TIMING] copyToHost: 68510 μs
+[TIMING] copyToHost: 57288 μs
+[TIMING] copyToHost: 4121 μs
+[TIMING] copyToHost: 3260 μs
+[TIMING] copyToHost: 56348 μs
+[TIMING] copyToHost: 58959 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=6.9978e+12  max=295928  minPos=0.016753  nnz(>0)=72050619/182201600  nnz(>1e-15)=72050619/182201600  nnz(>1e-6)=72050619/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=83609917/182201600  minFinite=0.12739  maxFinite=10.4175  nnz(>1e-6)=83609917/182201600  nan=0  inf=98591683
+    Sigma on active IDD: finite=72050619  bad(nan/inf)=0  min=0.12739  max=2.40657
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2659
+    beamFirstCalculatedPassive: 2659
+[TIMING] copyToHost: 56 μs
+[TIMING] copyToHost: 63 μs
+[TIMING] copyToHost: 65 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=343776, skippedNoDoseTiles=112624, layerMaxSuperpR=17, rad0=0, rad1=11223, rad2=32082
+  Primary superposition batched launches: [rad=1:11223] [rad=2:32082] [rad=4:30996] [rad=5:18971] [rad=6:30370] [rad=7:28100] [rad=8:25771] [rad=9:23602] [rad=10:21700] [rad=11:20100] [rad=12:18708] [rad=13:17462] [rad=14:16281] [rad=15:15106] [rad=16:13814] [rad=17:19490]
+[TIMING] Primary Tile-Based Superposition execution time: 15.306 ms
+  Nuclear superposition tile summary: totalTiles=26080, layerMaxSuperpR=11, rad0=165, rad1=0, rad2=0, rad4=0, rad8=1747, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:165] [rad=5:662] [rad=6:937] [rad=7:2179] [rad=8:1747] [rad=9:5687] [rad=10:8132] [rad=11:6571]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.371 ms
+[TIMING] copyToHost: 90725 μs
+[TIMING] copyToHost: 20384 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=6.97797e+12  maxFinite=290711  minPos=1.90563e-11  nnz(>0)=87264396/294167808  nnz(>1e-6)=87255311/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2285/3869  activeRange=[82,2658]  maxSumSlice=2528 (sum=7.44174e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2528 sum=7.44174e+09 max=289572 cnt>thr=45774 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 505 μs
+[TIMING] create3DTexture (ultra-optimized): 118 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 28)
+    doseBox maxIdx: (168, 130, 160)
+    Grid: (6, 17)
+    Block: (32, 8)
+    maxZ: 160
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,28) -> bevIdx=(-73.1328,280.262,53.1472) OUT
+    [PROBE] doseIdx=(84,65,28) -> bevIdx=(118.182,271.203,1357.21) OUT
+    [PROBE] doseIdx=(168,130,28) -> bevIdx=(287.602,263.18,2651.44) IN
+    [PROBE] doseIdx=(0,0,94) -> bevIdx=(-73.1328,131,55.4153) OUT
+    [PROBE] doseIdx=(84,65,94) -> bevIdx=(118.182,131,1359.94) IN
+    [PROBE] doseIdx=(168,130,94) -> bevIdx=(287.602,131,2655.22) IN
+    [PROBE] doseIdx=(0,0,160) -> bevIdx=(-73.1328,-18.2619,53.1472) OUT
+    [PROBE] doseIdx=(84,65,160) -> bevIdx=(118.182,-9.20262,1357.21) OUT
+    [PROBE] doseIdx=(168,130,160) -> bevIdx=(287.602,-1.18011,2651.44) OUT
+[TIMING] copyToHost: 2353 μs
+[TIMING] copyToHost: 2296 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 3 E=194.495 -> energyIdx=3 (floor=2, corr=1, bracket=[190.079, 194.495])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=243.25  -> scaleFact(mm)=10  peakDepth(mm)=243.25  rangeStopDepth(mm)=255.412  externalLongitudalCutoff(mm)=494.778  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1672 μs
+[TIMING] copyToDevice: 27 μs
+[TIMING] copyToHost: 310 μs
+  [RTD_HALO_AUDIT] layer=3 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.4,4.4) physicalPBDelta=(4.4,4.4) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.4 expectedSpotDistInRays=4.4 expectedPhysicalSpotDistInRays=4.4 nucRayDims=(64,40) validMapped=1400 invalidMapped=43400 mappedWeightNonzero=1400 mappedWeightSum=6.69632e+09 mappedPrimaryRayWeightNonzero=1400 mappedPrimaryRayWeightSum=3.39072e+08 primaryRayWeightSum=6.6661e+09 paddedNonzero=1400 paddedTotal=2560 paddedWeightSum=6.69632e+09 occupancy=0.546875
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=494.778  externalLayerCutoffMm=494.778  afterLast=3869
+[TIMING] allocateDeviceMemory: 39 μs
+[TIMING] copyToDevice: 12 μs
+[TIMING] copyToHost: 8 μs
+[TIMING] freeDeviceMemory: 6 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=3 sum_rayWeight=6.69632e+09 sum_nucRayWeight=6.69632e+09 spotDistSq=19.36 nuc/ray_should_be_1=1 expectedNucSourceScale=3.45884e+08 expectedNucVsRayScale=0.0516529 nucWeightRow=2 nucWeightRange=(0.0770671,0.224142) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.4,4.4) haloGridDelta=(4.4,4.4)
+[TIMING] copyToHost: 175329 μs
+[TIMING] copyToHost: 55813 μs
+[TIMING] copyToHost: 3367 μs
+[TIMING] copyToHost: 3341 μs
+[TIMING] copyToHost: 66329 μs
+[TIMING] copyToHost: 62979 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=7.33787e+12  max=301146  minPos=0.012382  nnz(>0)=75068322/182201600  nnz(>1e-15)=75068322/182201600  nnz(>1e-6)=75068322/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=86627620/182201600  minFinite=0.124188  maxFinite=10.4175  nnz(>1e-6)=86627620/182201600  nan=0  inf=95573980
+    Sigma on active IDD: finite=75068322  bad(nan/inf)=0  min=0.124188  max=2.44462
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2753
+    beamFirstCalculatedPassive: 2753
+[TIMING] copyToHost: 96 μs
+[TIMING] copyToHost: 52 μs
+[TIMING] copyToHost: 62 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=358121, skippedNoDoseTiles=114729, layerMaxSuperpR=17, rad0=0, rad1=11917, rad2=33073
+  Primary superposition batched launches: [rad=1:11917] [rad=2:33073] [rad=4:29311] [rad=5:22637] [rad=6:30838] [rad=7:28463] [rad=8:26075] [rad=9:23883] [rad=10:22004] [rad=11:20434] [rad=12:19059] [rad=13:17836] [rad=14:16693] [rad=15:15576] [rad=16:14399] [rad=17:25923]
+[TIMING] Primary Tile-Based Superposition execution time: 16.303 ms
+  Nuclear superposition tile summary: totalTiles=27020, layerMaxSuperpR=11, rad0=175, rad1=0, rad2=0, rad4=0, rad8=2156, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:175] [rad=5:716] [rad=6:905] [rad=7:1672] [rad=8:2156] [rad=9:5630] [rad=10:5505] [rad=11:10261]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.447 ms
+[TIMING] copyToHost: 91046 μs
+[TIMING] copyToHost: 19230 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=7.3166e+12  maxFinite=295685  minPos=1.7909e-11  nnz(>0)=91162359/294167808  nnz(>1e-6)=91152210/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2379/3869  activeRange=[82,2752]  maxSumSlice=2617 (sum=7.56087e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2617 sum=7.56087e+09 max=294224 cnt>thr=45884 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 389 μs
+[TIMING] create3DTexture (ultra-optimized): 106 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 27)
+    doseBox maxIdx: (168, 135, 160)
+    Grid: (6, 17)
+    Block: (32, 8)
+    maxZ: 160
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,27) -> bevIdx=(-73.1328,282.523,53.0779) OUT
+    [PROBE] doseIdx=(84,67,27) -> bevIdx=(118.221,273.062,1397.11) OUT
+    [PROBE] doseIdx=(168,135,27) -> bevIdx=(286.951,264.595,2751.01) OUT
+    [PROBE] doseIdx=(0,0,93) -> bevIdx=(-73.1328,133.262,55.4148) OUT
+    [PROBE] doseIdx=(84,67,93) -> bevIdx=(118.221,133.12,1399.94) IN
+    [PROBE] doseIdx=(168,135,93) -> bevIdx=(286.951,132.994,2755.04) IN
+    [PROBE] doseIdx=(0,0,160) -> bevIdx=(-73.1328,-18.2619,53.1472) OUT
+    [PROBE] doseIdx=(84,67,160) -> bevIdx=(118.221,-8.94128,1397.19) OUT
+    [PROBE] doseIdx=(168,135,160) -> bevIdx=(286.951,-0.600861,2751.13) OUT
+[TIMING] copyToHost: 2461 μs
+[TIMING] copyToHost: 2481 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 4 E=198.794 -> energyIdx=4 (floor=3, corr=1, bracket=[194.495, 198.794])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=252.85  -> scaleFact(mm)=10  peakDepth(mm)=252.85  rangeStopDepth(mm)=265.492  externalLongitudalCutoff(mm)=513.694  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1664 μs
+[TIMING] copyToDevice: 26 μs
+[TIMING] copyToHost: 354 μs
+  [RTD_HALO_AUDIT] layer=4 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.3,4.3) physicalPBDelta=(4.3,4.3) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.3 expectedSpotDistInRays=4.3 expectedPhysicalSpotDistInRays=4.3 nucRayDims=(64,40) validMapped=1476 invalidMapped=43324 mappedWeightNonzero=1476 mappedWeightSum=7.16391e+09 mappedPrimaryRayWeightNonzero=1476 mappedPrimaryRayWeightSum=3.79283e+08 primaryRayWeightSum=7.13315e+09 paddedNonzero=1476 paddedTotal=2560 paddedWeightSum=7.16391e+09 occupancy=0.576562
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=513.694  externalLayerCutoffMm=513.694  afterLast=3869
+[TIMING] allocateDeviceMemory: 12 μs
+[TIMING] copyToDevice: 6 μs
+[TIMING] copyToHost: 13 μs
+[TIMING] freeDeviceMemory: 3 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=4 sum_rayWeight=7.16391e+09 sum_nucRayWeight=7.16391e+09 spotDistSq=18.49 nuc/ray_should_be_1=1 expectedNucSourceScale=3.87448e+08 expectedNucVsRayScale=0.0540833 nucWeightRow=3 nucWeightRange=(0.0731755,0.225697) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.3,4.3) haloGridDelta=(4.3,4.3)
+[TIMING] copyToHost: 65412 μs
+[TIMING] copyToHost: 67276 μs
+[TIMING] copyToHost: 3317 μs
+[TIMING] copyToHost: 3344 μs
+[TIMING] copyToHost: 59597 μs
+[TIMING] copyToHost: 103946 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=8.09106e+12  max=319575  minPos=0.0531721  nnz(>0)=78546156/182201600  nnz(>1e-15)=78546156/182201600  nnz(>1e-6)=78546156/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=90173529/182201600  minFinite=0.121132  maxFinite=10.4175  nnz(>1e-6)=90173529/182201600  nan=0  inf=92028071
+    Sigma on active IDD: finite=78546156  bad(nan/inf)=0  min=0.121132  max=2.48156
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2846
+    beamFirstCalculatedPassive: 2846
+[TIMING] copyToHost: 49 μs
+[TIMING] copyToHost: 33 μs
+[TIMING] copyToHost: 34 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=372467, skippedNoDoseTiles=116658, layerMaxSuperpR=18, rad0=0, rad1=12664, rad2=33985
+  Primary superposition batched launches: [rad=1:12664] [rad=2:33985] [rad=4:27654] [rad=5:26214] [rad=6:31288] [rad=7:28799] [rad=8:26362] [rad=9:24167] [rad=10:22304] [rad=11:20752] [rad=12:19406] [rad=13:18205] [rad=14:17083] [rad=15:16013] [rad=16:14914] [rad=17:30493] [rad=18:2164]
+[TIMING] Primary Tile-Based Superposition execution time: 17.446 ms
+  Nuclear superposition tile summary: totalTiles=27950, layerMaxSuperpR=12, rad0=158, rad1=0, rad2=0, rad4=0, rad8=2567, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:158] [rad=5:585] [rad=6:844] [rad=7:1009] [rad=8:2567] [rad=9:5366] [rad=10:2536] [rad=11:11792] [rad=12:3093]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.498 ms
+[TIMING] copyToHost: 95513 μs
+[TIMING] copyToHost: 16743 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=8.06696e+12  maxFinite=314285  minPos=1.03435e-10  nnz(>0)=95593322/294167808  nnz(>1e-6)=95587693/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2472/3869  activeRange=[82,2845]  maxSumSlice=2705 (sum=8.10789e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2705 sum=8.10789e+09 max=313201 cnt>thr=46109 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 489 μs
+[TIMING] create3DTexture (ultra-optimized): 107 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 27)
+    doseBox maxIdx: (169, 140, 160)
+    Grid: (6, 18)
+    Block: (32, 8)
+    maxZ: 160
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,27) -> bevIdx=(-73.1328,282.523,53.0779) OUT
+    [PROBE] doseIdx=(84,70,27) -> bevIdx=(118.279,272.666,1457.08) OUT
+    [PROBE] doseIdx=(169,140,27) -> bevIdx=(288.291,264.012,2850.53) OUT
+    [PROBE] doseIdx=(0,0,93) -> bevIdx=(-73.1328,133.262,55.4148) OUT
+    [PROBE] doseIdx=(84,70,93) -> bevIdx=(118.279,133.114,1459.94) IN
+    [PROBE] doseIdx=(169,140,93) -> bevIdx=(288.291,132.985,2854.71) OUT
+    [PROBE] doseIdx=(0,0,160) -> bevIdx=(-73.1328,-18.2619,53.1472) OUT
+    [PROBE] doseIdx=(84,70,160) -> bevIdx=(118.279,-8.5511,1457.16) OUT
+    [PROBE] doseIdx=(169,140,160) -> bevIdx=(288.291,-0.0266724,2850.65) OUT
+[TIMING] copyToHost: 2497 μs
+[TIMING] copyToHost: 2575 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 5 E=203.115 -> energyIdx=5 (floor=4, corr=1, bracket=[198.794, 203.115])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=262.55  -> scaleFact(mm)=10  peakDepth(mm)=262.55  rangeStopDepth(mm)=275.677  externalLongitudalCutoff(mm)=533.329  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1662 μs
+[TIMING] copyToDevice: 25 μs
+[TIMING] copyToHost: 327 μs
+  [RTD_HALO_AUDIT] layer=5 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.3,4.3) physicalPBDelta=(4.3,4.3) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.3 expectedSpotDistInRays=4.3 expectedPhysicalSpotDistInRays=4.3 nucRayDims=(64,40) validMapped=1476 invalidMapped=43324 mappedWeightNonzero=1476 mappedWeightSum=7.26863e+09 mappedPrimaryRayWeightNonzero=1476 mappedPrimaryRayWeightSum=3.84968e+08 primaryRayWeightSum=7.23904e+09 paddedNonzero=1476 paddedTotal=2560 paddedWeightSum=7.26863e+09 occupancy=0.576562
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=533.329  externalLayerCutoffMm=533.329  afterLast=3869
+[TIMING] allocateDeviceMemory: 37 μs
+[TIMING] copyToDevice: 11 μs
+[TIMING] copyToHost: 7 μs
+[TIMING] freeDeviceMemory: 3 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=5 sum_rayWeight=7.26863e+09 sum_nucRayWeight=7.26863e+09 spotDistSq=18.49 nuc/ray_should_be_1=1 expectedNucSourceScale=3.93111e+08 expectedNucVsRayScale=0.0540833 nucWeightRow=4 nucWeightRange=(0.0684283,0.22462) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.3,4.3) haloGridDelta=(4.3,4.3)
+[TIMING] copyToHost: 57521 μs
+[TIMING] copyToHost: 57507 μs
+[TIMING] copyToHost: 4091 μs
+[TIMING] copyToHost: 4265 μs
+[TIMING] copyToHost: 68762 μs
+[TIMING] copyToHost: 68643 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=8.43341e+12  max=322751  minPos=0.0419958  nnz(>0)=81617575/182201600  nnz(>1e-15)=81617575/182201600  nnz(>1e-6)=81617575/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=93244948/182201600  minFinite=0.118187  maxFinite=10.4175  nnz(>1e-6)=93244948/182201600  nan=0  inf=88956652
+    Sigma on active IDD: finite=81617575  bad(nan/inf)=0  min=0.118187  max=2.51784
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 2940
+    beamFirstCalculatedPassive: 2940
+[TIMING] copyToHost: 58 μs
+[TIMING] copyToHost: 83 μs
+[TIMING] copyToHost: 51 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=386969, skippedNoDoseTiles=118606, layerMaxSuperpR=18, rad0=0, rad1=13356, rad2=34939
+  Primary superposition batched launches: [rad=1:13356] [rad=2:34939] [rad=4:26008] [rad=5:29742] [rad=6:31708] [rad=7:29136] [rad=8:26648] [rad=9:24435] [rad=10:22611] [rad=11:21072] [rad=12:19744] [rad=13:18561] [rad=14:17467] [rad=15:16428] [rad=16:15385] [rad=17:14245] [rad=18:25484]
+[TIMING] Primary Tile-Based Superposition execution time: 18.784 ms
+  Nuclear superposition tile summary: totalTiles=28890, layerMaxSuperpR=12, rad0=159, rad1=0, rad2=0, rad4=0, rad8=2010, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:159] [rad=5:568] [rad=6:819] [rad=7:967] [rad=8:2010] [rad=9:5783] [rad=10:2326] [rad=11:7443] [rad=12:8815]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.585 ms
+[TIMING] copyToHost: 114174 μs
+[TIMING] copyToHost: 16361 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=8.40891e+12  maxFinite=317145  minPos=9.76566e-11  nnz(>0)=99717908/294167808  nnz(>1e-6)=99710640/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2566/3869  activeRange=[82,2939]  maxSumSlice=2793 (sum=8.18567e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2793 sum=8.18567e+09 max=316345 cnt>thr=46973 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 465 μs
+[TIMING] create3DTexture (ultra-optimized): 115 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 27)
+    doseBox maxIdx: (169, 144, 161)
+    Grid: (6, 19)
+    Block: (32, 8)
+    maxZ: 161
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,27) -> bevIdx=(-73.1328,282.523,53.0779) OUT
+    [PROBE] doseIdx=(84,72,27) -> bevIdx=(118.317,272.403,1497.05) OUT
+    [PROBE] doseIdx=(169,144,27) -> bevIdx=(287.772,263.549,2930.22) IN
+    [PROBE] doseIdx=(0,0,94) -> bevIdx=(-73.1328,131,55.4153) OUT
+    [PROBE] doseIdx=(84,72,94) -> bevIdx=(118.317,131,1499.94) IN
+    [PROBE] doseIdx=(169,144,94) -> bevIdx=(287.772,131,2934.54) IN
+    [PROBE] doseIdx=(0,0,161) -> bevIdx=(-73.1328,-20.5234,53.0779) OUT
+    [PROBE] doseIdx=(84,72,161) -> bevIdx=(118.317,-10.4027,1497.05) OUT
+    [PROBE] doseIdx=(169,144,161) -> bevIdx=(287.772,-1.54924,2930.22) OUT
+[TIMING] copyToHost: 2474 μs
+[TIMING] copyToHost: 2515 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 6 E=207.458 -> energyIdx=6 (floor=5, corr=1, bracket=[203.115, 207.458])
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=272.45  -> scaleFact(mm)=10  peakDepth(mm)=272.45  rangeStopDepth(mm)=286.072  externalLongitudalCutoff(mm)=553.307  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1680 μs
+[TIMING] copyToDevice: 27 μs
+[TIMING] copyToHost: 277 μs
+  [RTD_HALO_AUDIT] layer=6 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.2,4.2) physicalPBDelta=(4.2,4.2) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.2 expectedSpotDistInRays=4.2 expectedPhysicalSpotDistInRays=4.2 nucRayDims=(64,40) validMapped=1554 invalidMapped=43246 mappedWeightNonzero=1554 mappedWeightSum=7.74398e+09 mappedPrimaryRayWeightNonzero=1554 mappedPrimaryRayWeightSum=4.30607e+08 primaryRayWeightSum=7.71418e+09 paddedNonzero=1554 paddedTotal=2560 paddedWeightSum=7.74398e+09 occupancy=0.607031
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=553.307  externalLayerCutoffMm=553.307  afterLast=3869
+[TIMING] allocateDeviceMemory: 42 μs
+[TIMING] copyToDevice: 11 μs
+[TIMING] copyToHost: 8 μs
+[TIMING] freeDeviceMemory: 6 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=6 sum_rayWeight=7.74398e+09 sum_nucRayWeight=7.74398e+09 spotDistSq=17.64 nuc/ray_should_be_1=1 expectedNucSourceScale=4.39001e+08 expectedNucVsRayScale=0.0566893 nucWeightRow=5 nucWeightRange=(0.0638545,0.223936) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.2,4.2) haloGridDelta=(4.2,4.2)
+[TIMING] copyToHost: 69097 μs
+[TIMING] copyToHost: 68774 μs
+[TIMING] copyToHost: 4166 μs
+[TIMING] copyToHost: 3991 μs
+[TIMING] copyToHost: 68693 μs
+[TIMING] copyToHost: 70215 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=9.20522e+12  max=337133  minPos=0.0188944  nnz(>0)=85731167/182201600  nnz(>1e-15)=85731167/182201600  nnz(>1e-6)=85731167/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=97491807/182201600  minFinite=0.115324  maxFinite=10.4175  nnz(>1e-6)=97491807/182201600  nan=0  inf=84709793
+    Sigma on active IDD: finite=85731167  bad(nan/inf)=0  min=0.115324  max=2.55384
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 3037
+    beamFirstCalculatedPassive: 3037
+[TIMING] copyToHost: 58 μs
+[TIMING] copyToHost: 84 μs
+[TIMING] copyToHost: 52 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=420046, skippedNoDoseTiles=102504, layerMaxSuperpR=18, rad0=0, rad1=14656, rad2=37514
+  Primary superposition batched launches: [rad=1:14656] [rad=2:37514] [rad=4:25504] [rad=5:34754] [rad=6:33585] [rad=7:30796] [rad=8:28152] [rad=9:25849] [rad=10:23954] [rad=11:22362] [rad=12:20998] [rad=13:19778] [rad=14:18656] [rad=15:17589] [rad=16:16553] [rad=17:15453] [rad=18:33893]
+[TIMING] Primary Tile-Based Superposition execution time: 20.819 ms
+  Nuclear superposition tile summary: totalTiles=29860, layerMaxSuperpR=13, rad0=164, rad1=0, rad2=0, rad4=0, rad8=1775, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:164] [rad=5:492] [rad=6:764] [rad=7:1401] [rad=8:1775] [rad=9:4141] [rad=10:2930] [rad=11:2620] [rad=12:13900] [rad=13:1673]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.661 ms
+[TIMING] copyToHost: 92646 μs
+[TIMING] copyToHost: 16326 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=9.17771e+12  maxFinite=330596  minPos=5.36386e-11  nnz(>0)=104903425/294167808  nnz(>1e-6)=104892043/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2663/3869  activeRange=[82,3036]  maxSumSlice=2883 (sum=8.61211e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2883 sum=8.61211e+09 max=329942 cnt>thr=47419 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 516 μs
+[TIMING] create3DTexture (ultra-optimized): 109 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 26)
+    doseBox maxIdx: (169, 149, 161)
+    Grid: (6, 19)
+    Block: (32, 8)
+    maxZ: 161
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,26) -> bevIdx=(-73.1328,284.785,53.0076) OUT
+    [PROBE] doseIdx=(84,74,26) -> bevIdx=(118.356,274.247,1536.94) OUT
+    [PROBE] doseIdx=(169,149,26) -> bevIdx=(287.128,264.945,3029.67) OUT
+    [PROBE] doseIdx=(0,0,93) -> bevIdx=(-73.1328,133.262,55.4148) OUT
+    [PROBE] doseIdx=(84,74,93) -> bevIdx=(118.356,133.107,1539.94) IN
+    [PROBE] doseIdx=(169,149,93) -> bevIdx=(287.128,132.97,3034.31) IN
+    [PROBE] doseIdx=(0,0,161) -> bevIdx=(-73.1328,-20.5234,53.0779) OUT
+    [PROBE] doseIdx=(84,74,161) -> bevIdx=(118.356,-10.1408,1537.03) OUT
+    [PROBE] doseIdx=(169,149,161) -> bevIdx=(287.128,-0.975403,3029.81) OUT
+[TIMING] copyToHost: 2490 μs
+[TIMING] copyToHost: 2500 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+
+[ENERGY] Layer 7 E=211.793 -> energyIdx=7 (floor=6, corr=1, bracket=[207.458, 211.793]) CLAMP_HIGH
+[ENERGY]   scaleFact(table)=10  peakDepth(table)=282.05  -> scaleFact(mm)=10  peakDepth(mm)=282.05  rangeStopDepth(mm)=296.152  externalLongitudalCutoff(mm)=573.248  (energyDepthToMm=1)
+[TIMING] copyToDevice: 1665 μs
+[TIMING] copyToDevice: 26 μs
+[TIMING] copyToHost: 267 μs
+  [RTD_HALO_AUDIT] layer=7 primarySpotDelta=(1,1) cpbSpacing=(1,1) haloGridDelta=(4.2,4.2) physicalPBDelta=(4.2,4.2) haloToPhysicalRatio=(1,1) gridIdentity=physical_pb_like spotDistInRays=4.2 expectedSpotDistInRays=4.2 expectedPhysicalSpotDistInRays=4.2 nucRayDims=(64,40) validMapped=1554 invalidMapped=43246 mappedWeightNonzero=1554 mappedWeightSum=7.84515e+09 mappedPrimaryRayWeightNonzero=1554 mappedPrimaryRayWeightSum=4.36405e+08 primaryRayWeightSum=7.81677e+09 paddedNonzero=1554 paddedTotal=2560 paddedWeightSum=7.84515e+09 occupancy=0.607031
+  [CUTOFF] maxPeakDepth(table)=282.05 -> maxPeakDepth(mm)=282.05  firstPastCutoffAll=4066  beamFirstGuaranteedPassive=3869  localAfterLast=4066  longitudalLimitMm=573.248  externalLayerCutoffMm=573.248  afterLast=3869
+[TIMING] allocateDeviceMemory: 39 μs
+[TIMING] copyToDevice: 11 μs
+[TIMING] copyToHost: 7 μs
+[TIMING] freeDeviceMemory: 5 μs
+  [SIGMA_GRID] activeSteps=[51,3868] voxelWidthMean(mm): first=0.883956 mid=0.967824 last=1.05174 sigmaAtRad32(mm): first=9.36619 mid=10.2748 last=11.1838
+  [RTD_HALO_ENERGY] layer=7 sum_rayWeight=7.84515e+09 sum_nucRayWeight=7.84515e+09 spotDistSq=17.64 nuc/ray_should_be_1=1 expectedNucSourceScale=4.44737e+08 expectedNucVsRayScale=0.0566893 nucWeightRow=6 nucWeightRange=(0.0863299,0.224061) placementSource=decoded_idbeamxy_rasterized physicalPBDelta=(4.2,4.2) haloGridDelta=(4.2,4.2)
+[TIMING] copyToHost: 57240 μs
+[TIMING] copyToHost: 57556 μs
+[TIMING] copyToHost: 3508 μs
+[TIMING] copyToHost: 3647 μs
+[TIMING] copyToHost: 57591 μs
+[TIMING] copyToHost: 57540 μs
+  Ray Tracing Results Analysis:
+    Ray IDD  - sumFinite=9.54144e+12  max=337092  minPos=0.0175203  nnz(>0)=88812783/182201600  nnz(>1e-15)=88812783/182201600  nnz(>1e-6)=88812783/182201600  nan=0  inf=0
+    Ray Sigma- finiteCount=100573423/182201600  minFinite=0.112675  maxFinite=10.4175  nnz(>1e-6)=100573423/182201600  nan=0  inf=81628177
+    Sigma on active IDD: finite=88812783  bad(nan/inf)=0  min=0.112675  max=2.58782
+  Beam Entry/Exit Analysis:
+    beamFirstInside: 51
+    beamFirstOutside: 3869
+    beamFirstPassive: 3130
+    beamFirstCalculatedPassive: 3130
+[TIMING] copyToHost: 53 μs
+[TIMING] copyToHost: 46 μs
+[TIMING] copyToHost: 36 μs
+    [GEOM] Rays entering medium: 33425/44800 (74.6094%), never-enter: 11375/44800, maxFirstInside=84
+    [GEOM] Rays with firstOutside found: 33425/44800, rays with firstPassive found: 44800/44800
+  Allocating BEV dose array with padding:
+    BEV dimensions: (288, 264, 3869)
+    Padding: 32 voxels on each side
+  Primary superposition tile summary: totalTiles=435070, skippedNoDoseTiles=103755, layerMaxSuperpR=19, rad0=0, rad1=15401, rad2=38412
+  Primary superposition batched launches: [rad=1:15401] [rad=2:38412] [rad=3:23861] [rad=4:1803] [rad=5:36445] [rad=6:33969] [rad=7:31109] [rad=8:28433] [rad=9:26128] [rad=10:24250] [rad=11:22683] [rad=12:21333] [rad=13:20123] [rad=14:19026] [rad=15:17981] [rad=16:16978] [rad=17:15939] [rad=18:14793] [rad=19:26403]
+[TIMING] Primary Tile-Based Superposition execution time: 22.547 ms
+  Nuclear superposition tile summary: totalTiles=30790, layerMaxSuperpR=13, rad0=162, rad1=0, rad2=0, rad4=0, rad8=1599, rad16=0, rad24=0, rad32=0
+  Nuclear superposition batched launches: [rad=0:162] [rad=5:534] [rad=6:683] [rad=7:890] [rad=8:1599] [rad=9:4143] [rad=10:3505] [rad=11:2329] [rad=12:9447] [rad=13:7498]
+[TIMING] Nuclear Tile-Based Superposition execution time: 2.740 ms
+[TIMING] copyToHost: 93597 μs
+[TIMING] copyToHost: 18118 μs
+  BEV Dose Analysis after Superposition:
+    sumFinite=9.51329e+12  maxFinite=331429  minPos=6.74663e-09  nnz(>0)=108959264/294167808  nnz(>1e-6)=108949878/294167808  nan=0  inf=0
+  BEV dose z-slice summary (thr=1e-15):
+    activeSlices=2756/3869  activeRange=[82,3129]  maxSumSlice=2974 (sum=8.6485e+09)
+    z=0 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=1 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=3 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=4 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=5 sum=0 max=0 cnt>thr=0 nan=0 inf=0
+    z=2974 sum=8.6485e+09 max=331207 cnt>thr=48295 nan=0 inf=0
+[TIMING] create3DTexture (ultra-optimized): 445 μs
+[TIMING] create3DTexture (ultra-optimized): 101 μs
+  Launching primTransfDiv kernel:
+    doseBox minIdx: (0, 0, 26)
+    doseBox maxIdx: (170, 154, 161)
+    Grid: (6, 20)
+    Block: (32, 8)
+    maxZ: 161
+  [TRANSF] normDist=(-22750, -22750)  globalOffset=(139, 131, 2691)
+    [PROBE] doseIdx=(0,0,26) -> bevIdx=(-73.1328,284.785,53.0076) OUT
+    [PROBE] doseIdx=(85,77,26) -> bevIdx=(120.513,273.851,1596.92) OUT
+    [PROBE] doseIdx=(170,154,26) -> bevIdx=(288.45,264.368,3129.05) OUT
+    [PROBE] doseIdx=(0,0,93) -> bevIdx=(-73.1328,133.262,55.4148) OUT
+    [PROBE] doseIdx=(85,77,93) -> bevIdx=(120.513,133.101,1599.95) IN
+    [PROBE] doseIdx=(170,154,93) -> bevIdx=(288.45,132.961,3133.89) OUT
+    [PROBE] doseIdx=(0,0,161) -> bevIdx=(-73.1328,-20.5234,53.0779) OUT
+    [PROBE] doseIdx=(85,77,161) -> bevIdx=(120.513,-9.7498,1597.01) OUT
+    [PROBE] doseIdx=(170,154,161) -> bevIdx=(288.45,-0.406525,3129.19) OUT
+[TIMING] copyToHost: 2533 μs
+[TIMING] copyToHost: 2579 μs
+  Dose transformation completed using primTransfDiv kernel
+  Dose accumulation completed
+2026-06-05 13:34:47,010 - dosecal.py - 2312 - DOSECAL - INFO : Gathering data for beam ID large.
+2026-06-05 13:34:47,030 - dosecal.py - 2349 - DOSECAL - INFO : Dose calculation finished for beam ID large.
+2026-06-05 13:34:47,072 - path_optimizer.py - 48 - BASE - INFO : [SCAN_PATH_OPT] Total 1 beams.
+2026-06-05 13:34:47,072 - path_optimizer.py - 63 - BASE - INFO : [SCAN_PATH_OPT] Reading scan spots info for beam 1070.
+2026-06-05 13:34:47,084 - path_optimizer.py - 91 - BASE - INFO : [SCAN_PATH_OPT] Beam 1070 has 8 energy layers.
+2026-06-05 13:34:47,084 - path_optimizer.py - 94 - BASE - INFO : [SCAN_PATH_OPT] Start 48 pools.
+Registering dose calc PtclTech.CARBON_PBS: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.carbon_pbs_dose_calc.CARBON_PBS_DOSE_CALC'>
+Registering dose calc PtclTech.HELIUM_PBS: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.helium_pbs_dose_calc.HELIUM_PBS_DOSE_CALC'>
+Registering dose calc PtclTech.PROTON_MC: <class 'content.optimizing_operator.opt_pipeline.opt_dose_calc.proton_mc_dose_calc.PROTON_MC_DOSE_CALC'>
+Registering weight initializer INIT_FLUENCE_MAP: <class 'content.optimizing_operator.opt_pipeline.opt_init_weights.init_weights_with_fluence_map.INIT_FLUENCE_MAP'>
+______________________________________________________________________________________________pencilbeam
+0.0
+2026-06-05 13:35:03,786 - path_optimizer.py - 110 - BASE - INFO : [SCAN_PATH_OPT] Beam 1070 path optimisation finished, took 14.756258249282837 seconds.
+2026-06-05 13:35:03,786 - path_optimizer.py - 111 - BASE - INFO : [SCAN_PATH_OPT] Beam 1070 update spot info json file.
+2026-06-05 13:35:03,789 - path_optimizer.py - 153 - BASE - INFO : [SCAN_PATH_OPT] Beam 1070 scan path optimisation finished. Improvement: 0.0 %
+2026-06-05 13:35:03,790 - path_optimizer.py - 55 - BASE - INFO : [SCAN_PATH_OPT] Scanning path optimisation finished! Total took 16.71844458580017 seconds.
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 680 - MultiBeamGroups - INFO : time cost: PBS.process 74.95129114 s
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 683 - MultiBeamGroups - INFO : {'msg': '', 'calcFlag': -1, 'totalIons': 0, 'uncertainty': 0}
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 652 - MultiBeamGroups - INFO : time cost: process beam group 0 74.95173971 s
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 653 - MultiBeamGroups - INFO : time cost: process beam groups 74.95178393 s
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 687 - MultiBeamGroups - INFO : Test version now. Nothing useful maybe!
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 699 - MultiBeamGroups - INFO : Start saving pickle
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 707 - MultiBeamGroups - INFO : Start saving beam dose.
+2026-06-05 13:35:03,808 - multiBeamGroups.py - 712 - MultiBeamGroups - INFO : Saving beam dose beam ID 1070.
+2026-06-05 13:35:03,865 - multiBeamGroups.py - 736 - MultiBeamGroups - INFO : Saving beam energy_spot_info beam ID 1070.
+2026-06-05 13:35:03,879 - multiBeamGroups.py - 744 - MultiBeamGroups - INFO : Saving beam group dose.
+2026-06-05 13:35:03,908 - multiBeamGroups.py - 759 - MultiBeamGroups - INFO : Have a nice day!
+2026-06-05 13:35:03,909 - multiBeamGroups.py - 667 - MultiBeamGroups - INFO : time cost: saveResults 0.10069925 s
+2026-06-05 13:35:03,909 - multiBeamGroups.py - 668 - MultiBeamGroups - INFO : time cost: MBG.process 80.31351669 s
+Beam group 909 missing valid pickle path: /data/app/tps/work//case_231/plan_492/radiationSet_909/algorithm/algorithm.pickle
+86.7461051940918
+[TIMING] freeDeviceMemory: 2216 μs
+[TIMING] freeDeviceMemory: 2129 μs
+[TIMING] freeDeviceMemory: 15 μs
+[TIMING] freeDeviceMemory: 24 μs
+[TIMING] freeDeviceMemory: 2305 μs
+[TIMING] freeDeviceMemory: 6 μs
+[TIMING] freeDeviceMemory: 1700 μs
+[TIMING] freeDeviceMemory: 1020 μs
+[TIMING] freeDeviceMemory: 2108 μs
+[TIMING] freeDeviceMemory: 2146 μs
+[TIMING] freeDeviceMemory: 5 μs
+[TIMING] freeDeviceMemory: 2226 μs
+[TIMING] freeDeviceMemory: 2110 μs
+[TIMING] freeDeviceMemory: 3 μs
+[TIMING] freeDeviceMemory: 870 μs
+[TIMING] copyToHost: 7017 μs
+[TIMING] freeDeviceMemory: 520 μs
+[TIMING] RTD Wrapper execution time: 55236 ms (CPU)

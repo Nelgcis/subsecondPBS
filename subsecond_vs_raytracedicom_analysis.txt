@@ -1,0 +1,190 @@
+================================================================================
+subSecond 算法溯源分析 + 异质界面偏差的成因与改进路径
+================================================================================
+日期: 2026-06-11
+对象: subSecond / RayTraceDicom-main / carbonPBS 三套铅笔束剂量引擎
+触发问题:
+  1) output 下两张 *_3_approaches 截图中,两个解析 PBS(subSecond、carbonPBS)
+     结果彼此几乎重合,却都与 MC 差异明显(模体: -1000HU 空气层 + 40HU 介质层
+     交替堆叠的多层模型)。
+  2) 担心 subSecond 并未真正遵循 RayTraceDicom 算法,而是在 carbonPBS 基础上改的。
+
+
+================================================================================
+第一部分 截图现象(事实层)
+================================================================================
+average_y_dose_of_3_approaches.png:
+  - subSecond(蓝)与 carbonPBS(橙)两条曲线在整个深度范围内几乎完全重叠。
+  - 浅层(y<60)三种方法(含 MC 黄虚线)基本重合。
+  - 末端: 两条解析曲线 Bragg 峰偏浅(y≈88)且更平滑; MC 峰位更深(y≈95),
+    且呈现更精细的分层结构。
+  => "两条解析曲线重合、却共同偏离 MC" —— 这正是被怀疑的症状。
+
+dose_slice_of_3_approaches.png:
+  - MC / subSecond / carbonPBS 三个 z=78 切片,subSecond 与 carbonPBS 分布形态
+    接近,MC 的层状结构更锐利。
+
+
+================================================================================
+第二部分 溯源结论(核心)
+================================================================================
+结论: 担忧"基本不成立"——决定异质界面行为的传输物理核心,subSecond 是忠实的
+      RayTraceDicom,而非 carbonPBS 衍生品。但 subSecond 是一个 hybrid:
+      传输物理 = RayTraceDicom;spot→ray 权重前端 = carbonPBS。后者不改变界面行为。
+
+逐阶段溯源对照:
+
+阶段                | RayTraceDicom(参考)                          | carbonPBS                              | subSecond                                   | 判定
+--------------------|----------------------------------------------|----------------------------------------|---------------------------------------------|------------------
+WEPL 累积           | 逐 voxel cumulSp += stepLen·SP(HU)           | 无;预积分 rayweqData 3D 纹理          | 逐 voxel cumulSp += stepLen·SP(HU)          | = RayTraceDicom
+                    | (fillBevDensityAndSp)                        |                                        | (rayTracingBEVKernel)                       |
+IDD 查表            | tex2D(cumulIddTex, cumulSp·scale, energyIdx) | tex2D(iddData, weqDepth, eneIdx)       | tex2D(cumulIddTex, cumulSp·scale, energyIdx)| = RayTraceDicom
+Sigma / MCS         | Highland;逐 voxel rRl=ρ·tex1D(rRadLenTex,ρ); | initR2 = r2 + 2·rθ·z + θ²·z²           | Highland;逐 voxel rRl=ρ·tex1D(...);         | = RayTraceDicom
+                    | 常数 pInv=0.5649718, eCoef=8.639415,         | (水等效二次式,无逐 voxel 密度)        | 完全相同常数 0.5649718/8.639415/198.81/0.21;|
+                    | eRefSq=198.81, sigmaDelta=0.21               |                                        | SOUKUP/FLUKA/GAUSS_FIT 变体齐全             |
+侧向叠加            | tile 化可分离 erf 核 kernelSuperposition<rad>| 逐 voxel 多高斯 calGaussianR,稀疏 CSC | tile 化 erf 核 kernelSuperposition<rad>;    | = RayTraceDicom
+                    | + tileRadCalc, KS_SIGMA_CUTOFF, R=32, 32×8   | cooperative groups                     | 同 KS_SIGMA_CUTOFF/kMaxSuperpR=32/32×8      |
+BEV→剂量网格        | primTransfDiv + getFanIdx 发散修正           | 不适用(直接在剂量网格)               | bevToDoseGridKernel + getFanIdx, 同发散数学 | = RayTraceDicom
+spot→subspot→ray 权重| (RTD 以不同方式取 spot 权重)                 | SubspotInfo, subspotData/profileData,  | SubspotInfo,                                | = carbonPBS
+                    |                                              | erf 面积分 splatting                   | subspotToCPBConvolutionOptimizedKernel,     |
+                    |                                              |                                        | mapCPBWeightsToRayWeightsKernel             |
+
+决定性证据:
+  - subSecond 的散射核携带 RayTraceDicom 的精确"魔数"常数
+    (pInv=0.5649718f, eCoef=8.639415f, eRefSq=198.81f, sigmaDelta=0.21f),
+    以及相同的 NUCLEAR_CORR 模型开关(SOUKUP/FLUKA/GAUSS_FIT)——这些在
+    carbonPBS 中完全不存在。
+  - carbonPBS 没有逐 voxel 辐射长度查表、也没有逐 voxel 步进的 ray-trace;
+    它把所有异质性预先烘焙进 rayweqData 纹理。subSecond 则自己在线计算异质性,
+    完全是 RTD 风格。
+
+含义:
+  - 所有支配"束流如何穿越 -1000HU/40HU 界面"的环节(WEPL 步进、密度相关 MCS
+    sigma、erf 叠加)都是真正的 RayTraceDicom。
+  - 仅有上游 spot 分解(已规划 spot → 每射线权重)取自 carbonPBS。该前端决定
+    每条射线"携带多少权重",不改变界面传输形态。
+
+
+================================================================================
+第三部分 为何两种解析方法都偏离 MC(且彼此重合)
+================================================================================
+这是物理(模型层面),不是代码 bug:
+
+1) 两者都是建立在相同两条近似上的铅笔束解析引擎:
+   (a) 一维 WEPL 索引的中心轴深度剂量查表;
+   (b) 侧向高斯叠加。
+   carbonPBS 走不同代码路径,但"模型"在本质上相同。对分层模体,同一解析模型的
+   两个正确实现必然收敛 —— 它们近乎完美的重合是"两者都在正确工作"的标志,而非
+   "其中一个被抄袭"的标志。
+
+2) 解析模型在 -1000/40 界面处结构性失效的位置:
+   - 侧向带电粒子失平衡: 尖锐空气→组织边界处侧向 CPE 破坏。MC 能解析;高斯卷积
+     核会把它抹平,无法重建 MC 显示的锐利再建成/边缘结构。
+   - 跨束宽的射程混合: 穿过空气 vs 组织的射线 WEPL 差异巨大。解析引擎把它们作为
+     单一深度剂量的独立高斯卷积;MC 采样真实三维耦合。这既移位又展宽表观 Bragg 峰
+     —— 与你的图一致(MC 峰更深 y≈95 且结构更细,两条解析峰更浅 y≈88 且更平滑)。
+   - MCS 界面折点: Highland MCS 作为平滑积分累积,无法重现密度台阶处散射本领的
+     突变。
+
+3) 关键: subSecond 额外的 RTD 机制(逐 voxel rRl、远端 sigma 修正)实际上在此处
+   比 carbonPBS 物理更细;但它仍与 carbonPBS 同步,因为主导误差是二者共享的铅笔束
+   "模型假设",谁都逃不掉。
+
+
+================================================================================
+第四部分 哪些实际放疗计划偏差会被放大
+================================================================================
+关键判据: 垂直于束流方向的密度梯度 + 异质结构相对射程末端的位置。
+
+场景                          | 为何偏差大
+------------------------------|--------------------------------------------------
+肺/胸部肿瘤                   | 肺(-700~-900HU)与软组织/肿瘤反复交界,低密度+强
+                              | 侧向梯度,射程混合最严重。典型重灾区。
+头颈: 鼻窦/筛窦/乳突气房      | 气腔与骨/软组织的尖锐界面,常在射程中段,峰位与远端
+                              | 同时被抹平和移位(正如截图)。
+束流"掠射"界面(grazing)     | 束流近乎平行于界面时,侧向失平衡沿整条路径累积,
+                              | 最坏情形,远比垂直穿过界面差。
+异质紧贴射程末端 / 远端对 OAR | 如肺后方脊髓、靶区远端贴重要器官。峰位移位直接转化为
+                              | 对 OAR 的剂量误判,临床后果最大。
+金属/高Z 植入物              | HU 超出标定范围,SP/密度查表外推失真,界面误差剧烈。
+小野/小 spot、儿童            | spot 尺寸与异质特征尺寸可比时,"均匀介质"高斯假设最
+                              | 站不住。
+碳离子特有放大                | 侧向半影本就锐利(MCS 小),界面误差更局域但梯度更陡;
+                              | 更要命的是碎片尾与 LET/RBE —— 剂量空间分布在界面错位
+                              | 后经 LQ/mMKM 放大,生物剂量误差被进一步放大。CASHIM
+                              | 碳离子场景尤须警惕。
+
+反例(吻合好): 均匀水/软组织、束流垂直穿过平缓界面、异质在入射端浅层。
+(截图中 y<60 浅层段三者几乎重合即为证据。)
+
+
+================================================================================
+第五部分 在不大幅牺牲效率前提下的改进方案(按性价比排序)
+================================================================================
+
+1) BEV 侧向射线分辨率 —— 自适应加密 [最高杠杆,代价可控]
+   现状: 每个 BEV 栅格一条射线,异质采样精度 = BEV 横向分辨率。
+   改进: 在侧向密度梯度大的区域局部加密射线(梯度可由 bevDensity 场一次廉价
+        差分得到),平坦区保持粗采样。
+   代价: 全局加倍射线太贵(ray-trace+superposition 线性到平方增长);自适应只在
+        少数高梯度 tile 加密,通常只增个位数百分比开销。
+   定位: 与 MC 差距的主因,应优先。
+
+2) 多高斯侧向核 [便宜,改善半影/野外低剂量]
+   现状: subSecond 主核为单高斯 + 可选 nuclear 第二项(erfDiffs 来自单一
+        rSigmaEff)。carbonPBS 的 profileData 本就支持 nGauss 分量。
+   改进: 核扩展为双/三高斯(加一个大 sigma、低权重 halo 分量)补回核晕与裙边。
+   代价: kernelSuperposition 内循环每 voxel 多算 1~2 个 erf;大 sigma 分量决定
+        tileRadCalc 半径,开销可控(halo 分量可用更粗 tile)。
+   注意: 主要修半影/野外低剂量,对界面峰位移位帮助有限。
+
+3) 侧向 WEPL/有效深度平滑 [几乎免费,直接打击峰位移位]
+   改进: IDD 查表前,把 bevCumulSp(WEPL 场)用宽度≈局部 sigma 的小核做一次横向
+        卷积,即用"sigma 加权的射程锥"而非单条中心线查深度剂量,把邻域射程展布
+        提前混入深度,改善界面后峰位预测。
+   代价: 在已算出的 WEPL 场上多一遍横向 pass,几乎免费。
+   注意: 与多射线叠加有部分功能重叠,建议与方案 1 二选一或互补验证。
+
+4) 子 spot 采样数 [便宜,改善空气段 spot 建模]
+   carbonPBS 来的前端(subspotToCPBConvolutionOptimizedKernel)的子 spot 数直接
+   决定入射/空气段束流建模精度。异质入射(如经鼻窦)时适当增加子 spot 数,线性代价。
+
+5) 触发式局部修正 [可选,效率换精度的折中]
+   全局跑解析,用密度梯度沿束流积分做异质度指标,只对超阈值的少数射线做更精细
+   处理(更细核或局部高密采样)。局部降效率,但只作用 <5% 射线,整体仍接近解析
+   速度。适合作"精度模式"开关。
+
+推荐优先级(碳离子、强异质场景):
+   先做方案 3(侧向 WEPL 平滑,近零代价,先看能否把峰位拉回 MC)
+   → 再做方案 1 的自适应加密(主力)
+   → 方案 2 补半影。
+   MCS 界面细化(在 RTD 的 per-voxel rRl 基础上)收益边际,不优先。
+
+
+================================================================================
+第六部分 关键文件/函数索引(便于后续改动)
+================================================================================
+subSecond:
+  src/core/bev_ray_tracing.cu
+    - rayTracingBEVKernel      (WEPL 累积; 改进方案 1/3 入口)
+    - bevToDoseGridKernel      (BEV→剂量网格)
+  src/algorithms/idd_sigma.cu
+    - fillIddAndSigmaKernel     (IDD 查表 + Highland MCS sigma; 方案 2/3 相关)
+  src/algorithms/convolution.cu
+    - subspotToCPBConvolutionOptimizedKernel (carbonPBS 来源前端; 方案 4)
+    - mapCPBWeightsToRayWeightsKernel
+  src/algorithms/complete_superposition.cu
+    - tileRadCalc / kernelSuperposition<rad> (tile 化 erf 叠加; 方案 2)
+
+RayTraceDicom-main/RayTraceDicom-main/src:
+  kernel_wrapper.cu  (fillBevDensityAndSp, fillIddAndSigma, primTransfDiv)
+  kernel_wrapper.cuh (kernelSuperposition<rad>)
+  fill_idd_and_sigma_params.cu
+
+carbonPBS:
+  deviceCalDose.cu (calDoseKernel, calGaussianR, cuCalFinalDose*Kernel)
+  cudaCalDose.cpp  (cudaCalDose3, cudaFinalDose 主机入口)
+
+================================================================================
+（完）
+================================================================================

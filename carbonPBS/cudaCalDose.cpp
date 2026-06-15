@@ -240,40 +240,40 @@ int calOneLayerDoseOld(float* dose,
                        int gpuid);
 
 int calOneLayerDoseOld_(float *dose,
-					   int *cscIndices,
-					   int *colindices,
-					   int *cscIndptr,
-						 float* d_idd_per_depth, //suplementary
-					   int totalnnz,
-					   int *sumNNZ,
-					   vec3f *d_beamDirect,
-					   int num_beam,
-					   vec3f source,
-					   vec3f bmxdir,
-					   vec3f bmydir,
-					   vec3i *roiIndex,
-					   int num_roi,
-					   Grid doseGrid,
-					   cudaTextureObject_t rayweqData,
-					   cudaTextureObject_t iddData,
-					   cudaTextureObject_t profileData,
-					   cudaTextureObject_t subspotData,
-					   vec3f rayweqSetting,
-					   vec3f iddDepth,
-					   vec3f profileDepth,
-					   float *d_idbeamxy,
-					   int nsubspot,
-					   int nGauss,
-					   int eneIdx,
-					   int beamOffset,
-					   float beamParaPos,
-					   float longitudalCutoff,
-					   float transCutoff,
-					   float rtheta,
-					   float theta2,
-					   float r2,
-					   float sad,
-					   int gpuid);
+                       int *cscIndices,
+                       int *colindices,
+                       int *cscIndptr,
+                         float* d_idd_per_depth, //suplementary
+                       int totalnnz,
+                       int *sumNNZ,
+                       vec3f *d_beamDirect,
+                       int num_beam,
+                       vec3f source,
+                       vec3f bmxdir,
+                       vec3f bmydir,
+                       vec3i *roiIndex,
+                       int num_roi,
+                       Grid doseGrid,
+                       cudaTextureObject_t rayweqData,
+                       cudaTextureObject_t iddData,
+                       cudaTextureObject_t profileData,
+                       cudaTextureObject_t subspotData,
+                       vec3f rayweqSetting,
+                       vec3f iddDepth,
+                       vec3f profileDepth,
+                       float *d_idbeamxy,
+                       int nsubspot,
+                       int nGauss,
+                       int eneIdx,
+                       int beamOffset,
+                       float beamParaPos,
+                       float longitudalCutoff,
+                       float transCutoff,
+                       float rtheta,
+                       float theta2,
+                       float r2,
+                       float sad,
+                       int gpuid);
 
 
 int binarySearchEneIdx(float ene, float* eneList, int nEne)
@@ -344,7 +344,7 @@ int binarySearchEneIdx(float ene, float* eneList, int nEne)
     // memcpy((float*)h_hitDis.ptr, (float*)cp.dis.data(), sizeof(float) * cp.dis.size());
 // }
 EXPORT
-int cudaCalDoseNorm(pybind11::array doseNorm, 
+int cudaCalDoseNorm(pybind11::array doseNorm,
                  pybind11::array weqData,
                  pybind11::array roiIndex,
                  pybind11::array sourceEne, // shape N*1
@@ -477,13 +477,13 @@ int cudaCalDoseNorm(pybind11::array doseNorm,
         longitudalCutoff = *((float*)h_longitudalCutoff.ptr + beamOffset);
 
         // checkCudaErrors(cudaMemset(d_bmzDir, 0, sizeof(vec3f) * maximumLayerSize));
-        checkCudaErrors(cudaMemcpy(d_bmzDir, 
-            (vec3f *)h_bmdir.ptr + beamOffset, 
-            sizeof(vec3f) * layerSize, 
+        checkCudaErrors(cudaMemcpy(d_bmzDir,
+            (vec3f *)h_bmdir.ptr + beamOffset,
+            sizeof(vec3f) * layerSize,
             cudaMemcpyHostToDevice));
 
-        checkCudaErrors(cudaMemcpy(d_idbeamxy, 
-            (float *)h_idbeamxy.ptr + beamOffset * 2, 
+        checkCudaErrors(cudaMemcpy(d_idbeamxy,
+            (float *)h_idbeamxy.ptr + beamOffset * 2,
             sizeof(float) * 2 * layerSize,
             cudaMemcpyHostToDevice));
 
@@ -1024,7 +1024,7 @@ EXPORT
 int cudaCalDose3_(pybind11::array out_cscdata,
                 pybind11::array out_cscptr,
                 pybind11::array out_cscrowind,
-                pybind11::array idd_per_depth,//suplementary 
+                pybind11::array idd_per_depth,//suplementary
                 pybind11::array weqData,
                 pybind11::array roiIndex,
                 pybind11::array sourceEne, // shape N*1
@@ -1086,7 +1086,7 @@ int cudaCalDose3_(pybind11::array out_cscdata,
     auto h_outNNZ = pybind11::cast<pybind11::array_t<uint64_t>>(outNNZ).request();
     auto h_idbeamxy = pybind11::cast<pybind11::array_t<float>>(idbeamxy).request();
 
-    int nBeam = h_sourceEne.size; // 
+    int nBeam = h_sourceEne.size; //
     int nEne = h_enelist.size;
     int nRoi = h_roiIndex.size / 3;
 
@@ -1123,7 +1123,7 @@ int cudaCalDose3_(pybind11::array out_cscdata,
     create2DTexture((float*)h_idddata.ptr, &iddArray, &iddObj, weq::LINEAR,
                     weq::R, h_idddata.shape[1], h_idddata.shape[0], gpuId);
 
-    //suplementary 
+    //suplementary
 #ifdef DEBUG
     printf("iddArray: %d %d %d\n", h_idddata.shape[1], h_idddata.shape[0], h_idddata.size);
 #endif
@@ -1224,7 +1224,7 @@ int cudaCalDose3_(pybind11::array out_cscdata,
                                          d_tmpRowIndex,
                                          d_tmpColIndex,
                                          d_tmpCscPtr,
-                                         d_idd_per_depth,//suplementary 
+                                         d_idd_per_depth,//suplementary
                                          nnzSizeThisLayer,
                                          d_sumNNZ,
                                          d_bmzDir,
@@ -1663,11 +1663,11 @@ void cuFinalPhysDoseAndRBEDose(pybind11::array out_finalDose,
     create2DTexture((float*)h_z1D.ptr, &Z1DArray, &Z1DObj, weq::LINEAR, weq::R, h_z1D.shape[1], h_z1D.shape[0],
                          gpuId);
 
-#ifdef DEBUG                         
+#ifdef DEBUG
     time=timer.seconds();
     printf("1.malloc and memcpy time:%f\n", time);
-    total_time1 += time; 
-#endif  
+    total_time1 += time;
+#endif
 
     for (int i = 0; i < nField; i++)
     {

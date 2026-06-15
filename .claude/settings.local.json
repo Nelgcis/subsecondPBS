@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec instructions *)",
+      "Bash(grep -v \"^[+-]$\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git apply *)",
+      "Bash(gmake -C build_verify)",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(awk -F, 'NR==1{print \"cols:\", NF} END{print \"rows:\", NR}' bg902_beam1063_profile_data.csv)",
+      "Bash(grep -nA1 'm.def\\(' src/bindings/raytracedicom_pybind.cpp)",
+      "Read(//home/gadolinite/CASHIM_HL/subsecond/raytracedicom_pybind_stage/subsecond_old/tps_py/**)",
+      "Bash(clang-format --version)",
+      "Bash(python3 *)",
+      "WebSearch",
+      "Bash(find /output -maxdepth 3)",
+      "Read(//Users/dev/**)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(grep -E \"\\\\.\\(cpp|cu|h\\)$\")",
+      "Read(//home/gadolinite/**)",
+      "Read(//home/gadolinite/CASHIM/tps/tps_service_25B/**)",
+      "Bash(awk 'NR>=4066 && NR<=4101 {print NR\": \"$0}' src/core/raytracedicom_wrapper.cu)"
+    ]
+  }
+}

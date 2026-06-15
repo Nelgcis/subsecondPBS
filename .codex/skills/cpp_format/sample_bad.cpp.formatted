@@ -1,0 +1,73 @@
+// sample_bad.cpp
+// 这是一个故意写得不规范的示例文件，用于测试格式化工具
+
+// FORMAT-WARN: 建议使用 C++ 头文件（如 <cstdlib> 替代 <stdlib.h>），见 format_changes.log
+#include <stdlib.h>
+// FORMAT-WARN: 建议使用 C++ 头文件（如 <cstdlib> 替代 <stdlib.h>），见 format_changes.log
+#include <string.h>
+#include <iostream>
+
+// FORMAT-WARN: 建议用 const/constexpr 替代 #define 常量，见 format_changes.log
+#define MAX_LEN 256
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define SQUARE(a, b) ((a) * (b))
+
+using namespace std;
+
+int g_counter = 0;
+
+class myClass {
+    int myValue;
+    int* ptr;
+public:
+    myClass(int v) { myValue = v; }  // 单参数构造未加 explicit
+
+    int getValue() {
+        return myValue;
+    }
+
+    void doSomething() {
+    // FORMAT-WARN: if/for/while 语句缺少大括号，见 format_changes.log
+        if (myValue > 0)
+            cout << myValue << endl;  // if 没有大括号
+
+    // FORMAT-WARN: if/for/while 语句缺少大括号，见 format_changes.log
+        for (int i = 0; i < 10; i++)
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+            g_counter++;  // for 没有大括号
+
+        // 注释掉的旧代码：
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // int oldResult = myValue * 2;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // return oldResult;
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        int x = 5, y = 10;  // 多变量同行初始化
+
+        int i = 0;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+        int result = x + i++;  // 含自增的复合表达式，语义不明确
+
+    // FORMAT-WARN: TODO/TBD/FIXME 不能出现在正式交付代码中，见 format_changes.log
+        // TODO: 需要添加错误处理
+    // FORMAT-WARN: TODO/TBD/FIXME 不能出现在正式交付代码中，见 format_changes.log
+        // FIXME: 这里有已知bug
+
+        char* p=nullptr;   // NULL 应用 nullptr；指针两侧无空格
+        int* q = nullptr;
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        int status = 8;  // 魔鬼数字
+    }
+};
+
+int myFunction(int a, int b, int c, int d, int e, int f) {  // 参数超过5个
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+    int result = (int)a + b;  // C 风格强制转换
+    return result;
+}
+
+void longFunctionNameThatExceedsColumnLimit(int parameterOne, int parameterTwo, int parameterThree, int parameterFour) {
+    // 行宽超过120
+}

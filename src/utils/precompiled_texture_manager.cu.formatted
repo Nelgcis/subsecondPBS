@@ -1,0 +1,608 @@
+/**
+ * \file
+ * \brief CUDA 12.1 Pre-compiled Texture Manager
+ *
+ * This file implements:
+ * - Pre-compiled texture objects using CUDA 12.1 features
+ * - Texture template instantiation
+ * - Runtime texture compilation
+ * - Texture object caching with pre-compilation
+ * - LUT texture management for RayTracedicom tables
+ */
+
+#include <cuda_runtime.h>
+#include <texture_types.h>
+#include <chrono>
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <mutex>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <sys/stat.h>
+#include <unistd.h>
+// FORMAT-WARN: 建议使用 C++ 头文件（如 <cstdlib> 替代 <stdlib.h>），见 format_changes.log
+#include <limits.h>
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Small helper: check file existence (POSIX).
+static bool fileExists(const std::string& path) {
+    struct stat st;
+    return (stat(path.c_str(), &st) == 0);
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Small helper: find executable directory (Linux /proc).
+static std::string getExecutableDir() {
+    char buf[PATH_MAX];
+    const ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len <= 0) return std::string();
+    buf[len] = '\0';
+    std::string full(buf);
+    const size_t pos = full.find_last_of('/');
+    if (pos == std::string::npos) return std::string();
+    return full.substr(0, pos);
+}
+
+// Pre-compiled texture configuration
+struct PrecompiledTextureConfig {
+    bool enablePrecompilation = true;
+    bool enableRuntimeCompilation = true;
+    bool enableTextureCaching = true;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    size_t maxCachedTextures = 50;
+    bool enableLUTOptimization = true;
+};
+
+// LUT texture information
+struct LUTTextureInfo {
+    std::string filename;
+    std::vector<float> data;
+    int3 dimensions;
+    cudaTextureObject_t texture;
+    cudaArray_t array;
+    bool isPrecompiled;
+    std::chrono::steady_clock::time_point lastUsed;
+};
+
+// Pre-compiled texture template
+template<typename T>
+struct PrecompiledTextureTemplate {
+    cudaTextureObject_t texture;
+    cudaArray* array;
+    T* hostData;
+    int3 dims;
+    cudaTextureFilterMode filterMode;
+    cudaTextureAddressMode addressMode;
+    bool isCompiled;
+    std::chrono::steady_clock::time_point compileTime;
+    std::chrono::steady_clock::time_point lastUsed;  // 添加缺失的成员
+};
+
+class PrecompiledTextureManager {
+private:
+    std::unordered_map<std::string, LUTTextureInfo> lutTextures_;
+    std::unordered_map<std::string, PrecompiledTextureTemplate<float>> precompiledTextures_;
+    std::mutex textureMutex_;
+    PrecompiledTextureConfig config_;
+
+    // CUDA 12.1 compilation features
+    cudaStream_t compilationStream_;
+    bool useRuntimeCompilation_;
+
+    // Statistics
+    size_t compilationCount_ = 0;
+    size_t cacheHits_ = 0;
+    size_t cacheMisses_ = 0;
+
+public:
+    PrecompiledTextureManager() : useRuntimeCompilation_(false) {
+        initializeCompilationStream();
+        loadLUTTables();
+    }
+
+    ~PrecompiledTextureManager() {
+        cleanupTextures();
+        cudaStreamDestroy(compilationStream_);
+    }
+
+    // Initialize CUDA compilation stream
+    void initializeCompilationStream() {
+        cudaError_t err = cudaStreamCreate(&compilationStream_);
+        if (err == cudaSuccess) {
+            useRuntimeCompilation_ = true;
+            printf("[TEXTURE_COMPILER] CUDA compilation stream initialized\n");
+        } else {
+            printf("[TEXTURE_COMPILER] Failed to create compilation stream: %s\n", cudaGetErrorString(err));
+        }
+    }
+
+    // Load LUT tables from /tables directory
+    void loadLUTTables() {
+        std::vector<std::string> lutFiles = {
+            "HU_to_SP_H& N_adj.txt",
+            "density_Schneider2000_adj.txt",
+            "nuclear_weights_and_sigmas_Fluka.txt",
+            "nuclear_weights_and_sigmas_Soukup.txt",
+            "nuclear_weights_and_sigmas_fit.txt",
+            "proton_cumul_ddd_data.txt",
+            "radiation_length.txt",
+            "radiation_length_inc_water.txt"
+        };
+
+        // Robust base-path resolution for running from build/bin, build/, or repo root.
+        // Probe for the first LUT file in several candidate locations.
+        std::string basePath;
+        const std::string exeDir = getExecutableDir();
+        std::vector<std::string> candidates = {
+            "./tables/",
+            "../tables/",
+            "../../tables/"
+        };
+        if (!exeDir.empty()) {
+            candidates.push_back(exeDir + "/tables/");
+            candidates.push_back(exeDir + "/../tables/");
+            candidates.push_back(exeDir + "/../../tables/");
+        }
+
+        const std::string probe = lutFiles.empty() ? std::string() : lutFiles.front();
+        for (const auto& c : candidates) {
+            if (!probe.empty() && fileExists(c + probe)) {
+                basePath = c;
+                break;
+            }
+        }
+        if (basePath.empty()) {
+            basePath = "./tables/";
+        }
+
+        printf("[TEXTURE_COMPILER] Loading LUT tables from %s...\n", basePath.c_str());
+
+        for (const auto& filename : lutFiles) {
+            std::string filepath = basePath + filename;
+            if (loadLUTFile(filename, filepath)) {
+                printf("[TEXTURE_COMPILER] ✓ Loaded: %s\n", filename.c_str());
+            } else {
+                printf("[TEXTURE_COMPILER] ✗ Failed to load: %s\n", filename.c_str());
+            }
+        }
+
+        printf("[TEXTURE_COMPILER] LUT loading completed. Loaded %zu tables.\n", lutTextures_.size());
+    }
+
+    // Load individual LUT file
+    bool loadLUTFile(const std::string& filename, const std::string& filepath) {
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            printf("[TEXTURE_COMPILER] Error: Cannot open file %s\n", filepath.c_str());
+            return false;
+        }
+
+        LUTTextureInfo lutInfo;
+        lutInfo.filename = filename;
+        lutInfo.isPrecompiled = false;
+        lutInfo.lastUsed = std::chrono::steady_clock::now();
+        lutInfo.texture = 0;
+        lutInfo.array = nullptr;
+        lutInfo.dimensions = make_int3(0, 0, 0);
+
+        // === Read LUT files using the same token-based style as raytracedicom_main/energyReader ===
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // NOTE: Dimensions are intentionally "written-dead" from file headers (no extra checking helpers).
+
+        if (filename == "HU_to_SP_H& N_adj.txt" ||
+            filename == "density_Schneider2000_adj.txt" ||
+            filename == "radiation_length.txt" ||
+            filename == "radiation_length_inc_water.txt") {
+            int nSamples = 0;
+            float scaleFact = 0.0f;
+            file >> nSamples >> scaleFact;
+
+            lutInfo.dimensions = make_int3(nSamples, 1, 1);
+            lutInfo.data.resize(static_cast<size_t>(nSamples));
+            for (int i = 0; i < nSamples; ++i) {
+                file >> lutInfo.data[i];
+            }
+        } else if (filename == "proton_cumul_ddd_data.txt") {
+            int nEnergySamples = 0;
+            int nEnergies = 0;
+            file >> nEnergySamples >> nEnergies;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+            // Skip energy axis + peak depths + scale facts (needed for parsing, not for this texture)
+            std::vector<float> tmp(static_cast<size_t>(nEnergies));
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // energiesPerU
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // peakDepths
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // scaleFacts
+
+            lutInfo.dimensions = make_int3(nEnergySamples, nEnergies, 1);
+            lutInfo.data.resize(static_cast<size_t>(nEnergySamples) * static_cast<size_t>(nEnergies));
+            for (size_t i = 0; i < lutInfo.data.size(); ++i) {
+                file >> lutInfo.data[i];
+            }
+        } else if (filename.find("nuclear_weights_and_sigmas_") == 0) {
+            int nEnergySamples = 0;
+            int nEnergies = 0;
+            file >> nEnergySamples >> nEnergies;
+
+            // Skip energy axis + peak depths + scale facts
+            std::vector<float> tmp(static_cast<size_t>(nEnergies));
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // energiesPerU
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // peakDepths
+            for (int i = 0; i < nEnergies; ++i) file >> tmp[i]; // scaleFacts
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+            // Pack into a 3D array: z=0 => weights, z=1 => sigmas
+            const size_t plane = static_cast<size_t>(nEnergySamples) * static_cast<size_t>(nEnergies);
+            lutInfo.dimensions = make_int3(nEnergySamples, nEnergies, 2);
+            lutInfo.data.resize(plane * 2);
+
+            for (size_t i = 0; i < plane; ++i) file >> lutInfo.data[i];          // weights
+            for (size_t i = 0; i < plane; ++i) file >> lutInfo.data[plane + i];  // sigmas
+        } else {
+            // Fallback: load all floats as 1D.
+            float v = 0.0f;
+            while (file >> v) {
+                lutInfo.data.push_back(v);
+            }
+            lutInfo.dimensions = make_int3(static_cast<int>(lutInfo.data.size()), 1, 1);
+        }
+
+        if (lutInfo.data.empty() || lutInfo.dimensions.x <= 0) {
+            printf("[TEXTURE_COMPILER] Error: No usable data found in %s\n", filename.c_str());
+            return false;
+        }
+
+        // Create texture object
+        lutInfo.texture = createLUTTexture(lutInfo);
+
+        if (lutInfo.texture != 0) {
+            const size_t elemCount = lutInfo.data.size();
+            const int3 dims = lutInfo.dimensions;
+
+            std::lock_guard<std::mutex> lock(textureMutex_);
+            lutTextures_[filename] = std::move(lutInfo);
+
+            printf("[TEXTURE_COMPILER] Created texture for %s: %dx%dx%d (%zu elements)\n",
+                   filename.c_str(), dims.x, dims.y, dims.z, elemCount);
+            return true;
+        }
+
+        return false;
+    }
+
+    // Create LUT texture object
+    cudaTextureObject_t createLUTTexture(LUTTextureInfo& lutInfo) {
+        auto start = std::chrono::high_resolution_clock::now();
+
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+        cudaArray_t array = nullptr;
+
+        cudaError_t err;
+        if (lutInfo.dimensions.z > 1) {
+            // 3D texture
+            cudaExtent extent = make_cudaExtent(lutInfo.dimensions.x, lutInfo.dimensions.y, lutInfo.dimensions.z);
+            err = cudaMalloc3DArray(&array, &channelDesc, extent);
+        } else if (lutInfo.dimensions.y > 1) {
+            // 2D texture
+            err = cudaMallocArray(&array, &channelDesc, lutInfo.dimensions.x, lutInfo.dimensions.y);
+        } else {
+            // 1D texture
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+            // Important: use the 1D form (3-arg) to avoid passing height=0.
+            err = cudaMallocArray(&array, &channelDesc, lutInfo.dimensions.x);
+        }
+
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to allocate array for %s: %s\n",
+                   lutInfo.filename.c_str(), cudaGetErrorString(err));
+            return 0;
+        }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // Copy data to array (use cudaMemcpy3D for 1D/2D/3D, consistent with raytracedicom_main style)
+        {
+            cudaMemcpy3DParms copyParams = {};
+            const int w = lutInfo.dimensions.x;
+            const int h = (lutInfo.dimensions.y > 0 ? lutInfo.dimensions.y : 1);
+            const int d = (lutInfo.dimensions.z > 0 ? lutInfo.dimensions.z : 1);
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+            copyParams.srcPtr = make_cudaPitchedPtr((void*)lutInfo.data.data(),
+                                                    static_cast<size_t>(w) * sizeof(float),
+                                                    w, h);
+            copyParams.dstArray = array;
+            copyParams.extent = make_cudaExtent(w, h, d);
+            copyParams.kind = cudaMemcpyHostToDevice;
+            err = cudaMemcpy3D(&copyParams);
+        }
+
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to copy data for %s: %s\n",
+                   lutInfo.filename.c_str(), cudaGetErrorString(err));
+            cudaFreeArray(array);
+            return 0;
+        }
+
+        // Create texture object
+        cudaResourceDesc resDesc = {};
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = array;
+
+        cudaTextureDesc texDesc = {};
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = false;
+        texDesc.filterMode = cudaFilterModeLinear;
+        texDesc.addressMode[0] = cudaAddressModeClamp;
+        texDesc.addressMode[1] = cudaAddressModeClamp;
+        texDesc.addressMode[2] = cudaAddressModeClamp;
+
+        cudaTextureObject_t texture;
+        err = cudaCreateTextureObject(&texture, &resDesc, &texDesc, nullptr);
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to create texture for %s: %s\n",
+                   lutInfo.filename.c_str(), cudaGetErrorString(err));
+            cudaFreeArray(array);
+            return 0;
+        }
+
+        // Keep the backing array for later cleanup
+        lutInfo.array = array;
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+        printf("[TEXTURE_COMPILER] Created LUT texture for %s in %ld μs\n",
+               lutInfo.filename.c_str(), duration.count());
+
+        return texture;
+    }
+
+    // Get LUT texture by filename
+    cudaTextureObject_t getLUTTexture(const std::string& filename) {
+        std::lock_guard<std::mutex> lock(textureMutex_);
+
+        auto it = lutTextures_.find(filename);
+        if (it != lutTextures_.end()) {
+            it->second.lastUsed = std::chrono::steady_clock::now();
+            cacheHits_++;
+            return it->second.texture;
+        }
+
+        cacheMisses_++;
+        printf("[TEXTURE_COMPILER] Warning: LUT texture '%s' not found\n", filename.c_str());
+        return 0;
+    }
+
+    // Create pre-compiled texture with CUDA 12.1 features
+    cudaTextureObject_t createPrecompiledTexture(const float* data, const int3& dims,
+                                                cudaTextureFilterMode filterMode,
+                                                cudaTextureAddressMode addressMode) {
+        auto start = std::chrono::high_resolution_clock::now();
+
+        // Generate cache key
+        std::string cacheKey = generateCacheKey(data, dims, filterMode, addressMode);
+
+        // Check cache first
+        if (config_.enableTextureCaching) {
+            std::lock_guard<std::mutex> lock(textureMutex_);
+            auto it = precompiledTextures_.find(cacheKey);
+            if (it != precompiledTextures_.end()) {
+                it->second.lastUsed = std::chrono::steady_clock::now();
+                cacheHits_++;
+
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                printf("[TEXTURE_COMPILER] Pre-compiled texture cache hit in %ld μs\n", duration.count());
+
+                return it->second.texture;
+            }
+            cacheMisses_++;
+        }
+
+        // Create new pre-compiled texture
+        PrecompiledTextureTemplate<float> template_;
+        template_.dims = dims;
+        template_.filterMode = filterMode;
+        template_.addressMode = addressMode;
+        template_.isCompiled = false;
+
+        // Allocate and copy data
+        size_t dataSize = dims.x * dims.y * dims.z * sizeof(float);
+        cudaMalloc(&template_.hostData, dataSize);
+        cudaMemcpy(template_.hostData, data, dataSize, cudaMemcpyHostToDevice);
+
+        // Create array
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+        cudaExtent extent = make_cudaExtent(dims.x, dims.y, dims.z);
+
+        cudaError_t err = cudaMalloc3DArray(&template_.array, &channelDesc, extent);
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to allocate array: %s\n", cudaGetErrorString(err));
+            cudaFree(template_.hostData);
+            return 0;
+        }
+
+        // Copy data to array
+        cudaMemcpy3DParms copyParams = {};
+        copyParams.srcPtr = make_cudaPitchedPtr(template_.hostData, extent.width* sizeof(float),
+                                              extent.width, extent.height);
+        copyParams.dstArray = template_.array;
+        copyParams.extent = extent;
+        copyParams.kind = cudaMemcpyDeviceToDevice;
+
+        err = cudaMemcpy3D(&copyParams);
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to copy data to array: %s\n", cudaGetErrorString(err));
+            cudaFree(template_.hostData);
+            cudaFreeArray(template_.array);
+            return 0;
+        }
+
+        // Create texture object with pre-compilation
+        cudaResourceDesc resDesc = {};
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = template_.array;
+
+        cudaTextureDesc texDesc = {};
+        texDesc.readMode = cudaReadModeElementType;
+        texDesc.normalizedCoords = false;
+        texDesc.filterMode = filterMode;
+        texDesc.addressMode[0] = addressMode;
+        texDesc.addressMode[1] = addressMode;
+        texDesc.addressMode[2] = addressMode;
+
+        err = cudaCreateTextureObject(&template_.texture, &resDesc, &texDesc, nullptr);
+        if (err != cudaSuccess) {
+            printf("[TEXTURE_COMPILER] Error: Failed to create pre-compiled texture: %s\n", cudaGetErrorString(err));
+            cudaFree(template_.hostData);
+            cudaFreeArray(template_.array);
+            return 0;
+        }
+
+        template_.isCompiled = true;
+        template_.compileTime = std::chrono::steady_clock::now();
+        compilationCount_++;
+
+        // Cache the texture
+        if (config_.enableTextureCaching) {
+            std::lock_guard<std::mutex> lock(textureMutex_);
+
+            // Check cache size limit
+            if (precompiledTextures_.size() >= config_.maxCachedTextures) {
+                // Remove oldest texture
+                auto oldest = precompiledTextures_.begin();
+                for (auto it = precompiledTextures_.begin(); it != precompiledTextures_.end(); ++it) {
+                    if (it->second.lastUsed < oldest->second.lastUsed) {
+                        oldest = it;
+                    }
+                }
+
+                // Destroy old texture
+                cudaDestroyTextureObject(oldest->second.texture);
+                cudaFreeArray(oldest->second.array);
+                cudaFree(oldest->second.hostData);
+                precompiledTextures_.erase(oldest);
+            }
+
+            template_.lastUsed = std::chrono::steady_clock::now();
+            precompiledTextures_[cacheKey] = template_;
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+        printf("[TEXTURE_COMPILER] Pre-compiled texture created in %ld μs\n", duration.count());
+
+        return template_.texture;
+    }
+
+    // Generate cache key for texture
+    std::string generateCacheKey(const float* data, const int3& dims,
+                               cudaTextureFilterMode filterMode,
+                               cudaTextureAddressMode addressMode) {
+        // Simple hash-based cache key
+        size_t hash = 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hash ^= std::hash<int>()(dims.x) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hash ^= std::hash<int>()(dims.y) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hash ^= std::hash<int>()(dims.z) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hash ^= std::hash<int>()(filterMode) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hash ^= std::hash<int>()(addressMode) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+
+        return std::to_string(hash);
+    }
+
+    // Print texture statistics
+    void printStats() {
+        std::lock_guard<std::mutex> lock(textureMutex_);
+
+        printf("\n=== Pre-compiled Texture Manager Statistics ===\n");
+        printf("LUT Textures Loaded: %zu\n", lutTextures_.size());
+        printf("Pre-compiled Textures: %zu\n", precompiledTextures_.size());
+        printf("Compilation Count: %zu\n", compilationCount_);
+        printf("Cache Hits: %zu\n", cacheHits_);
+        printf("Cache Misses: %zu\n", cacheMisses_);
+        printf("Cache Hit Rate: %.2f%%\n",
+               cacheHits_ + cacheMisses_ > 0 ? 100.0 * cacheHits_ / (cacheHits_ + cacheMisses_) : 0.0);
+
+        printf("\nLUT Texture Details:\n");
+        for (const auto& lut : lutTextures_) {
+            printf("  %s: %dx%dx%d (%zu elements)\n",
+                   lut.first.c_str(),
+                   lut.second.dimensions.x, lut.second.dimensions.y, lut.second.dimensions.z,
+                   lut.second.data.size());
+        }
+
+        printf("===============================================\n\n");
+    }
+
+    // Cleanup all textures
+    void cleanupTextures() {
+        std::lock_guard<std::mutex> lock(textureMutex_);
+
+        // Cleanup LUT textures
+        for (auto& lut : lutTextures_) {
+            cudaDestroyTextureObject(lut.second.texture);
+            if (lut.second.array) {
+                cudaFreeArray(lut.second.array);
+            }
+        }
+        lutTextures_.clear();
+
+        // Cleanup pre-compiled textures
+        for (auto& tex : precompiledTextures_) {
+            cudaDestroyTextureObject(tex.second.texture);
+            cudaFreeArray(tex.second.array);
+            cudaFree(tex.second.hostData);
+        }
+        precompiledTextures_.clear();
+
+        printf("[TEXTURE_COMPILER] All textures cleaned up\n");
+    }
+};
+
+// Global texture manager
+static PrecompiledTextureManager* g_textureManager = nullptr;
+
+// Initialize texture manager
+void initializePrecompiledTextureManager() {
+    if (g_textureManager == nullptr) {
+        g_textureManager = new PrecompiledTextureManager();
+        printf("[TEXTURE_COMPILER] Pre-compiled texture manager initialized\n");
+    }
+}
+
+// Get texture manager
+PrecompiledTextureManager* getPrecompiledTextureManager() {
+    if (g_textureManager == nullptr) {
+        initializePrecompiledTextureManager();
+    }
+    return g_textureManager;
+}
+
+// Global API: LUT texture access
+cudaTextureObject_t getLUTTexture(const std::string& filename) {
+    return getPrecompiledTextureManager()->getLUTTexture(filename);
+}
+
+// Global API: pre-compiled texture creation
+cudaTextureObject_t createPrecompiledTexture(const float* data, const int3& dims,
+                                            cudaTextureFilterMode filterMode,
+                                            cudaTextureAddressMode addressMode) {
+    return getPrecompiledTextureManager()->createPrecompiledTexture(data, dims, filterMode, addressMode);
+}
+
+// Cleanup texture manager
+void cleanupPrecompiledTextureManager() {
+    if (g_textureManager != nullptr) {
+        g_textureManager->printStats();
+        delete g_textureManager;
+        g_textureManager = nullptr;
+        printf("[TEXTURE_COMPILER] Pre-compiled texture manager cleaned up\n");
+    }
+}
