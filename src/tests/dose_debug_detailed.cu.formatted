@@ -1,0 +1,276 @@
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <random>
+#include <cuda_runtime.h>
+
+#include "../include/core/common.cuh"
+#include "../include/core/raytracedicom_integration.h"
+#include "../include/utils/backward_compatibility.h"
+
+// Forward declaration for wrapper function
+void subsecondWrapper(
+    const float* imVolData,
+    const int3& imVolDims,
+    const float3& imVolSpacing,
+    const float3& imVolOrigin,
+    float* doseVolData,
+    const int3& doseVolDims,
+    const float3& doseVolSpacing,
+    const float3& doseVolOrigin,
+    const RTDBeamSettings* beamSettings, size_t numBeams,
+    const RTDEnergyStruct* energyData,
+    int gpuId, bool nuclearCorrection, int verbose
+);
+
+// Forward declarations
+RTDBeamSettings* createTestBeamSettings();
+RTDEnergyStruct* createTestEnergyStruct();
+
+// Debug function to check intermediate data
+void debugIntermediateData() {
+    std::cout << "\n=== Debugging Intermediate Data ===" << std::endl;
+
+    // Create test data
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 ctDims = make_int3(32, 32, 16);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 doseDims = make_int3(32, 32, 16);
+    float3 ctSpacing = make_float3(1.0f, 1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 ctOrigin = make_float3(-16.0f, -16.0f, -8.0f);
+    float3 doseSpacing = make_float3(1.0f, 1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 doseOrigin = make_float3(-16.0f, -16.0f, -8.0f);
+
+    std::vector<float> ctData(ctDims.x * ctDims.y * ctDims.z, 1.0f); // Water density
+    std::vector<float> doseData(doseDims.x * doseDims.y * doseDims.z, 0.0f);
+
+    RTDBeamSettings* beamSettings = createTestBeamSettings();
+    RTDEnergyStruct* energyData = createTestEnergyStruct();
+
+    // Check ray weight initialization
+    std::cout << "\n1. Testing Ray Weight Initialization..." << std::endl;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    vec3i rayDims = make_vec3i(32, 32, 1);
+    std::vector<float> rayWeights(rayDims.x * rayDims.y);
+
+    int initResult = initializeRayWeightsFromSubspotDataGPU(
+        rayWeights.data(), rayDims,
+        make_vec3f(0.0f, 0.0f, 1.0f),  // beam direction
+        make_vec3f(1.0f, 0.0f, 0.0f),  // X direction
+        make_vec3f(0.0f, 1.0f, 0.0f),  // Y direction
+        make_vec3f(0.0f, 0.0f, -100.0f), // source position
+        100.0f,  // SAD
+        0.0f,    // ref plane Z
+        0        // GPU ID
+    );
+
+    if (initResult == 1) {
+        float totalWeight = 0.0f;
+        float maxWeight = 0.0f;
+        for (int i = 0; i < rayWeights.size(); i++) {
+            totalWeight += rayWeights[i];
+            maxWeight = std::max(maxWeight, rayWeights[i]);
+        }
+        std::cout << "  Ray weights: total=" << totalWeight << ", max=" << maxWeight << std::endl;
+
+        // Print sample ray weights
+        std::cout << "  Sample ray weights (center 4x4):" << std::endl;
+        for (int y = 14; y < 18; y++) {
+            for (int x = 14; x < 18; x++) {
+                std::cout << rayWeights[y * rayDims.x + x] << "\t";
+            }
+            std::cout << std::endl;
+        }
+    } else {
+        std::cout << "  Ray weight initialization FAILED" << std::endl;
+    }
+
+    // Check superposition parameters
+    std::cout << "\n2. Testing Superposition Parameters..." << std::endl;
+    std::cout << "  Beam energies: ";
+    for (size_t i = 0; i < beamSettings->energies.size(); i++) {
+        std::cout << beamSettings->energies[i] << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "  Beam steps: " << beamSettings->steps << std::endl;
+    std::cout << "  Ray spacing: " << beamSettings->raySpacing.x << " x " << beamSettings->raySpacing.y << std::endl;
+
+    // Check energy data
+    std::cout << "\n3. Testing Energy Data..." << std::endl;
+    std::cout << "  Number of energies: " << energyData->nEnergies << std::endl;
+    std::cout << "  Energy samples: " << energyData->nEnergySamples << std::endl;
+    std::cout << "  Peak depths: ";
+    for (int i = 0; i < energyData->nEnergies; i++) {
+        std::cout << energyData->peakDepths[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // Check CIDD matrix
+    std::cout << "  CIDD matrix sample (first energy, first 10 depths):" << std::endl;
+    for (int i = 0; i < std::min(10, energyData->nEnergySamples); i++) {
+        std::cout << energyData->ciddMatrix[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // Cleanup
+    destroyRTDBeamSettings(beamSettings);
+    destroyRTDEnergyStruct(energyData);
+}
+
+// Test individual components
+void testIndividualComponents() {
+    std::cout << "\n=== Testing Individual Components ===" << std::endl;
+
+    // Test 1: Ray weight initialization
+    std::cout << "\n1. Ray Weight Initialization Test..." << std::endl;
+    vec3i rayDims = make_vec3i(16, 16, 1);
+    std::vector<float> rayWeights(rayDims.x * rayDims.y);
+
+    int result = initializeRayWeightsFromSubspotDataGPU(
+        rayWeights.data(), rayDims,
+        make_vec3f(0.0f, 0.0f, 1.0f),  // beam direction
+        make_vec3f(1.0f, 0.0f, 0.0f),  // X direction
+        make_vec3f(0.0f, 1.0f, 0.0f),  // Y direction
+        make_vec3f(0.0f, 0.0f, -100.0f), // source position
+        100.0f,  // SAD
+        0.0f,    // ref plane Z
+        0        // GPU ID
+    );
+
+    if (result == 1) {
+        float totalWeight = 0.0f;
+        for (int i = 0; i < rayWeights.size(); i++) {
+            totalWeight += rayWeights[i];
+        }
+        std::cout << "  SUCCESS: Total weight = " << totalWeight << std::endl;
+    } else {
+        std::cout << "  FAILED" << std::endl;
+    }
+
+    // Test 2: Subspot convolution
+    std::cout << "\n2. Subspot Convolution Test..." << std::endl;
+    int numLayers = 1;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int maxSubspotsPerLayer = 5;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::vector<float> subspotData(numLayers * maxSubspotsPerLayer * 5);
+
+    // Create simple subspot data
+    for (int i = 0; i < maxSubspotsPerLayer; i++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        int baseIdx = i * 5;
+        subspotData[baseIdx + 0] = (float)(i - 2) * 2.0f;  // deltaX
+        subspotData[baseIdx + 1] = 0.0f;                   // deltaY
+        subspotData[baseIdx + 2] = 1.0f;                   // weight
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        subspotData[baseIdx + 3] = 2.0f;                   // sigmaX
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        subspotData[baseIdx + 4] = 2.0f;                   // sigmaY
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    vec3f cpbCorner = make_vec3f(-5.0f, -5.0f, 0.0f);
+    vec3f cpbResolution = make_vec3f(1.0f, 1.0f, 1.0f);
+    vec3i cpbDims = make_vec3i(10, 10, numLayers);
+    std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z);
+
+    result = subspotToCPBConvolutionGPU(
+        subspotData.data(), numLayers, maxSubspotsPerLayer,
+        cpbCorner, cpbResolution, cpbDims,
+        cpbWeights.data(), 0
+    );
+
+    if (result == 1) {
+        float totalWeight = 0.0f;
+        float maxWeight = 0.0f;
+        for (int i = 0; i < cpbWeights.size(); i++) {
+            totalWeight += cpbWeights[i];
+            maxWeight = std::max(maxWeight, cpbWeights[i]);
+        }
+        std::cout << "  SUCCESS: Total weight = " << totalWeight << ", Max = " << maxWeight << std::endl;
+
+        // Print center slice
+        std::cout << "  Center slice (5x5):" << std::endl;
+        for (int y = 2; y < 7; y++) {
+            for (int x = 2; x < 7; x++) {
+                std::cout << cpbWeights[y * cpbDims.x + x] << "\t";
+            }
+            std::cout << std::endl;
+        }
+    } else {
+        std::cout << "  FAILED" << std::endl;
+    }
+}
+
+int main() {
+    std::cout << "=== Detailed Dose Calculation Debug ===" << std::endl;
+
+    // Test individual components first
+    testIndividualComponents();
+
+    // Debug intermediate data
+    debugIntermediateData();
+
+    std::cout << "\n=== Debug Complete ===" << std::endl;
+    return 0;
+}
+
+// Helper functions
+RTDBeamSettings* createTestBeamSettings() {
+    RTDBeamSettings* beam = new RTDBeamSettings();
+    beam->energies = {150.0f};
+    beam->spotSigmas = {make_float2(2.0f, 2.0f)};
+    beam->raySpacing = make_float2(1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam->steps = 20;
+    beam->sourceDist = make_float2(1000.0f, 1000.0f);
+    beam->spotOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam->spotDelta = make_float3(2.0f, 2.0f, 0.0f);
+    beam->gantryToImOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam->gantryToImMatrix = make_float3(1.0f, 0.0f, 0.0f);
+    beam->gantryToDoseOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam->gantryToDoseMatrix = make_float3(1.0f, 0.0f, 0.0f);
+    return beam;
+}
+
+RTDEnergyStruct* createTestEnergyStruct() {
+    RTDEnergyStruct* energy = new RTDEnergyStruct();
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nEnergySamples = 20;
+    energy->nEnergies = 1;
+    energy->energiesPerU = {150.0f};
+    energy->peakDepths = {15.0f};
+    energy->scaleFacts = {1.0f};
+
+    // Create simple CIDD matrix with reasonable values
+    energy->ciddMatrix.resize(energy->nEnergySamples * energy->nEnergies);
+    for (int s = 0; s < energy->nEnergySamples; s++) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        float depth = (float)s / energy->nEnergySamples * 20.0f;
+        float peakDepth = energy->peakDepths[0];
+        // Use a wider Gaussian and normalize to reasonable values
+        float value = exp(-(depth - peakDepth) * (depth - peakDepth) / (2.0f * 16.0f));
+        energy->ciddMatrix[s] = value * 10.0f; // Scale up to reasonable dose values
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nDensitySamples = 20;
+    energy->densityScaleFact = 1.0f;
+    energy->densityVector.resize(energy->nDensitySamples, 1.0f);
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nSpSamples = 20;
+    energy->spScaleFact = 1.0f;
+    energy->spVector.resize(energy->nSpSamples, 1.0f);
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nRRlSamples = 20;
+    energy->rRlScaleFact = 1.0f;
+    energy->rRlVector.resize(energy->nRRlSamples, 0.1f);
+
+    return energy;
+}

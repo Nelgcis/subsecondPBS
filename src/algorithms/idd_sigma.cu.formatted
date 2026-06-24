@@ -1,7 +1,7 @@
 /**
  * \file
  * \brief Simplified IDD and Sigma Calculation Implementation
- * 
+ *
  * This file provides simplified implementations for IDD and sigma calculation
  */
 
@@ -18,6 +18,7 @@
 // ============================================================================
 
 // Correct fillIddAndSigma kernel following RayTracedicom algorithm
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Uses energyIdx to query IDD lookup table (not density!)
 #ifdef NUCLEAR_CORR
 __global__ void fillIddAndSigmaKernel(
@@ -64,12 +65,14 @@ __global__ void fillIddAndSigmaKernel(
     const unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
     const unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
 
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     if (x >= (unsigned)rayDimsX || y >= (unsigned)rayDimsY) return;
 
     const unsigned int memStep = (unsigned int)(rayDimsY * rayDimsX);
     const unsigned int idx2d = y * (unsigned int)rayDimsX + x;
 
     const unsigned int firstIn = (unsigned int)firstInside[idx2d];
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     unsigned int afterLast = (unsigned int)min(firstOutside[idx2d], (int)params.getAfterLastStep());
 
     const float rayWeight = rayWeights[idx2d];
@@ -111,6 +114,7 @@ __global__ void fillIddAndSigmaKernel(
         eRefSq = 190.44f;
         sigmaDelta = 0.0f;
 #elif NUCLEAR_CORR == FLUKA
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         eRefSq = 216.09f;
         sigmaDelta = 0.08f;
 #elif NUCLEAR_CORR == GAUSS_FIT
@@ -152,6 +156,7 @@ __global__ void fillIddAndSigmaKernel(
 
     for (unsigned int stepNo = (unsigned int)params.getFirstStep();
          stepNo < (unsigned int)params.getAfterLastStep();
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
          ++stepNo) {
 
         float res = 0.0f;
@@ -194,9 +199,7 @@ __global__ void fillIddAndSigmaKernel(
             const float mass = density * params.stepVol(stepNo);
 #endif
 
-		   //if (1==1) {
-            //if (mass > 7.5e-3f) {
-            if (mass > 0.1f) {
+            if (mass > 1e-2f) {
 #ifdef NUCLEAR_CORR
                 if (nuclearEnabled) {
                     const float depthMidIdx = HALF * (cumulSp + cumulSpOld) * params.getEnergyScaleFact() + HALF;
@@ -235,6 +238,7 @@ __global__ void fillIddAndSigmaKernel(
             }
         }
 
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
         if (!beamLive || (int)stepNo < ((int)firstIn - 1)) {
             res = 0.0f;
             rSigmaEff = __int_as_float(0x7f800000);
@@ -257,9 +261,11 @@ __global__ void fillIddAndSigmaKernel(
         idx += memStep;
     }
 
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     firstPassive[idx2d] = (int)afterLast;
 }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Legacy simplified kernel (kept for compatibility, but should not be used)
 __global__ void simpleIddCalculationKernel(
     float* bevDensity,
@@ -296,45 +302,47 @@ __global__ void simpleSigmaTextureKernel(
 ) {
     int cpbIdx = blockIdx.x * blockDim.x + threadIdx.x;
     int totalCPBPoints = cpbDims.x * cpbDims.y;
-    
+
     if (cpbIdx >= totalCPBPoints) return;
-    
+
     int cpbX = cpbIdx % cpbDims.x;
     int cpbY = cpbIdx / cpbDims.x;
-    
+
     // Calculate CPB grid point position
     vec3f cpbPos = vec3f(
         cpbCorner.x + (cpbX + 0.5f) * cpbResolution.x,
         cpbCorner.y + (cpbY + 0.5f) * cpbResolution.y,
         cpbCorner.z
     );
-    
+
     float totalWeight = 0.0f;
     float weightedSigmaX = 0.0f;
     float weightedSigmaY = 0.0f;
-    
+
     // Calculate weighted sigma from subspots
     for (int subspotIdx = 0; subspotIdx < layerSize; subspotIdx++) {
         float deltaX = tex3D<float>(subspotData, 0.0f, float(subspotIdx), float(layerIdx));
         float deltaY = tex3D<float>(subspotData, 1.0f, float(subspotIdx), float(layerIdx));
         float weight = tex3D<float>(subspotData, 2.0f, float(subspotIdx), float(layerIdx));
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         float sigmaX = tex3D<float>(subspotData, 3.0f, float(subspotIdx), float(layerIdx));
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         float sigmaY = tex3D<float>(subspotData, 4.0f, float(subspotIdx), float(layerIdx));
-        
+
         if (weight < 0.001f) continue; // Simple cutoff
-        
+
         // Simple distance-based weighting
         float dx = cpbPos.x - deltaX;
         float dy = cpbPos.y - deltaY;
         float distance = sqrtf(dx * dx + dy * dy);
         float distanceWeight = expf(-distance * distance / 100.0f); // Simplified weighting
-        
+
         float totalSubspotWeight = weight * distanceWeight;
         totalWeight += totalSubspotWeight;
         weightedSigmaX += totalSubspotWeight * sigmaX;
         weightedSigmaY += totalSubspotWeight * sigmaY;
     }
-    
+
     // Calculate weighted average sigma
     if (totalWeight > 0.001f) {
         sigmaXTexture[cpbIdx] = weightedSigmaX / totalWeight;
@@ -366,18 +374,18 @@ void performIddAndSigmaCalculation(
     cudaTextureObject_t rRadiationLengthTex
 ) {
     GPU_TIMER_START();
-    
+
     dim3 blockSize(16, 16);
     dim3 gridSize((rayDimsX + blockSize.x - 1) / blockSize.x,
                   (rayDimsY + blockSize.y - 1) / blockSize.y);
-    
+
     simpleIddCalculationKernel<<<gridSize, blockSize>>>(
         bevDensity, bevCumulSp, bevIdd, bevRSigmaEff, rayWeights,
         firstInside, firstOutside, rayDimsX, rayDimsY, steps,
         cumulIddTex, rRadiationLengthTex
     );
     checkCudaErrors(cudaDeviceSynchronize());
-    
+
     GPU_TIMER_END("Simplified IDD and Sigma Calculation");
 }
 
@@ -399,11 +407,12 @@ void performSigmaTextureCalculation(
     int maxSubspotsPerLayer
 ) {
     GPU_TIMER_START();
-    
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     dim3 blockSize(256);
     int totalCPBPoints = cpbDims.x * cpbDims.y;
     dim3 gridSize((totalCPBPoints + blockSize.x - 1) / blockSize.x);
-    
+
     // Calculate sigma texture for each energy layer
     for (int layerIdx = 0; layerIdx < numLayers; layerIdx++) {
         simpleSigmaTextureKernel<<<gridSize, blockSize>>>(
@@ -413,6 +422,6 @@ void performSigmaTextureCalculation(
         );
         checkCudaErrors(cudaDeviceSynchronize());
     }
-    
+
     GPU_TIMER_END("Simplified Sigma Texture Calculation");
 }

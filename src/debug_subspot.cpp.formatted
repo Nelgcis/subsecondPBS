@@ -1,0 +1,61 @@
+#include <iostream>
+#include <vector>
+#include <cuda_runtime.h>
+#include "../include/core/common.cuh"
+#include "../include/utils/utils.h"
+
+int main() {
+    std::cout << "=== Subspot Data Debug ===" << std::endl;
+
+    // text
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int numLayers = 3;
+    int maxSubspotsPerLayer = 2;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::vector<float> subspotData(numLayers * maxSubspotsPerLayer * 5);
+
+    for (int layer = 0; layer < numLayers; layer++) {
+        for (int subspot = 0; subspot < maxSubspotsPerLayer; subspot++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            int baseIdx = (layer * maxSubspotsPerLayer + subspot) * 5;
+            subspotData[baseIdx + 0] = 0.0f;  // deltaX
+            subspotData[baseIdx + 1] = 0.0f;  // deltaY
+            subspotData[baseIdx + 2] = 10.0f; // weight
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 3] = 1.0f;  // sigmaX
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 4] = 1.0f;  // sigmaY
+        }
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::cout << "Subspot data (first 3 subspots, layer 0):" << std::endl;
+    for (int subspot = 0; subspot < 3; subspot++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        int baseIdx = subspot * 5;
+        std::cout << "Subspot " << subspot << ": ";
+        std::cout << "deltaX=" << subspotData[baseIdx + 0] << ", ";
+        std::cout << "deltaY=" << subspotData[baseIdx + 1] << ", ";
+        std::cout << "weight=" << subspotData[baseIdx + 2] << ", ";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        std::cout << "sigmaX=" << subspotData[baseIdx + 3] << ", ";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        std::cout << "sigmaY=" << subspotData[baseIdx + 4] << std::endl;
+    }
+
+    // create texture
+    cudaTextureObject_t subspotTex = create3DTexture(
+        subspotData.data(),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        make_int3(5, maxSubspotsPerLayer, numLayers),
+        cudaFilterModeLinear,
+        cudaAddressModeClamp
+    );
+
+    std::cout << "Texture created successfully" << std::endl;
+
+    // 清理
+    destroyTextureObjectAndArray(subspotTex);
+
+    return 0;
+}

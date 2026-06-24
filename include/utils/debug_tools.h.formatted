@@ -1,0 +1,362 @@
+/**
+ * \file
+ * \brief 调试工具和辅助函数
+ */
+
+#ifndef DEBUG_TOOLS_H
+#define DEBUG_TOOLS_H
+
+#include <cuda_runtime.h>
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <algorithm>
+#include <cstdlib>
+#include <string>
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Get verbose level (0=off, 1=fine timing, 2=summary only)
+inline int rtdVerboseLevel() {
+    const char* v = std::getenv("RTD_VERBOSE");
+    if (!v) return 0;
+    const std::string s(v);
+    if (s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF") return 0;
+    if (s == "2" || s == "summary") return 2;
+    // Default to 1 for other truthy values
+    return 1;
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Legacy: check if any verbose level is enabled (backward compatibility)
+inline bool rtdVerboseEnabled() {
+    return rtdVerboseLevel() > 0;
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Check if fine timing is enabled (verbose level 1)
+inline bool rtdVerboseFineTiming() {
+    return rtdVerboseLevel() == 1;
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Check if summary timing is enabled (verbose level 2)
+inline bool rtdVerboseSummary() {
+    return rtdVerboseLevel() >= 2;
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Set verbose level (0/1/2, or bool for backward compatibility)
+inline void setRTDVerbose(int level) {
+    std::string val;
+    if (level <= 0) val = "0";
+    else if (level == 1) val = "1";
+    else val = "2";
+    setenv("RTD_VERBOSE", val.c_str(), 1);
+}
+
+// Overload for backward compatibility with bool
+inline void setRTDVerbose(bool enabled) {
+    setRTDVerbose(enabled ? 1 : 0);
+}
+
+// CUDA错误检查宏
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t error = (call); \
+        if (error != cudaSuccess) { \
+            printf("CUDA error at %s:%d - %s\n", __FILE__, __LINE__, cudaGetErrorString(error)); \
+            exit(1); \
+        } \
+    } while(0)
+
+// 调试输出宏
+#ifndef DEBUG_PRINT
+#ifdef DEBUG
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define DEBUG_PRINT(fmt, ...) printf("[DEBUG] " fmt "\n", ##__VA_ARGS__)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define DEBUG_PRINT_VAR(name, value) printf("[DEBUG] %s = %f\n", name, value)
+#else
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define DEBUG_PRINT(fmt, ...)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define DEBUG_PRINT_VAR(name, value)
+#endif
+#endif
+
+// 通用函数调用计时宏
+#ifdef __CUDACC__
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // GPU计时宏 - 细粒度计时（verbose=1时输出）
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_START() cudaEvent_t start_event_gpu_timer_; cudaEventCreate(&start_event_gpu_timer_); cudaEventRecord(start_event_gpu_timer_)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_END(name) \
+        cudaEvent_t stop_event_gpu_timer_; \
+        cudaEventCreate(&stop_event_gpu_timer_); \
+        cudaEventRecord(stop_event_gpu_timer_); \
+        cudaEventSynchronize(stop_event_gpu_timer_); \
+        float gpu_time_ms_; \
+        cudaEventElapsedTime(&gpu_time_ms_, start_event_gpu_timer_, stop_event_gpu_timer_); \
+        do { if (rtdVerboseFineTiming()) printf("[TIMING] %s execution time: %.3f ms\n", name, gpu_time_ms_); } while(0); \
+        cudaEventDestroy(start_event_gpu_timer_); \
+        cudaEventDestroy(stop_event_gpu_timer_)
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // GPU计时宏 - 仅总耗时（verbose=2时输出）
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_START_SUMMARY() cudaEvent_t start_event_gpu_timer_summary_; cudaEventCreate(&start_event_gpu_timer_summary_); cudaEventRecord(start_event_gpu_timer_summary_)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_END_SUMMARY(name) \
+        cudaEvent_t stop_event_gpu_timer_summary_; \
+        cudaEventCreate(&stop_event_gpu_timer_summary_); \
+        cudaEventRecord(stop_event_gpu_timer_summary_); \
+        cudaEventSynchronize(stop_event_gpu_timer_summary_); \
+        float gpu_time_ms_summary_; \
+        cudaEventElapsedTime(&gpu_time_ms_summary_, start_event_gpu_timer_summary_, stop_event_gpu_timer_summary_); \
+        do { if (rtdVerboseSummary()) printf("[TIMING] %s total execution time: %.3f ms\n", name, gpu_time_ms_summary_); } while(0); \
+        cudaEventDestroy(start_event_gpu_timer_summary_); \
+        cudaEventDestroy(stop_event_gpu_timer_summary_)
+#else
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_START()
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_END(name)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_START_SUMMARY()
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define GPU_TIMER_END_SUMMARY(name)
+#endif
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// CPU计时宏 - 细粒度计时（verbose=1时输出）
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CPU_TIMER_START() auto start_cpu_timer_ = std::chrono::high_resolution_clock::now()
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CPU_TIMER_END(name) \
+    auto end_cpu_timer_ = std::chrono::high_resolution_clock::now(); \
+    auto duration_cpu_timer_ = std::chrono::duration_cast<std::chrono::milliseconds>(end_cpu_timer_ - start_cpu_timer_); \
+    do { if (rtdVerboseFineTiming()) printf("[TIMING] %s execution time: %ld ms (CPU)\n", name, duration_cpu_timer_.count()); } while(0)
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// 总耗时计时宏（verbose=2时输出）- 仅输出最终总耗时
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CPU_TIMER_START_SUMMARY() auto start_cpu_timer_summary_ = std::chrono::high_resolution_clock::now()
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CPU_TIMER_END_SUMMARY(name) \
+    auto end_cpu_timer_summary_ = std::chrono::high_resolution_clock::now(); \
+    auto duration_cpu_timer_summary_ = std::chrono::duration_cast<std::chrono::milliseconds>(end_cpu_timer_summary_ - start_cpu_timer_summary_); \
+    do { if (rtdVerboseSummary()) printf("[TIMING] %s total execution time: %ld ms\n", name, duration_cpu_timer_summary_.count()); } while(0)
+
+// 兼容旧的宏名称 - 总是输出（为了向后兼容，改为检查verbose>0）
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define CPU_TIMER_END_FORCE(name) \
+    { \
+        auto end_cpu_timer_force_ = std::chrono::high_resolution_clock::now(); \
+        auto duration_cpu_timer_force_ = std::chrono::duration_cast<std::chrono::milliseconds>(end_cpu_timer_force_ - start_cpu_timer_); \
+        if (rtdVerboseEnabled()) printf("[TIMING] %s execution time: %ld ms (CPU)\n", name, duration_cpu_timer_force_.count()); \
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// 构造函数计时宏 (默认禁用，避免 device printf/性能问题)
+#ifdef __CUDACC__
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define CONSTRUCTOR_TIMER_START() do {} while(0)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define CONSTRUCTOR_TIMER_END(name) do {} while(0)
+#else
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define CONSTRUCTOR_TIMER_START() do {} while(0)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+    #define CONSTRUCTOR_TIMER_END(name) do {} while(0)
+#endif
+
+// Kernel启动计时宏
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define KERNEL_TIMER_START() cudaEvent_t start_kernel_event_; cudaEventCreate(&start_kernel_event_); cudaEventRecord(start_kernel_event_)
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define KERNEL_TIMER_END(name) \
+    cudaEvent_t stop_kernel_event_; \
+    cudaEventCreate(&stop_kernel_event_); \
+    cudaEventRecord(stop_kernel_event_); \
+    cudaEventSynchronize(stop_kernel_event_); \
+    float kernel_time_ms_; \
+    cudaEventElapsedTime(&kernel_time_ms_, start_kernel_event_, stop_kernel_event_); \
+    do { if (rtdVerboseEnabled()) printf("[TIMING] %s kernel execution time: %.3f ms\n", name, kernel_time_ms_); } while(0); \
+    cudaEventDestroy(start_kernel_event_); \
+    cudaEventDestroy(stop_kernel_event_)
+
+// 调试工具类
+class DebugTools {
+public:
+    // 检查GPU内存使用情况
+    static void checkGPUMemory(const char* location) {
+        size_t free, total;
+        cudaMemGetInfo(&free, &total);
+        printf("GPU Memory at %s: Free = %.2f MB, Total = %.2f MB\n",
+               location, free / (1024.0 * 1024.0), total / (1024.0 * 1024.0));
+    }
+
+    // 验证数据传输
+    static bool validateData(float* h_data, float* d_data, int size, const char* name) {
+        std::vector<float> h_copy(size);
+        cudaMemcpy(h_copy.data(), d_data, size * sizeof(float), cudaMemcpyDeviceToHost);
+
+        bool valid = true;
+        for (int i = 0; i < size; i++) {
+            if (abs(h_data[i] - h_copy[i]) > 1e-6f) {
+                printf("Data validation failed for %s at index %d: %f != %f\n",
+                       name, i, h_data[i], h_copy[i]);
+                valid = false;
+                break;
+            }
+        }
+
+        if (valid) {
+            printf("Data validation passed for %s\n", name);
+        }
+        return valid;
+    }
+
+    // 检查核函数启动
+    static void checkKernelLaunch(const char* kernelName) {
+        cudaError_t error = cudaGetLastError();
+        if (error != cudaSuccess) {
+            printf("Kernel launch failed for %s: %s\n", kernelName, cudaGetErrorString(error));
+        } else {
+            printf("Kernel %s launched successfully\n", kernelName);
+        }
+    }
+
+    // 同步设备
+    static void syncDevice(const char* location) {
+        cudaError_t error = cudaDeviceSynchronize();
+        if (error != cudaSuccess) {
+            printf("Device sync failed at %s: %s\n", location, cudaGetErrorString(error));
+        }
+    }
+
+    // 打印数组内容
+    static void printArray(float* data, int size, const char* name, int maxElements = 10) {
+        printf("Array %s (size=%d):\n", name, size);
+        for (int i = 0; i < std::min(size, maxElements); i++) {
+            printf("  [%d] = %f\n", i, data[i]);
+        }
+        if (size > maxElements) {
+            printf("  ... (showing first %d elements)\n", maxElements);
+        }
+    }
+
+    // 打印3D数组内容
+    static void print3DArray(float* data, int3 dims, const char* name) {
+        printf("3D Array %s (dims=%dx%dx%d):\n", name, dims.x, dims.y, dims.z);
+        for (int z = 0; z < std::min(dims.z, 3); z++) {
+            for (int y = 0; y < std::min(dims.y, 3); y++) {
+                for (int x = 0; x < std::min(dims.x, 3); x++) {
+                    int idx = z * dims.y * dims.x + y * dims.x + x;
+                    printf("  [%d,%d,%d] = %f\n", x, y, z, data[idx]);
+                }
+            }
+        }
+    }
+
+    // 性能计时器
+    class Timer {
+    private:
+        std::chrono::high_resolution_clock::time_point start_time;
+        std::string name;
+
+    public:
+        Timer(const std::string& timerName) : name(timerName) {
+            start_time = std::chrono::high_resolution_clock::now();
+        }
+
+        ~Timer() {
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            printf("[TIMING] %s total execution time: %ld ms\n", name.c_str(), duration.count());
+        }
+    };
+
+    // 检查纹理对象
+    static bool checkTextureObject(cudaTextureObject_t texObj, const char* name) {
+        if (texObj == 0) {
+            printf("Error: Texture object %s is null\n", name);
+            return false;
+        }
+        printf("Texture object %s is valid\n", name);
+        return true;
+    }
+
+    // 检查CUDA设备属性
+    static void printDeviceInfo(int deviceId = 0) {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, deviceId);
+
+        printf("CUDA Device %d Info:\n", deviceId);
+        printf("  Name: %s\n", prop.name);
+        printf("  Compute Capability: %d.%d\n", prop.major, prop.minor);
+        printf("  Total Global Memory: %.2f GB\n", prop.totalGlobalMem / (1024.0 * 1024.0 * 1024.0));
+        printf("  Shared Memory per Block: %zu KB\n", prop.sharedMemPerBlock / 1024);
+        printf("  Max Threads per Block: %d\n", prop.maxThreadsPerBlock);
+        printf("  Max Threads per Multiprocessor: %d\n", prop.maxThreadsPerMultiProcessor);
+        printf("  Number of Multiprocessors: %d\n", prop.multiProcessorCount);
+        printf("  Warp Size: %d\n", prop.warpSize);
+    }
+};
+
+#ifdef __CUDACC__
+// 定义在debug_kernels.cu
+__global__ void debugKernel(float* data, int size, const char* message);
+#endif
+
+class MemoryTracker {
+private:
+    static std::vector<void*> allocated_memory;
+
+public:
+    static void trackAllocation(void* ptr, size_t size, const char* location) {
+        allocated_memory.push_back(ptr);
+        printf("Memory allocated: %p (%zu bytes) at %s\n", ptr, size, location);
+    }
+
+    static void trackDeallocation(void* ptr, const char* location) {
+        auto it = std::find(allocated_memory.begin(), allocated_memory.end(), ptr);
+        if (it != allocated_memory.end()) {
+            allocated_memory.erase(it);
+            printf("Memory deallocated: %p at %s\n", ptr, location);
+        } else {
+            printf("Warning: Attempting to deallocate untracked memory %p at %s\n", ptr, location);
+        }
+    }
+
+    static void checkLeaks() {
+        if (!allocated_memory.empty()) {
+            printf("Memory leaks detected: %zu allocations not freed\n", allocated_memory.size());
+            for (void* ptr : allocated_memory) {
+                printf("  Leaked: %p\n", ptr);
+            }
+        } else {
+            printf("No memory leaks detected\n");
+        }
+    }
+};
+
+// 调试宏定义
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define DEBUG_MALLOC(ptr, size, location) \
+    do { \
+        cudaMalloc(&ptr, size); \
+        MemoryTracker::trackAllocation(ptr, size, location); \
+    } while(0)
+
+// FORMAT-WARN: 宏函数建议改为 template/inline 函数，见 format_changes.log
+#define DEBUG_FREE(ptr, location) \
+    do { \
+        MemoryTracker::trackDeallocation(ptr, location); \
+        cudaFree(ptr); \
+    } while(0)
+
+#endif // DEBUG_TOOLS_H
+

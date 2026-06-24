@@ -1,0 +1,4415 @@
+/**
+ * \file
+ * \brief Test program for integrated wrapper with subspot to CPB convolution
+ */
+
+#include "../include/core/raytracedicom_integration.h"
+#include "../include/core/common.cuh"
+#include "../include/core/Macro.cuh"
+#include "../include/utils/debug_tools.h"
+#include "../include/utils/nuclear_table_utils.h"
+#include <iostream>
+#include <vector>
+#include <array>
+#include <random>
+#include <chrono>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
+#include <iomanip>
+#include <cmath>
+#include <cstdlib>
+#include <algorithm>
+#include <cstring>
+#include <limits>
+#include <regex>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+// Optional: load the reference LUTs in RayTraceDicom table format
+#include "../include/utils/energy_reader.h"
+#include "../include/utils/energy_struct.h"
+
+// --------------------------------------------------------------------------------------
+// CSV loaders for CarbonPBS-exported tensors
+//
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// The first zip (dose_inputs_csv.zip) exports arrays in a simple CSV format:
+//   - 1D: header "index,value" with optional meta lines "#meta,shape,...".
+//   - 2D: header "i,j,value".
+//   - 3D: header "i,j,k,value".
+//
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// This test prefers those CSV inputs (plus the compact subspot CSV provided separately)
+// over the old hard-coded synthetic inputs.
+// --------------------------------------------------------------------------------------
+
+static inline std::string trim_copy(std::string s) {
+    const char* ws = " \t\n\r\f\v";
+    const auto a = s.find_first_not_of(ws);
+    if (a == std::string::npos) return std::string();
+    const auto b = s.find_last_not_of(ws);
+    return s.substr(a, b - a + 1);
+}
+
+static bool readMetaShape(const std::string& path, std::vector<int>& shapeOut) {
+    std::ifstream f(path);
+    if (!f.is_open()) return false;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("#meta,shape", 0) == 0) {
+            const auto lp = line.find('(');
+            const auto rp = line.find(')');
+            if (lp == std::string::npos || rp == std::string::npos || rp <= lp) return false;
+            const std::string inside = line.substr(lp + 1, rp - lp - 1);
+            shapeOut.clear();
+            std::stringstream ss(inside);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) {
+                tok = trim_copy(tok);
+                if (tok.empty()) continue;
+                shapeOut.push_back(std::stoi(tok));
+            }
+            return !shapeOut.empty();
+        }
+        if (!line.empty() && line[0] != '#') break;
+    }
+    return false;
+}
+
+static bool readMetaValue(const std::string& path, const std::string& key, std::string& valueOut) {
+    std::ifstream f(path);
+    if (!f.is_open()) return false;
+    const std::string prefix = "#meta," + key + ",";
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind(prefix, 0) == 0) {
+            valueOut = trim_copy(line.substr(prefix.size()));
+            return !valueOut.empty();
+        }
+        if (!line.empty() && line[0] != '#') break;
+    }
+    return false;
+}
+
+static bool isSliceExport(const std::string& path) {
+    std::string exportMode;
+    return readMetaValue(path, "export_mode", exportMode) && exportMode == "slice";
+}
+
+static bool rtdInputAuditEnabled() {
+    const char* v = std::getenv("RTD_INPUT_AUDIT");
+    if (!v) return false;
+    const std::string s(v);
+    return !(s == "0" || s == "false" || s == "FALSE" || s == "off" || s == "OFF");
+}
+
+enum class SliceMode {
+    Head,
+    Tail
+};
+
+static SliceMode parseSliceModeEnv(const char* envName, SliceMode fallback) {
+    const char* v = std::getenv(envName);
+    if (!v || !*v) return fallback;
+    std::string s(v);
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    if (s == "head" || s == "prefix") return SliceMode::Head;
+    if (s == "tail" || s == "suffix") return SliceMode::Tail;
+    return fallback;
+}
+
+static const char* sliceModeName(SliceMode mode) {
+    return mode == SliceMode::Head ? "head" : "tail";
+}
+
+static std::vector<float> headSliceEnergies(const std::vector<float>& fullEnergies, int exportedRows) {
+    if (exportedRows <= 0 || fullEnergies.empty()) return {};
+    const size_t keep = std::min(fullEnergies.size(), static_cast<size_t>(exportedRows));
+    return std::vector<float>(fullEnergies.begin(), fullEnergies.begin() + static_cast<std::ptrdiff_t>(keep));
+}
+
+static std::vector<float> tailSliceEnergies(const std::vector<float>& fullEnergies, int exportedRows) {
+    if (exportedRows <= 0 || fullEnergies.empty()) return {};
+    const size_t keep = std::min(fullEnergies.size(), static_cast<size_t>(exportedRows));
+    return std::vector<float>(fullEnergies.end() - static_cast<std::ptrdiff_t>(keep), fullEnergies.end());
+}
+
+static std::vector<float> selectSliceEnergies(const std::vector<float>& fullEnergies, int exportedRows, SliceMode mode) {
+    return mode == SliceMode::Head ? headSliceEnergies(fullEnergies, exportedRows)
+                                   : tailSliceEnergies(fullEnergies, exportedRows);
+}
+
+static float findFractionalIndexMonotonicHost(const std::vector<float>& vec, float value) {
+    const int n = static_cast<int>(vec.size());
+    if (n <= 1) return 0.0f;
+    const bool increasing = vec.back() >= vec.front();
+    if (increasing) {
+        if (value <= vec.front()) return 0.0f;
+        if (value >= vec.back()) return static_cast<float>(n - 1);
+        for (int i = 1; i < n; ++i) {
+            if (value <= vec[i]) {
+                const float denom = vec[i] - vec[i - 1];
+                const float t = (std::fabs(denom) > 1.0e-12f) ? ((value - vec[i - 1]) / denom) : 0.0f;
+                return static_cast<float>(i - 1) + t;
+            }
+        }
+    } else {
+        if (value >= vec.front()) return 0.0f;
+        if (value <= vec.back()) return static_cast<float>(n - 1);
+        for (int i = 1; i < n; ++i) {
+            if (value >= vec[i]) {
+                const float denom = vec[i] - vec[i - 1];
+                const float t = (std::fabs(denom) > 1.0e-12f) ? ((value - vec[i - 1]) / denom) : 0.0f;
+                return static_cast<float>(i - 1) + t;
+            }
+        }
+    }
+    return static_cast<float>(n - 1);
+}
+
+static std::vector<int> representativeIndices(int n) {
+    if (n <= 0) return {};
+    std::vector<int> idx = {0, n / 2, n - 1};
+    std::sort(idx.begin(), idx.end());
+    idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
+    return idx;
+}
+
+static void printSampleWindow(const std::vector<float>& v, int base, int count) {
+    std::cout << "[";
+    for (int i = 0; i < count; ++i) {
+        const int idx = base + i;
+        if (idx < 0 || idx >= static_cast<int>(v.size())) {
+            std::cout << "nan";
+        } else {
+            std::cout << v[static_cast<size_t>(idx)];
+        }
+        if (i + 1 != count) std::cout << ", ";
+    }
+    std::cout << "]";
+}
+
+static void printEnergyAudit(const char* tag, const RTDBeamSettings& beam, const RTDEnergyStruct& energy) {
+    if (!rtdInputAuditEnabled()) return;
+    std::cout << "[INPUT_AUDIT][" << tag << "] Energy Axes" << std::endl;
+    const std::vector<int> layerSel = representativeIndices(static_cast<int>(beam.energies.size()));
+    for (int idx : layerSel) {
+        const float layerEnergy = beam.energies[static_cast<size_t>(idx)];
+        const float energyIdx = energy.energiesPerU.empty() ? 0.0f : findFractionalIndexMonotonicHost(energy.energiesPerU, layerEnergy);
+        const float profileRowIdx = beam.profileEnergies.empty() ? 0.0f : findFractionalIndexMonotonicHost(beam.profileEnergies, layerEnergy);
+        std::cout << "  layer=" << idx
+                  << " energy=" << layerEnergy
+                  << " energyIdx=" << energyIdx
+                  << " profileRowIdx=" << profileRowIdx
+                  << " longitudalCutoff="
+                  << ((idx < static_cast<int>(beam.layerLongitudinalCutoffs.size())) ? beam.layerLongitudinalCutoffs[static_cast<size_t>(idx)] : 0.0f)
+                  << std::endl;
+    }
+    const std::vector<int> energySel = representativeIndices(static_cast<int>(energy.energiesPerU.size()));
+    for (int idx : energySel) {
+        std::cout << "  energiesPerU[" << idx << "]=" << energy.energiesPerU[static_cast<size_t>(idx)]
+                  << " peakDepth=" << (idx < static_cast<int>(energy.peakDepths.size()) ? energy.peakDepths[static_cast<size_t>(idx)] : 0.0f)
+                  << " scaleFact=" << (idx < static_cast<int>(energy.scaleFacts.size()) ? energy.scaleFacts[static_cast<size_t>(idx)] : 0.0f)
+                  << std::endl;
+    }
+    const std::vector<int> profileSel = representativeIndices(static_cast<int>(beam.profileEnergies.size()));
+    for (int idx : profileSel) {
+        std::cout << "  profileEnergies[" << idx << "]=" << beam.profileEnergies[static_cast<size_t>(idx)] << std::endl;
+    }
+}
+
+static void printCiddAudit(const char* tag, const RTDEnergyStruct& energy) {
+    if (!rtdInputAuditEnabled()) return;
+    if (energy.nEnergies <= 0 || energy.nEnergySamples <= 0 || energy.ciddMatrix.empty()) return;
+    std::cout << "[INPUT_AUDIT][" << tag << "] CIDD Rows" << std::endl;
+    const std::vector<int> rows = representativeIndices(energy.nEnergies);
+    for (int row : rows) {
+        const size_t base = static_cast<size_t>(row) * static_cast<size_t>(energy.nEnergySamples);
+        std::vector<float> rowData(energy.ciddMatrix.begin() + static_cast<std::ptrdiff_t>(base),
+                                   energy.ciddMatrix.begin() + static_cast<std::ptrdiff_t>(base + energy.nEnergySamples));
+        int peakIdx = 0;
+        float maxV = -std::numeric_limits<float>::infinity();
+        for (int i = 0; i < energy.nEnergySamples; ++i) {
+            if (rowData[static_cast<size_t>(i)] > maxV) {
+                maxV = rowData[static_cast<size_t>(i)];
+                peakIdx = i;
+            }
+        }
+        std::cout << "  row=" << row
+                  << " energy=" << (row < static_cast<int>(energy.energiesPerU.size()) ? energy.energiesPerU[static_cast<size_t>(row)] : 0.0f)
+                  << " peakDepth=" << (row < static_cast<int>(energy.peakDepths.size()) ? energy.peakDepths[static_cast<size_t>(row)] : 0.0f)
+                  << " cidd_head=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        printSampleWindow(rowData, 0, std::min(8, energy.nEnergySamples));
+        std::cout << " cidd_peak=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        printSampleWindow(rowData, std::max(0, peakIdx - 4), std::min(8, energy.nEnergySamples));
+        std::cout << " cidd_tail=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        printSampleWindow(rowData, std::max(0, energy.nEnergySamples - 8), std::min(8, energy.nEnergySamples));
+        std::cout << std::endl;
+    }
+}
+
+static void printProfileAudit(const char* tag, const RTDBeamSettings& beam) {
+    if (!rtdInputAuditEnabled()) return;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.profileSetting.size() < 3 || beam.profileData.empty()) return;
+    const int depthN = std::max(1, static_cast<int>(std::lround(beam.profileSetting[2])));
+    int rows = 0;
+    if (!beam.profileEnergies.empty()) {
+        rows = static_cast<int>(beam.profileEnergies.size());
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    } else if (!beam.beamParaData.empty() && (beam.beamParaData.size() % 3) == 0) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        rows = static_cast<int>(beam.beamParaData.size() / 3);
+    } else if (depthN > 0) {
+        rows = static_cast<int>(beam.profileData.size() / static_cast<size_t>(depthN));
+    }
+    const int channels = (rows > 0 && depthN > 0)
+        ? static_cast<int>(beam.profileData.size() / (static_cast<size_t>(rows) * static_cast<size_t>(depthN)))
+        : 0;
+    if (rows <= 0 || channels <= 0) return;
+    const int nGauss = std::max(0, (channels - 1) / 2);
+    std::cout << "[INPUT_AUDIT][" << tag << "] Profile/BeamPara"
+              << " rows=" << rows
+              << " depthN=" << depthN
+              << " channels=" << channels
+              << " profileDepth0=" << beam.profileSetting[0]
+              << " profileDepthStep=" << beam.profileSetting[1]
+              << std::endl;
+    const std::vector<int> layerSel = representativeIndices(static_cast<int>(beam.energies.size()));
+    for (int layer : layerSel) {
+        const float layerEnergy = beam.energies[static_cast<size_t>(layer)];
+        const float profileRowIdx = beam.profileEnergies.empty() ? 0.0f : findFractionalIndexMonotonicHost(beam.profileEnergies, layerEnergy);
+        const int row = std::max(0, std::min(rows - 1, static_cast<int>(std::lround(profileRowIdx))));
+        const std::vector<int> depthSel = representativeIndices(depthN);
+        std::cout << "  layer=" << layer
+                  << " energy=" << layerEnergy
+                  << " profileRowIdx=" << profileRowIdx
+                  << " beamPara=("
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                  << (row * 3 + 0 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 0)] : 0.0f) << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                  << (row * 3 + 1 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 1)] : 0.0f) << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                  << (row * 3 + 2 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 2)] : 0.0f) << ")"
+                  << std::endl;
+        for (int depth : depthSel) {
+            const size_t base = (static_cast<size_t>(row) * static_cast<size_t>(depthN) + static_cast<size_t>(depth)) * static_cast<size_t>(channels);
+            std::cout << "    depth=" << depth << " weights=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            printSampleWindow(beam.profileData, static_cast<int>(base), std::min(5, nGauss));
+            std::cout << " sigmas=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            printSampleWindow(beam.profileData, static_cast<int>(base) + nGauss, std::min(5, nGauss));
+            std::cout << std::endl;
+        }
+    }
+}
+
+static int totalSpotCountHost(const std::vector<int>& layerSpotCounts) {
+    int total = 0;
+    for (int c : layerSpotCounts) {
+        if (c > 0) total += c;
+    }
+    return total;
+}
+
+static const std::vector<float>& activeWeqHeaderHost(const RTDBeamSettings& beam) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.waterEquivalence.size() >= 9) return beam.waterEquivalence;
+    return beam.rayWeqHeader;
+}
+
+static void validateTestEntryContractOrThrow(
+    const RTDBeamSettings& beam,
+    const RTDEnergyStruct& energy,
+    const int3& ctDims,
+    const float3& ctResolution,
+    const int3& doseDims,
+    const float3& doseResolution
+) {
+    auto requireOrThrow = [](bool cond, const std::string& msg) {
+        if (!cond) {
+            throw std::runtime_error("[TEST_ENTRY_ASSERT] " + msg);
+        }
+    };
+
+    requireOrThrow(ctDims.x > 0 && ctDims.y > 0 && ctDims.z > 0, "ctDims must be positive");
+    requireOrThrow(doseDims.x > 0 && doseDims.y > 0 && doseDims.z > 0, "doseDims must be positive");
+    requireOrThrow(ctResolution.x > 0.0f && ctResolution.y > 0.0f && ctResolution.z > 0.0f, "ctResolution must be positive");
+    requireOrThrow(doseResolution.x > 0.0f && doseResolution.y > 0.0f && doseResolution.z > 0.0f, "doseResolution must be positive");
+
+    requireOrThrow(!beam.energies.empty(), "beam.energies must not be empty");
+    requireOrThrow(!beam.layerSpotCounts.empty(), "beam.layerSpotCounts must not be empty");
+    requireOrThrow(!beam.spotWeights.empty(), "beam.spotWeights must not be empty");
+    requireOrThrow(!beam.spotPositions.empty() && (beam.spotPositions.size() % 2u) == 0u,
+                   "beam.spotPositions must be non-empty and shaped as [N][2]");
+
+    const int totalSpots = totalSpotCountHost(beam.layerSpotCounts);
+    requireOrThrow(static_cast<int>(beam.layerSpotCounts.size()) == static_cast<int>(beam.energies.size()),
+                   "layerSpotCounts size must match beam.energies size");
+    requireOrThrow(totalSpots == static_cast<int>(beam.spotWeights.size()),
+                   "sum(layerSpotCounts) must match spotWeights size");
+    requireOrThrow(totalSpots == static_cast<int>(beam.spotPositions.size() / 2u),
+                   "sum(layerSpotCounts) must match spotPositions row count");
+    if (!beam.spotBeamDirections.empty()) {
+        requireOrThrow(static_cast<int>(beam.spotBeamDirections.size() / 3u) == totalSpots &&
+                           (beam.spotBeamDirections.size() % 3u) == 0u,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                       "spotBeamDirections must be shaped as [N][3] and match spot count");
+    }
+
+    requireOrThrow(static_cast<int>(beam.spotSigmas.size()) == static_cast<int>(beam.energies.size()),
+                   "spotSigmas size must match beam.energies size");
+    if (beam.maxSubspotsPerLayer > 0 || !beam.subspotData.empty()) {
+        requireOrThrow(beam.maxSubspotsPerLayer > 0, "beam.maxSubspotsPerLayer must be positive when subspotData is provided");
+        const size_t expectedSubspotN =
+            beam.energies.size() * static_cast<size_t>(beam.maxSubspotsPerLayer) * 5ull;
+        requireOrThrow(beam.subspotData.size() == expectedSubspotN,
+                       "beam.subspotData size must equal numLayers* maxSubspotsPerLayer* 5");
+    }
+
+    if (!beam.layerLongitudinalCutoffs.empty()) {
+        requireOrThrow(beam.layerLongitudinalCutoffs.size() == beam.energies.size(),
+                       "layerLongitudinalCutoffs size must match beam.energies size");
+    }
+    if (!beam.profileData.empty()) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        requireOrThrow(beam.profileSetting.size() >= 3, "profileData requires profileSetting[depth0,step,n]");
+    }
+    if (!beam.beamParaData.empty()) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        requireOrThrow((beam.beamParaData.size() % 3u) == 0u, "beamParaData must be shaped as [rows][3]");
+    }
+    if (beam.spotPositionsAreIndices) {
+        requireOrThrow(activeWeqHeaderHost(beam).size() >= 9u,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                       "spotPositionsAreIndices=true requires a 9-value WEQ header");
+    }
+
+    requireOrThrow(energy.nEnergies > 0 && energy.nEnergySamples > 0,
+                   "energyData dimensions must be positive");
+    requireOrThrow(static_cast<int>(energy.energiesPerU.size()) == energy.nEnergies,
+                   "energiesPerU size must match energy.nEnergies");
+    requireOrThrow(static_cast<int>(energy.scaleFacts.size()) == energy.nEnergies,
+                   "scaleFacts size must match energy.nEnergies");
+    requireOrThrow(static_cast<int>(energy.peakDepths.size()) == energy.nEnergies,
+                   "peakDepths size must match energy.nEnergies");
+    requireOrThrow(energy.ciddMatrix.size() ==
+                       static_cast<size_t>(energy.nEnergies) * static_cast<size_t>(energy.nEnergySamples),
+                   "ciddMatrix size must equal nEnergies* nEnergySamples");
+}
+
+static void printEntryAuditSummary(
+    const char* tag,
+    int beamIdx,
+    const RTDBeamSettings& beam,
+    const RTDEnergyStruct& energy,
+    const int3& ctDims,
+    const float3& ctResolution,
+    const float3& ctCorner,
+    const int3& doseDims,
+    const float3& doseResolution,
+    const float3& doseCorner
+) {
+    if (!rtdInputAuditEnabled()) return;
+
+    const int totalSpots = totalSpotCountHost(beam.layerSpotCounts);
+    const int spotPosRows = static_cast<int>(beam.spotPositions.size() / 2u);
+    const int spotDirRows = static_cast<int>(beam.spotBeamDirections.size() / 3u);
+    const int beamParaRows = static_cast<int>(beam.beamParaData.size() / 3u);
+    const int profileDepthN =
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        (beam.profileSetting.size() >= 3) ? std::max(0, static_cast<int>(std::lround(beam.profileSetting[2]))) : 0;
+    const size_t expectedSubspotN =
+        beam.energies.size() * static_cast<size_t>(std::max(beam.maxSubspotsPerLayer, 0)) * 5ull;
+
+    const std::vector<float>& weqHeader = activeWeqHeaderHost(beam);
+    std::cout << "[INPUT_AUDIT][" << tag << "] beamIdx=" << beamIdx
+              << " GRID"
+              << " ctDims=(" << ctDims.x << "," << ctDims.y << "," << ctDims.z << ")"
+              << " ctRes=(" << ctResolution.x << "," << ctResolution.y << "," << ctResolution.z << ")"
+              << " ctCorner=(" << ctCorner.x << "," << ctCorner.y << "," << ctCorner.z << ")"
+              << " doseDims=(" << doseDims.x << "," << doseDims.y << "," << doseDims.z << ")"
+              << " doseRes=(" << doseResolution.x << "," << doseResolution.y << "," << doseResolution.z << ")"
+              << " doseCorner=(" << doseCorner.x << "," << doseCorner.y << "," << doseCorner.z << ")"
+              << std::endl;
+
+    std::cout << "[INPUT_AUDIT][" << tag << "] beamIdx=" << beamIdx
+              << " GEOM"
+              << " source=(" << beam.sourcePosition.x << "," << beam.sourcePosition.y << "," << beam.sourcePosition.z << ")"
+              << " sad=" << beam.sad
+              << " sourceDist=(" << beam.sourceDist.x << "," << beam.sourceDist.y << ")"
+              << " beamDir=(" << beam.beamDirection.x << "," << beam.beamDirection.y << "," << beam.beamDirection.z << ")"
+              << " bmX=(" << beam.bmXDirection.x << "," << beam.bmXDirection.y << "," << beam.bmXDirection.z << ")"
+              << " bmY=(" << beam.bmYDirection.x << "," << beam.bmYDirection.y << "," << beam.bmYDirection.z << ")"
+              << " refPlaneZ=" << beam.refPlaneZ
+              << std::endl;
+
+    std::cout << "[INPUT_AUDIT][" << tag << "] beamIdx=" << beamIdx
+              << " SPOTS"
+              << " numLayers=" << beam.energies.size()
+              << " layerSpotCounts=" << beam.layerSpotCounts.size()
+              << " totalSpots=" << totalSpots
+              << " spotPosRows=" << spotPosRows
+              << " spotWeights=" << beam.spotWeights.size()
+              << " spotDirRows=" << spotDirRows
+              << " raySpacing=(" << beam.raySpacing.x << "," << beam.raySpacing.y << ")"
+              << " spotDelta=(" << beam.spotDelta.x << "," << beam.spotDelta.y << "," << beam.spotDelta.z << ")"
+              << " maxSubspots=" << beam.maxSubspotsPerLayer
+              << " layerCutoffs=" << beam.layerLongitudinalCutoffs.size()
+              << " roiLinear=" << beam.roiLinearIndices.size()
+              << " spotPositionsAreIndices=" << (beam.spotPositionsAreIndices ? 1 : 0)
+              << std::endl;
+
+    std::cout << "[INPUT_AUDIT][" << tag << "] beamIdx=" << beamIdx
+              << " WEQ"
+              << " activeHeaderLen=" << std::min<size_t>(weqHeader.size(), 9u)
+              << " weqVectorLen=" << beam.waterEquivalence.size()
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+              << " bodyLen=" << (beam.waterEquivalence.size() >= 9 ? (beam.waterEquivalence.size() - 9u) : 0u);
+    if (weqHeader.size() >= 9u) {
+        std::cout << " header9=("
+                  << weqHeader[0] << "," << weqHeader[1] << "," << weqHeader[2] << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                  << weqHeader[3] << "," << weqHeader[4] << "," << weqHeader[5] << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                  << weqHeader[6] << "," << weqHeader[7] << "," << weqHeader[8] << ")";
+        if (beam.spotPositions.size() >= 2u) {
+            const float rawX = beam.spotPositions[0];
+            const float rawY = beam.spotPositions[1];
+            const int ix = static_cast<int>(std::floor(rawX));
+            const int iy = static_cast<int>(std::floor(rawY));
+            const float originX = weqHeader[6] + rawX * weqHeader[7];
+            const float originY = weqHeader[3] + rawY * weqHeader[4];
+            const float centeredX = weqHeader[6] + (rawX - 0.5f) * weqHeader[7];
+            const float centeredY = weqHeader[3] + (rawY - 0.5f) * weqHeader[4];
+            std::cout << " spot0Raw=(" << rawX << "," << rawY << ")"
+                      << " spot0Floor=(" << ix << "," << iy << ")"
+                      << " spot0Origin=(" << originX << "," << originY << ")"
+                      << " spot0Centered=(" << centeredX << "," << centeredY << ")";
+        }
+    }
+    std::cout << std::endl;
+
+    std::cout << "[INPUT_AUDIT][" << tag << "] beamIdx=" << beamIdx
+              << " LUT"
+              << " energyRows=" << energy.nEnergies
+              << " energySamples=" << energy.nEnergySamples
+              << " layerEnergies=" << beam.energies.size()
+              << " profileEnergyRows=" << beam.profileEnergies.size()
+              << " profileDepthN=" << profileDepthN
+              << " profileRaw=" << beam.profileData.size()
+              << " beamParaRows=" << beamParaRows
+              << " subspotExpected=" << expectedSubspotN
+              << " subspotActual=" << beam.subspotData.size()
+              << std::endl;
+}
+
+static float interpolatePeakDepthFromReference(const EnergyStruct& ref, float energy) {
+    if (ref.energiesPerU.empty() || ref.peakDepths.empty()) return 0.0f;
+    const int n = std::min(static_cast<int>(ref.energiesPerU.size()), static_cast<int>(ref.peakDepths.size()));
+    if (n <= 0) return 0.0f;
+    if (n == 1) return ref.peakDepths[0];
+
+    const bool increasing = ref.energiesPerU[n - 1] >= ref.energiesPerU[0];
+    if (increasing) {
+        if (energy <= ref.energiesPerU[0]) return ref.peakDepths[0];
+        if (energy >= ref.energiesPerU[n - 1]) return ref.peakDepths[n - 1];
+        for (int i = 1; i < n; ++i) {
+            if (energy <= ref.energiesPerU[i]) {
+                const float e0 = ref.energiesPerU[i - 1];
+                const float e1 = ref.energiesPerU[i];
+                const float t = (std::fabs(e1 - e0) > 1.0e-12f) ? ((energy - e0) / (e1 - e0)) : 0.0f;
+                return ref.peakDepths[i - 1] + (ref.peakDepths[i] - ref.peakDepths[i - 1]) * t;
+            }
+        }
+    } else {
+        if (energy >= ref.energiesPerU[0]) return ref.peakDepths[0];
+        if (energy <= ref.energiesPerU[n - 1]) return ref.peakDepths[n - 1];
+        for (int i = 1; i < n; ++i) {
+            if (energy >= ref.energiesPerU[i]) {
+                const float e0 = ref.energiesPerU[i - 1];
+                const float e1 = ref.energiesPerU[i];
+                const float t = (std::fabs(e1 - e0) > 1.0e-12f) ? ((energy - e0) / (e1 - e0)) : 0.0f;
+                return ref.peakDepths[i - 1] + (ref.peakDepths[i] - ref.peakDepths[i - 1]) * t;
+            }
+        }
+    }
+    return ref.peakDepths[n - 1];
+}
+
+static std::vector<float> derivePeakDepthsFromIdd(
+    const std::vector<float>& idd,
+    int nEnergies,
+    int nEnergySamples,
+    float start,
+    float step
+) {
+    std::vector<float> peakDepths(static_cast<size_t>(std::max(0, nEnergies)), 0.0f);
+    if (nEnergies <= 0 || nEnergySamples <= 0 || !(step > 0.0f)) {
+        return peakDepths;
+    }
+
+    for (int e = 0; e < nEnergies; ++e) {
+        const size_t rowBase = static_cast<size_t>(e) * static_cast<size_t>(nEnergySamples);
+        int bestIdx = 0;
+        float bestVal = -std::numeric_limits<float>::infinity();
+        for (int j = 0; j < nEnergySamples; ++j) {
+            const float v = idd[rowBase + static_cast<size_t>(j)];
+            if (std::isfinite(v) && v > bestVal) {
+                bestVal = v;
+                bestIdx = j;
+            }
+        }
+        peakDepths[static_cast<size_t>(e)] = start + step * static_cast<float>(bestIdx);
+    }
+
+    return peakDepths;
+}
+
+struct ZProjectionStats {
+    std::vector<double> sumZ;
+    std::vector<float> maxZ;
+    int peakSlice = -1;
+    double peakSum = 0.0;
+    float peakMax = 0.0f;
+};
+
+static const char* axisName(int axis) {
+    switch (axis) {
+        case 0: return "x";
+        case 1: return "y";
+        default: return "z";
+    }
+}
+
+static int axisDim(const int3& dims, int axis) {
+    switch (axis) {
+        case 0: return dims.x;
+        case 1: return dims.y;
+        default: return dims.z;
+    }
+}
+
+static float axisSpacing(const float3& spacing, int axis) {
+    switch (axis) {
+        case 0: return spacing.x;
+        case 1: return spacing.y;
+        default: return spacing.z;
+    }
+}
+
+static float axisOrigin(const float3& origin, int axis) {
+    switch (axis) {
+        case 0: return origin.x;
+        case 1: return origin.y;
+        default: return origin.z;
+    }
+}
+
+static float axisCenterCoordinate(const float3& origin, const float3& spacing, int axis, int idx) {
+    return axisOrigin(origin, axis) + (static_cast<float>(idx) + 0.5f) * axisSpacing(spacing, axis);
+}
+
+static size_t doseIndexZMajor(const int3& dims, int x, int y, int z) {
+    return (static_cast<size_t>(z) * static_cast<size_t>(dims.y) + static_cast<size_t>(y)) * static_cast<size_t>(dims.x) +
+           static_cast<size_t>(x);
+}
+
+static float3 normalizeSafeHost(float3 v) {
+    const float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (len > 1.0e-8f) {
+        v.x /= len;
+        v.y /= len;
+        v.z /= len;
+    }
+    return v;
+}
+
+static float dot3Host(float3 a, float3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+static float3 cross3Host(float3 a, float3 b) {
+    return make_float3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+
+static float3 inferBeamDepthDirection(const RTDBeamSettings& beam) {
+    const float3 beamDir = normalizeSafeHost(beam.beamDirection);
+    const float3 bmX = normalizeSafeHost(beam.bmXDirection);
+    const float3 bmY = normalizeSafeHost(beam.bmYDirection);
+    float3 bmZ = normalizeSafeHost(cross3Host(bmX, bmY));
+    if (std::fabs(dot3Host(bmZ, beamDir)) > 1.0e-6f && dot3Host(bmZ, beamDir) < 0.0f) {
+        bmZ.x *= -1.0f;
+        bmZ.y *= -1.0f;
+        bmZ.z *= -1.0f;
+    }
+    if (std::fabs(bmZ.x) < 1.0e-8f && std::fabs(bmZ.y) < 1.0e-8f && std::fabs(bmZ.z) < 1.0e-8f) {
+        bmZ = beamDir;
+    }
+    return bmZ;
+}
+
+static int inferDepthAxisFromBeam(const RTDBeamSettings& beam) {
+    const float3 bmZ = inferBeamDepthDirection(beam);
+    const float ax = std::fabs(bmZ.x);
+    const float ay = std::fabs(bmZ.y);
+    const float az = std::fabs(bmZ.z);
+    if (ax >= ay && ax >= az) return 0;
+    if (ay >= ax && ay >= az) return 1;
+    return 2;
+}
+
+static void printBeamAxisAudit(const RTDBeamSettings& beam, int depthAxis) {
+    const float3 beamDir = normalizeSafeHost(beam.beamDirection);
+    const float3 bmX = normalizeSafeHost(beam.bmXDirection);
+    const float3 bmY = normalizeSafeHost(beam.bmYDirection);
+    const float3 bmZ = inferBeamDepthDirection(beam);
+
+    std::cout << "\nBeam Axis Audit:" << std::endl;
+    std::cout << "  beamDir=(" << beamDir.x << ", " << beamDir.y << ", " << beamDir.z << ")" << std::endl;
+    std::cout << "  bmX=(" << bmX.x << ", " << bmX.y << ", " << bmX.z << ")" << std::endl;
+    std::cout << "  bmY=(" << bmY.x << ", " << bmY.y << ", " << bmY.z << ")" << std::endl;
+    std::cout << "  inferred bmZ/depthDir=(" << bmZ.x << ", " << bmZ.y << ", " << bmZ.z << ")" << std::endl;
+    std::cout << "  inferred depth axis=" << axisName(depthAxis) << std::endl;
+    std::cout << "  note: doseGrid shape/order does not define physical depth axis; beam basis does." << std::endl;
+}
+
+static std::vector<float> convertDoseLayoutXMajorToZMajor(const std::vector<float>& in,
+                                                          const int3& dims) {
+    const size_t expected = static_cast<size_t>(dims.x) * static_cast<size_t>(dims.y) * static_cast<size_t>(dims.z);
+    if (in.size() != expected) return {};
+
+    std::vector<float> out(expected, 0.0f);
+    for (int x = 0; x < dims.x; ++x) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int z = 0; z < dims.z; ++z) {
+                const size_t xMajorIdx =
+                    (static_cast<size_t>(x) * static_cast<size_t>(dims.y) + static_cast<size_t>(y)) * static_cast<size_t>(dims.z) +
+                    static_cast<size_t>(z);
+                const size_t zMajorIdx =
+                    (static_cast<size_t>(z) * static_cast<size_t>(dims.y) + static_cast<size_t>(y)) * static_cast<size_t>(dims.x) +
+                    static_cast<size_t>(x);
+                out[zMajorIdx] = in[xMajorIdx];
+            }
+        }
+    }
+    return out;
+}
+
+static std::vector<float> convertDoseLayoutZMajorToXMajor(const std::vector<float>& in,
+                                                          const int3& dims) {
+    const size_t expected = static_cast<size_t>(dims.x) * static_cast<size_t>(dims.y) * static_cast<size_t>(dims.z);
+    if (in.size() != expected) return {};
+
+    std::vector<float> out(expected, 0.0f);
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                const size_t zMajorIdx =
+                    (static_cast<size_t>(z) * static_cast<size_t>(dims.y) + static_cast<size_t>(y)) * static_cast<size_t>(dims.x) +
+                    static_cast<size_t>(x);
+                const size_t xMajorIdx =
+                    (static_cast<size_t>(x) * static_cast<size_t>(dims.y) + static_cast<size_t>(y)) * static_cast<size_t>(dims.z) +
+                    static_cast<size_t>(z);
+                out[xMajorIdx] = in[zMajorIdx];
+            }
+        }
+    }
+    return out;
+}
+
+static ZProjectionStats computeDepthProjection(const std::vector<float>& vol, const int3& dims, int depthAxis) {
+    ZProjectionStats s;
+    const int depthN = axisDim(dims, depthAxis);
+    s.sumZ.assign(depthN, 0.0);
+    s.maxZ.assign(depthN, 0.0f);
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                const int depthIdx = (depthAxis == 0) ? x : ((depthAxis == 1) ? y : z);
+                const float v = vol[doseIndexZMajor(dims, x, y, z)];
+                s.sumZ[static_cast<size_t>(depthIdx)] += static_cast<double>(v);
+                s.maxZ[static_cast<size_t>(depthIdx)] = std::max(s.maxZ[static_cast<size_t>(depthIdx)], v);
+            }
+        }
+    }
+    for (int depthIdx = 0; depthIdx < depthN; ++depthIdx) {
+        if (s.sumZ[static_cast<size_t>(depthIdx)] > s.peakSum) {
+            s.peakSum = s.sumZ[static_cast<size_t>(depthIdx)];
+            s.peakMax = s.maxZ[static_cast<size_t>(depthIdx)];
+            s.peakSlice = depthIdx;
+        }
+    }
+    return s;
+}
+
+struct AxisSliceDominanceStats {
+    int totalSlices = 0;
+    int activeSlices = 0;
+    int testGreater = 0;
+    int testLess = 0;
+    int equal = 0;
+    double testActiveSum = 0.0;
+    double refActiveSum = 0.0;
+};
+
+static AxisSliceDominanceStats compareAxisSliceDominance(const std::vector<float>& testDose,
+                                                         const std::vector<float>& refDose,
+                                                         const int3& dims,
+                                                         int axis,
+                                                         double activeThreshold) {
+    AxisSliceDominanceStats s;
+    const ZProjectionStats testProj = computeDepthProjection(testDose, dims, axis);
+    const ZProjectionStats refProj = computeDepthProjection(refDose, dims, axis);
+    s.totalSlices = static_cast<int>(testProj.sumZ.size());
+    for (size_t i = 0; i < testProj.sumZ.size() && i < refProj.sumZ.size(); ++i) {
+        const double a = testProj.sumZ[i];
+        const double b = refProj.sumZ[i];
+        if (std::fabs(a) > activeThreshold || std::fabs(b) > activeThreshold) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+            ++s.activeSlices;
+            s.testActiveSum += a;
+            s.refActiveSum += b;
+            if (a > b) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+                ++s.testGreater;
+            } else if (a < b) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+                ++s.testLess;
+            } else {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+                ++s.equal;
+            }
+        }
+    }
+    return s;
+}
+
+static void printPerAxisSliceDominanceSummary(const std::vector<float>& testDose,
+                                              const std::vector<float>& refDose,
+                                              const int3& dims,
+                                              int depthAxis) {
+    const double activeThreshold = 1.0e-12;
+    std::cout << "  Per-Axis Slice Sum Dominance:" << std::endl;
+    for (int axis = 0; axis < 3; ++axis) {
+        const AxisSliceDominanceStats s =
+            compareAxisSliceDominance(testDose, refDose, dims, axis, activeThreshold);
+        std::cout << "    axis=" << axisName(axis);
+        if (axis == depthAxis) {
+            std::cout << " (depth)";
+        }
+        std::cout << " active=" << s.activeSlices << "/" << s.totalSlices
+                  << " test>ref=" << s.testGreater
+                  << " test<ref=" << s.testLess
+                  << " equal=" << s.equal
+                  << " activeSum(test/ref)=" << s.testActiveSum << " / " << s.refActiveSum
+                  << std::endl;
+    }
+}
+
+static void printZProjectionCompare(const std::vector<float>& testDose,
+                                    const std::vector<float>& refDose,
+                                    const int3& dims,
+                                    const float3& spacing,
+                                    const float3& origin,
+                                    int depthAxis) {
+    const ZProjectionStats testProj = computeDepthProjection(testDose, dims, depthAxis);
+    const ZProjectionStats refProj = computeDepthProjection(refDose, dims, depthAxis);
+    std::cout << "  Depth Projection Compare (axis=" << axisName(depthAxis) << "):" << std::endl;
+    std::cout << "    peakSlice test/ref: " << testProj.peakSlice << " / " << refProj.peakSlice << std::endl;
+    if (testProj.peakSlice >= 0 && refProj.peakSlice >= 0) {
+        const float testPeakPos = axisCenterCoordinate(origin, spacing, depthAxis, testProj.peakSlice);
+        const float refPeakPos = axisCenterCoordinate(origin, spacing, depthAxis, refProj.peakSlice);
+        std::cout << "    peakPos test/ref: " << testPeakPos << " / " << refPeakPos
+                  << "  delta=" << (testPeakPos - refPeakPos) << std::endl;
+    }
+    std::cout << "    peakSum test/ref: " << testProj.peakSum << " / " << refProj.peakSum << std::endl;
+    std::cout << "    peakMax test/ref: " << testProj.peakMax << " / " << refProj.peakMax << std::endl;
+    const int center = std::max(0, refProj.peakSlice);
+    const int z0 = std::max(0, center - 5);
+    const int z1 = std::min(axisDim(dims, depthAxis) - 1, center + 5);
+    for (int d = z0; d <= z1; ++d) {
+        std::cout << "    " << axisName(depthAxis) << "=" << d
+                  << " pos=" << axisCenterCoordinate(origin, spacing, depthAxis, d)
+                  << " sum(test/ref)=" << testProj.sumZ[static_cast<size_t>(d)] << " / " << refProj.sumZ[static_cast<size_t>(d)]
+                  << " max(test/ref)=" << testProj.maxZ[static_cast<size_t>(d)] << " / " << refProj.maxZ[static_cast<size_t>(d)]
+                  << std::endl;
+    }
+}
+
+struct SliceLateralStats {
+    double sum = 0.0;
+    float max = 0.0f;
+    double sigmaX = 0.0;
+    double sigmaY = 0.0;
+};
+
+static SliceLateralStats computeSliceLateralStats(const std::vector<float>& vol,
+                                                  const int3& dims,
+                                                  const float3& spacing,
+                                                  const float3& origin,
+                                                  int depthAxis,
+                                                  int depthSlice) {
+    SliceLateralStats s;
+    if (depthSlice < 0 || depthSlice >= axisDim(dims, depthAxis)) return s;
+    const int lateralA = (depthAxis + 1) % 3;
+    const int lateralB = (depthAxis + 2) % 3;
+    double meanX = 0.0;
+    double meanY = 0.0;
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                const int depthIdx = (depthAxis == 0) ? x : ((depthAxis == 1) ? y : z);
+                if (depthIdx != depthSlice) continue;
+                const float dose = vol[doseIndexZMajor(dims, x, y, z)];
+                s.sum += static_cast<double>(dose);
+                s.max = std::max(s.max, dose);
+                const int coords[3] = {x, y, z};
+                const double pA = static_cast<double>(axisOrigin(origin, lateralA)) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                                  (static_cast<double>(coords[lateralA]) + 0.5) * static_cast<double>(axisSpacing(spacing, lateralA));
+                const double pB = static_cast<double>(axisOrigin(origin, lateralB)) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                                  (static_cast<double>(coords[lateralB]) + 0.5) * static_cast<double>(axisSpacing(spacing, lateralB));
+                meanX += static_cast<double>(dose) * pA;
+                meanY += static_cast<double>(dose) * pB;
+            }
+        }
+    }
+    if (s.sum <= 0.0) return s;
+    meanX /= s.sum;
+    meanY /= s.sum;
+    double varX = 0.0;
+    double varY = 0.0;
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                const int depthIdx = (depthAxis == 0) ? x : ((depthAxis == 1) ? y : z);
+                if (depthIdx != depthSlice) continue;
+                const float dose = vol[doseIndexZMajor(dims, x, y, z)];
+                const int coords[3] = {x, y, z};
+                const double pA = static_cast<double>(axisOrigin(origin, lateralA)) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                                  (static_cast<double>(coords[lateralA]) + 0.5) * static_cast<double>(axisSpacing(spacing, lateralA));
+                const double pB = static_cast<double>(axisOrigin(origin, lateralB)) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                                  (static_cast<double>(coords[lateralB]) + 0.5) * static_cast<double>(axisSpacing(spacing, lateralB));
+                varX += static_cast<double>(dose) * (pA - meanX) * (pA - meanX);
+                varY += static_cast<double>(dose) * (pB - meanY) * (pB - meanY);
+            }
+        }
+    }
+    s.sigmaX = std::sqrt(varX / s.sum);
+    s.sigmaY = std::sqrt(varY / s.sum);
+    return s;
+}
+
+static void printPeakSliceLateralCompare(const std::vector<float>& testDose,
+                                         const std::vector<float>& refDose,
+                                         const int3& dims,
+                                         const float3& spacing,
+                                         const float3& origin,
+                                         int depthAxis) {
+    const int lateralA = (depthAxis + 1) % 3;
+    const int lateralB = (depthAxis + 2) % 3;
+    const ZProjectionStats refProj = computeDepthProjection(refDose, dims, depthAxis);
+    const int depthSlice = refProj.peakSlice;
+    const SliceLateralStats testStats = computeSliceLateralStats(testDose, dims, spacing, origin, depthAxis, depthSlice);
+    const SliceLateralStats refStats = computeSliceLateralStats(refDose, dims, spacing, origin, depthAxis, depthSlice);
+    std::cout << "  Peak Slice Lateral Compare (ref " << axisName(depthAxis) << "=" << depthSlice << "):" << std::endl;
+    std::cout << "    sum(test/ref)=" << testStats.sum << " / " << refStats.sum << std::endl;
+    std::cout << "    max(test/ref)=" << testStats.max << " / " << refStats.max << std::endl;
+    std::cout << "    sigma_" << axisName(lateralA) << "(test/ref)=" << testStats.sigmaX << " / " << refStats.sigmaX << std::endl;
+    std::cout << "    sigma_" << axisName(lateralB) << "(test/ref)=" << testStats.sigmaY << " / " << refStats.sigmaY << std::endl;
+}
+
+struct DoseCompareStats {
+    bool valid = false;
+    size_t count = 0;
+    double sumRef = 0.0;
+    double sumTest = 0.0;
+    double mae = 0.0;
+    double rmse = 0.0;
+    float maxAbs = 0.0f;
+    float maxRef = 0.0f;
+    float maxTest = 0.0f;
+};
+
+static bool loadRawDoseBin(const std::filesystem::path& path, size_t expectedCount, std::vector<float>& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) return false;
+    f.seekg(0, std::ios::end);
+    const std::streamoff bytes = f.tellg();
+    if (bytes < 0) return false;
+    f.seekg(0, std::ios::beg);
+    const size_t count = static_cast<size_t>(bytes) / sizeof(float);
+    if (count != expectedCount) return false;
+    out.resize(count);
+    f.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(count * sizeof(float)));
+    return f.good() || f.eof();
+}
+
+static DoseCompareStats compareDoseVectors(const std::vector<float>& testDose,
+                                           const std::vector<float>& refDose) {
+    DoseCompareStats s;
+    if (testDose.size() != refDose.size() || testDose.empty()) return s;
+    s.valid = true;
+    s.count = testDose.size();
+    double sumAbs = 0.0;
+    double sumSq = 0.0;
+    for (size_t i = 0; i < testDose.size(); ++i) {
+        const float a = testDose[i];
+        const float b = refDose[i];
+        const float d = a - b;
+        s.sumTest += static_cast<double>(a);
+        s.sumRef += static_cast<double>(b);
+        sumAbs += std::fabs(static_cast<double>(d));
+        sumSq += static_cast<double>(d) * static_cast<double>(d);
+        s.maxAbs = std::max(s.maxAbs, std::fabs(d));
+        s.maxRef = std::max(s.maxRef, b);
+        s.maxTest = std::max(s.maxTest, a);
+    }
+    s.mae = sumAbs / static_cast<double>(s.count);
+    s.rmse = std::sqrt(sumSq / static_cast<double>(s.count));
+    return s;
+}
+
+struct WeightedRegionSummary {
+    bool valid = false;
+    double sum = 0.0;
+    double coordX = 0.0;
+    double coordY = 0.0;
+    double coordZ = 0.0;
+    int minX = std::numeric_limits<int>::max();
+    int minY = std::numeric_limits<int>::max();
+    int minZ = std::numeric_limits<int>::max();
+    int maxX = -1;
+    int maxY = -1;
+    int maxZ = -1;
+};
+
+struct VoxelDiffExtrema {
+    size_t index = 0;
+    int x = 0;
+    int y = 0;
+    int z = 0;
+    float testValue = 0.0f;
+    float refValue = 0.0f;
+    float diffValue = 0.0f;
+};
+
+struct VoxelDiffSummary {
+    bool valid = false;
+    VoxelDiffExtrema maxAbs;
+    VoxelDiffExtrema maxPositive;
+    VoxelDiffExtrema maxNegative;
+    WeightedRegionSummary absRegion;
+    WeightedRegionSummary positiveRegion;
+    WeightedRegionSummary negativeRegion;
+};
+
+static void updateWeightedRegionSummary(WeightedRegionSummary& s,
+                                        int x,
+                                        int y,
+                                        int z,
+                                        float weight,
+                                        const float3& spacing,
+                                        const float3& origin,
+                                        float bboxThreshold) {
+    if (!(weight > 0.0f) || !std::isfinite(weight)) return;
+    const double wx = static_cast<double>(axisCenterCoordinate(origin, spacing, 0, x));
+    const double wy = static_cast<double>(axisCenterCoordinate(origin, spacing, 1, y));
+    const double wz = static_cast<double>(axisCenterCoordinate(origin, spacing, 2, z));
+    s.valid = true;
+    s.sum += static_cast<double>(weight);
+    s.coordX += static_cast<double>(weight) * wx;
+    s.coordY += static_cast<double>(weight) * wy;
+    s.coordZ += static_cast<double>(weight) * wz;
+    if (weight >= bboxThreshold) {
+        s.minX = std::min(s.minX, x);
+        s.minY = std::min(s.minY, y);
+        s.minZ = std::min(s.minZ, z);
+        s.maxX = std::max(s.maxX, x);
+        s.maxY = std::max(s.maxY, y);
+        s.maxZ = std::max(s.maxZ, z);
+    }
+}
+
+static void finalizeWeightedRegionSummary(WeightedRegionSummary& s) {
+    if (!s.valid || !(s.sum > 0.0)) return;
+    s.coordX /= s.sum;
+    s.coordY /= s.sum;
+    s.coordZ /= s.sum;
+    if (s.maxX < s.minX) {
+        s.minX = -1;
+        s.minY = -1;
+        s.minZ = -1;
+        s.maxX = -1;
+        s.maxY = -1;
+        s.maxZ = -1;
+    }
+}
+
+static VoxelDiffSummary summarizeVoxelDiff(const std::vector<float>& testDose,
+                                           const std::vector<float>& refDose,
+                                           const int3& dims,
+                                           const float3& spacing,
+                                           const float3& origin,
+                                           float bboxThreshold) {
+    VoxelDiffSummary s;
+    if (testDose.size() != refDose.size() || testDose.empty()) return s;
+    s.valid = true;
+    s.maxAbs.diffValue = -1.0f;
+    s.maxPositive.diffValue = -std::numeric_limits<float>::infinity();
+    s.maxNegative.diffValue = std::numeric_limits<float>::infinity();
+
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                const size_t idx = doseIndexZMajor(dims, x, y, z);
+                const float testV = testDose[idx];
+                const float refV = refDose[idx];
+                if (!std::isfinite(testV) || !std::isfinite(refV)) continue;
+                const float diff = testV - refV;
+                const float absDiff = std::fabs(diff);
+
+                if (absDiff > s.maxAbs.diffValue) {
+                    s.maxAbs = {idx, x, y, z, testV, refV, diff};
+                }
+                if (diff > s.maxPositive.diffValue) {
+                    s.maxPositive = {idx, x, y, z, testV, refV, diff};
+                }
+                if (diff < s.maxNegative.diffValue) {
+                    s.maxNegative = {idx, x, y, z, testV, refV, diff};
+                }
+
+                updateWeightedRegionSummary(s.absRegion, x, y, z, absDiff, spacing, origin, bboxThreshold);
+                updateWeightedRegionSummary(s.positiveRegion, x, y, z, std::max(diff, 0.0f), spacing, origin, bboxThreshold);
+                updateWeightedRegionSummary(s.negativeRegion, x, y, z, std::max(-diff, 0.0f), spacing, origin, bboxThreshold);
+            }
+        }
+    }
+
+    finalizeWeightedRegionSummary(s.absRegion);
+    finalizeWeightedRegionSummary(s.positiveRegion);
+    finalizeWeightedRegionSummary(s.negativeRegion);
+    return s;
+}
+
+static void printWeightedRegionSummaryLine(const char* label,
+                                           const WeightedRegionSummary& s,
+                                           const int3& dims,
+                                           const float3& spacing,
+                                           const float3& origin) {
+    std::cout << "    " << label << " sum=" << s.sum;
+    if (!s.valid || !(s.sum > 0.0)) {
+        std::cout << " (empty)" << std::endl;
+        return;
+    }
+    std::cout << " com=(" << s.coordX << "," << s.coordY << "," << s.coordZ << ")";
+    if (s.minX >= 0 && s.maxX >= s.minX) {
+        std::cout << " bboxIdx=[(" << s.minX << "," << s.minY << "," << s.minZ
+                  << ")-(" << s.maxX << "," << s.maxY << "," << s.maxZ << ")]"
+                  << " bboxPos=[("
+                  << axisCenterCoordinate(origin, spacing, 0, s.minX) << ","
+                  << axisCenterCoordinate(origin, spacing, 1, s.minY) << ","
+                  << axisCenterCoordinate(origin, spacing, 2, s.minZ) << ")-("
+                  << axisCenterCoordinate(origin, spacing, 0, s.maxX) << ","
+                  << axisCenterCoordinate(origin, spacing, 1, s.maxY) << ","
+                  << axisCenterCoordinate(origin, spacing, 2, s.maxZ) << ")]";
+    }
+    std::cout << std::endl;
+}
+
+static void printVoxelDiffSummary(const std::vector<float>& testDose,
+                                  const std::vector<float>& refDose,
+                                  const int3& dims,
+                                  const float3& spacing,
+                                  const float3& origin,
+                                  float bboxThreshold) {
+    const VoxelDiffSummary s = summarizeVoxelDiff(testDose, refDose, dims, spacing, origin, bboxThreshold);
+    if (!s.valid) return;
+
+    auto printExtrema = [&](const char* label, const VoxelDiffExtrema& e) {
+        std::cout << "    " << label
+                  << " idx=(" << e.x << "," << e.y << "," << e.z << ")"
+                  << " pos=("
+                  << axisCenterCoordinate(origin, spacing, 0, e.x) << ","
+                  << axisCenterCoordinate(origin, spacing, 1, e.y) << ","
+                  << axisCenterCoordinate(origin, spacing, 2, e.z) << ")"
+                  << " test/ref/diff=" << e.testValue << " / " << e.refValue << " / " << e.diffValue
+                  << std::endl;
+    };
+
+    std::cout << "  Voxelwise Difference Summary:" << std::endl;
+    printExtrema("maxAbs", s.maxAbs);
+    printExtrema("maxPositive", s.maxPositive);
+    printExtrema("maxNegative", s.maxNegative);
+    printWeightedRegionSummaryLine("absDiff", s.absRegion, dims, spacing, origin);
+    printWeightedRegionSummaryLine("positiveDiff", s.positiveRegion, dims, spacing, origin);
+    printWeightedRegionSummaryLine("negativeDiff", s.negativeRegion, dims, spacing, origin);
+}
+
+struct VolumeSummary {
+    double sum = 0.0;
+    float max = 0.0f;
+    int nonZero = 0;
+};
+
+static VolumeSummary computeVolumeSummary(const std::vector<float>& vol, float threshold) {
+    VolumeSummary s;
+    for (float v : vol) {
+        if (!std::isfinite(v)) continue;
+        s.sum += static_cast<double>(v);
+        s.max = std::max(s.max, v);
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
+        if (v > threshold) s.nonZero++;
+    }
+    return s;
+}
+
+struct CenterAxisDepthStats {
+    std::vector<float> values;
+    int peakSlice = -1;
+    float peakValue = 0.0f;
+    int lateralAIdx = 0;
+    int lateralBIdx = 0;
+};
+
+static CenterAxisDepthStats computeCenterAxisDepthStats(const std::vector<float>& vol,
+                                                        const int3& dims,
+                                                        int depthAxis) {
+    CenterAxisDepthStats s;
+    const int depthN = axisDim(dims, depthAxis);
+    if (depthN <= 0) return s;
+
+    s.values.assign(depthN, 0.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int coords[3] = {dims.x / 2, dims.y / 2, dims.z / 2};
+    const int lateralA = (depthAxis + 1) % 3;
+    const int lateralB = (depthAxis + 2) % 3;
+    s.lateralAIdx = coords[lateralA];
+    s.lateralBIdx = coords[lateralB];
+
+    for (int depthIdx = 0; depthIdx < depthN; ++depthIdx) {
+        coords[depthAxis] = depthIdx;
+        const float v = vol[doseIndexZMajor(dims, coords[0], coords[1], coords[2])];
+        s.values[static_cast<size_t>(depthIdx)] = v;
+        if (v > s.peakValue) {
+            s.peakValue = v;
+            s.peakSlice = depthIdx;
+        }
+    }
+    return s;
+}
+
+static std::vector<int> chooseKeyDepthSlices(int depthN, int anchorSlice) {
+    if (depthN <= 0) return {};
+    const int anchor = std::clamp(anchorSlice, 0, depthN - 1);
+    return {
+        std::max(0, anchor - 10),
+        anchor,
+        std::min(depthN - 1, anchor + 10)
+    };
+}
+
+static void printSliceShapeSummaryLine(const char* label,
+                                       const std::vector<float>& testDose,
+                                       const std::vector<float>* refDose,
+                                       const int3& dims,
+                                       const float3& spacing,
+                                       const float3& origin,
+                                       int depthAxis,
+                                       int depthSlice) {
+    const int lateralA = (depthAxis + 1) % 3;
+    const int lateralB = (depthAxis + 2) % 3;
+    const SliceLateralStats testStats = computeSliceLateralStats(testDose, dims, spacing, origin, depthAxis, depthSlice);
+
+    std::cout << "    " << label
+              << " " << axisName(depthAxis) << "=" << depthSlice
+              << " pos=" << axisCenterCoordinate(origin, spacing, depthAxis, depthSlice);
+    if (refDose && refDose->size() == testDose.size()) {
+        const SliceLateralStats refStats = computeSliceLateralStats(*refDose, dims, spacing, origin, depthAxis, depthSlice);
+        std::cout << " sum(test/ref)=" << testStats.sum << " / " << refStats.sum
+                  << " max(test/ref)=" << testStats.max << " / " << refStats.max
+                  << " sigma_" << axisName(lateralA) << "(test/ref)=" << testStats.sigmaX << " / " << refStats.sigmaX
+                  << " sigma_" << axisName(lateralB) << "(test/ref)=" << testStats.sigmaY << " / " << refStats.sigmaY;
+    } else {
+        std::cout << " sum=" << testStats.sum
+                  << " max=" << testStats.max
+                  << " sigma_" << axisName(lateralA) << "=" << testStats.sigmaX
+                  << " sigma_" << axisName(lateralB) << "=" << testStats.sigmaY;
+    }
+    std::cout << std::endl;
+}
+
+static void printFinalAcceptanceSummary(const std::vector<float>& testDose,
+                                        const std::vector<float>* refDose,
+                                        const int3& dims,
+                                        const float3& spacing,
+                                        const float3& origin,
+                                        int depthAxis) {
+    const bool hasRef = (refDose != nullptr && refDose->size() == testDose.size() && !refDose->empty());
+    const float nnzThreshold = 1.0e-12f;
+
+    const VolumeSummary testVol = computeVolumeSummary(testDose, nnzThreshold);
+    const ZProjectionStats testProj = computeDepthProjection(testDose, dims, depthAxis);
+    const CenterAxisDepthStats testCenter = computeCenterAxisDepthStats(testDose, dims, depthAxis);
+
+    VolumeSummary refVol;
+    ZProjectionStats refProj;
+    CenterAxisDepthStats refCenter;
+    if (hasRef) {
+        refVol = computeVolumeSummary(*refDose, nnzThreshold);
+        refProj = computeDepthProjection(*refDose, dims, depthAxis);
+        refCenter = computeCenterAxisDepthStats(*refDose, dims, depthAxis);
+    }
+
+    const int depthN = axisDim(dims, depthAxis);
+    const int anchorSlice =
+        (hasRef && refProj.peakSlice >= 0) ? refProj.peakSlice :
+        (testProj.peakSlice >= 0 ? testProj.peakSlice : depthN / 2);
+    const std::vector<int> keySlices = chooseKeyDepthSlices(depthN, anchorSlice);
+    const int lateralA = (depthAxis + 1) % 3;
+    const int lateralB = (depthAxis + 2) % 3;
+
+    std::cout << "\nFinal Acceptance Summary:" << std::endl;
+    std::cout << "  Depth axis: " << axisName(depthAxis) << std::endl;
+    if (hasRef) {
+        const float testPeakPos = (testProj.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, testProj.peakSlice) : 0.0f;
+        const float refPeakPos = (refProj.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, refProj.peakSlice) : 0.0f;
+        std::cout << "  Peak Depth Summary:" << std::endl;
+        std::cout << "    peakSlice test/ref=" << testProj.peakSlice << " / " << refProj.peakSlice << std::endl;
+        std::cout << "    peakPos test/ref=" << testPeakPos << " / " << refPeakPos
+                  << " delta=" << (testPeakPos - refPeakPos) << std::endl;
+        std::cout << "    peakSliceSum test/ref=" << testProj.peakSum << " / " << refProj.peakSum << std::endl;
+        std::cout << "    peakSliceMax test/ref=" << testProj.peakMax << " / " << refProj.peakMax << std::endl;
+    } else {
+        const float testPeakPos = (testProj.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, testProj.peakSlice) : 0.0f;
+        std::cout << "  Peak Depth Summary:" << std::endl;
+        std::cout << "    peakSlice=" << testProj.peakSlice << std::endl;
+        std::cout << "    peakPos=" << testPeakPos << std::endl;
+        std::cout << "    peakSliceSum=" << testProj.peakSum << std::endl;
+        std::cout << "    peakSliceMax=" << testProj.peakMax << std::endl;
+    }
+
+    std::cout << "  Center Axis Depth Dose ("
+              << axisName(lateralA) << "=" << testCenter.lateralAIdx << ", "
+              << axisName(lateralB) << "=" << testCenter.lateralBIdx << "):" << std::endl;
+    if (hasRef) {
+        const float testCenterPeakPos =
+            (testCenter.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, testCenter.peakSlice) : 0.0f;
+        const float refCenterPeakPos =
+            (refCenter.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, refCenter.peakSlice) : 0.0f;
+        std::cout << "    centerPeakSlice test/ref=" << testCenter.peakSlice << " / " << refCenter.peakSlice << std::endl;
+        std::cout << "    centerPeakPos test/ref=" << testCenterPeakPos << " / " << refCenterPeakPos
+                  << " delta=" << (testCenterPeakPos - refCenterPeakPos) << std::endl;
+        std::cout << "    centerPeakDose test/ref=" << testCenter.peakValue << " / " << refCenter.peakValue << std::endl;
+    } else {
+        const float testCenterPeakPos =
+            (testCenter.peakSlice >= 0) ? axisCenterCoordinate(origin, spacing, depthAxis, testCenter.peakSlice) : 0.0f;
+        std::cout << "    centerPeakSlice=" << testCenter.peakSlice << std::endl;
+        std::cout << "    centerPeakPos=" << testCenterPeakPos << std::endl;
+        std::cout << "    centerPeakDose=" << testCenter.peakValue << std::endl;
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    static const char* kSliceLabels[3] = {"proximal", "peak", "distal"};
+    for (size_t i = 0; i < keySlices.size(); ++i) {
+        const int depthSlice = keySlices[i];
+        const float pos = axisCenterCoordinate(origin, spacing, depthAxis, depthSlice);
+        const float testVal = testCenter.values[static_cast<size_t>(depthSlice)];
+        std::cout << "    " << kSliceLabels[i]
+                  << " " << axisName(depthAxis) << "=" << depthSlice
+                  << " pos=" << pos;
+        if (hasRef) {
+            const float refVal = refCenter.values[static_cast<size_t>(depthSlice)];
+            std::cout << " centerDose(test/ref)=" << testVal << " / " << refVal;
+        } else {
+            std::cout << " centerDose=" << testVal;
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << "  Key Slice Shapes:" << std::endl;
+    for (size_t i = 0; i < keySlices.size(); ++i) {
+        printSliceShapeSummaryLine(kSliceLabels[i], testDose, hasRef ? refDose : nullptr, dims, spacing, origin, depthAxis, keySlices[i]);
+    }
+
+    std::cout << "  Global Stats:" << std::endl;
+    if (hasRef) {
+        std::cout << "    sum(test/ref)=" << testVol.sum << " / " << refVol.sum << std::endl;
+        std::cout << "    max(test/ref)=" << testVol.max << " / " << refVol.max << std::endl;
+        std::cout << "    nonzero(>1e-12)(test/ref)=" << testVol.nonZero << " / " << refVol.nonZero << std::endl;
+    } else {
+        std::cout << "    sum=" << testVol.sum << std::endl;
+        std::cout << "    max=" << testVol.max << std::endl;
+        std::cout << "    nonzero(>1e-12)=" << testVol.nonZero << std::endl;
+    }
+}
+
+static std::vector<std::string> discoverBeamPrefixes(const std::string& inputDir) {
+    std::vector<std::string> out;
+    const std::string suffix = "_energy_list.csv";
+    const std::filesystem::path p(inputDir);
+    if (!std::filesystem::exists(p) || !std::filesystem::is_directory(p)) {
+        return out;
+    }
+
+    for (const auto& e : std::filesystem::directory_iterator(p)) {
+        if (!e.is_regular_file()) continue;
+        const std::string name = e.path().filename().string();
+        if (name.size() <= suffix.size()) continue;
+        if (name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            out.push_back(name.substr(0, name.size() - suffix.size()));
+        }
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+enum class FixtureInputMode {
+    Synthetic,
+    Csv,
+    Binary
+};
+
+struct FixtureDiscovery {
+    std::string inputDir;
+    std::string beamPrefix;
+    FixtureInputMode mode = FixtureInputMode::Synthetic;
+};
+
+static std::string readSingleLineTrimmed(const std::filesystem::path& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open text file: " + path.string());
+    }
+    std::string line;
+    std::getline(f, line);
+    return trim_copy(line);
+}
+
+static std::string deriveBeamPrefixFromJsonPathValue(const std::string& jsonPathValue) {
+    std::smatch m;
+    const std::regex re(R"(radiationSet_(\d+).*(?:^|/)energy_spot_info_beam_(\d+)\.json$)");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (!std::regex_search(jsonPathValue, m, re) || m.size() != 3) {
+        return std::string();
+    }
+    return "bg" + m[1].str() + "_beam" + m[2].str();
+}
+
+static std::string discoverBeamPrefixFromBinaryFixtureDir(const std::string& inputDir) {
+    const std::filesystem::path jsonPathFile = std::filesystem::path(inputDir) / "jsonPath.txt";
+    if (!std::filesystem::exists(jsonPathFile)) {
+        return std::string();
+    }
+    return deriveBeamPrefixFromJsonPathValue(readSingleLineTrimmed(jsonPathFile));
+}
+
+static bool hasRequiredBeamFiles(const std::string& inputDir, const std::string& beamPrefix) {
+    const std::vector<std::string> required = {
+        "_energy_list.csv",
+        "_idd_data.csv",
+        "_idd_setting.csv",
+        "_profile_setting.csv",
+        "_sad.csv",
+        "_source_pos.csv",
+        "_beam_dir.csv",
+        "_beam_xdir.csv",
+        "_beam_ydir.csv"
+    };
+    for (const auto& suf : required) {
+        if (!std::filesystem::exists(inputDir + "/" + beamPrefix + suf)) return false;
+    }
+    return true;
+}
+
+static bool hasRequiredBinaryFixtureFiles(const std::string& inputDir) {
+    const std::vector<std::string> required = {
+        "jsonPath.txt",
+        "water_equivalence.bin",
+        "energy_list.bin",
+        "idd_data.bin",
+        "idd_setting.bin",
+        "profile_data.bin",
+        "profile_setting.bin",
+        "beam_para_data.bin",
+        "subspot_data.bin",
+        "layer_info.bin",
+        "layer_energy.bin",
+        "idbeamxy.bin",
+        "beam_dir.bin",
+        "beam_xdir.bin",
+        "beam_ydir.bin",
+        "source_pos.bin",
+        "doseGrid_corner.bin",
+        "doseGrid_resolution.bin",
+        "doseGrid_dims.bin",
+        "longitudal_cutoff.bin",
+        "all_energies.bin",
+        "num_particles_per_beam.bin",
+        "SAD.txt"
+    };
+    for (const auto& name : required) {
+        if (!std::filesystem::exists(std::filesystem::path(inputDir) / name)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static std::string defaultSubspotCsvForPrefix(
+    const std::filesystem::path& testDataDir,
+    const std::filesystem::path& inputDir,
+    const std::string& beamPrefix
+) {
+    const std::vector<std::filesystem::path> candidates = {
+        testDataDir / ("subspot_" + beamPrefix + ".csv"),
+        testDataDir / "subspot_csv" / ("subspot_" + beamPrefix + ".csv"),
+        inputDir / ("subspot_" + beamPrefix + ".csv"),
+        inputDir.parent_path() / ("subspot_" + beamPrefix + ".csv"),
+        inputDir.parent_path() / "subspot_csv" / ("subspot_" + beamPrefix + ".csv")
+    };
+    for (const auto& p : candidates) {
+        if (std::filesystem::exists(p)) {
+            return p.string();
+        }
+    }
+    return std::string();
+}
+
+static std::string defaultDosecalSubspotDataCsvForPrefix(const std::string& inputDir, const std::string& beamPrefix) {
+    const std::filesystem::path p = std::filesystem::path(inputDir) / (beamPrefix + "_subspot_data.csv");
+    return std::filesystem::exists(p) ? p.string() : std::string();
+}
+
+static bool hasUsableCsvFixtureForPrefix(
+    const std::string& inputDir,
+    const std::string& beamPrefix,
+    const std::filesystem::path& testDataDir
+) {
+    if (!hasRequiredBeamFiles(inputDir, beamPrefix)) {
+        return false;
+    }
+    if (!std::filesystem::exists(std::filesystem::path(inputDir) / "calc_required_meta.csv")) {
+        return false;
+    }
+
+    const std::string subspotDataCsv = defaultDosecalSubspotDataCsvForPrefix(inputDir, beamPrefix);
+    if (!subspotDataCsv.empty()) {
+        return true;
+    }
+
+    const std::string subspotCsv = defaultSubspotCsvForPrefix(testDataDir, std::filesystem::path(inputDir), beamPrefix);
+    return !subspotCsv.empty();
+}
+
+// 0.24: Look for a usable sibling CSV fixture next to a binary-fixture directory.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Given a binary candidate (typically .../<case>/output/), check whether the
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// containing case directory advertises a fresher CSV fixture (typically in
+// .../<case>/dose_inputs_csv/) with its own per-beam CSVs and calc_required_meta.csv.
+// Returns {csvInputDir, csvBeamPrefix} or an empty pair when no usable CSV sibling
+// is found.
+static std::pair<std::string, std::string> findSiblingCsvFixture(
+    const std::filesystem::path& binaryDir,
+    const std::filesystem::path& testDataDir
+) {
+    if (binaryDir.empty()) {
+        return {};
+    }
+    const std::filesystem::path parent = binaryDir.parent_path();
+    const std::filesystem::path grandparent =
+        parent.empty() ? std::filesystem::path() : parent.parent_path();
+
+    std::vector<std::filesystem::path> candidateDirs;
+    if (!parent.empty()) {
+        candidateDirs.push_back(parent / "dose_inputs_csv");
+        candidateDirs.push_back(parent / "dosecal_wrapper_inputs");
+        candidateDirs.push_back(parent);
+    }
+    if (!grandparent.empty()) {
+        candidateDirs.push_back(grandparent / "dose_inputs_csv");
+    }
+
+    for (const auto& candidate : candidateDirs) {
+        if (candidate.empty()) continue;
+        if (!std::filesystem::exists(candidate) || !std::filesystem::is_directory(candidate)) {
+            continue;
+        }
+        const std::string candidateStr = candidate.string();
+        const std::vector<std::string> prefixes = discoverBeamPrefixes(candidateStr);
+        for (const auto& prefix : prefixes) {
+            if (hasUsableCsvFixtureForPrefix(candidateStr, prefix, testDataDir)) {
+                return {candidateStr, prefix};
+            }
+        }
+    }
+
+    return {};
+}
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// 0.24: RTD_TEST_FIXTURE_MODE=binary|csv|auto
+//   binary -> behave as before, never prefer CSV over a binary candidate.
+//   csv    -> always prefer a usable CSV fixture over any binary candidate.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+//   auto (default) -> prefer CSV only when its advertised beam prefix disagrees
+//                     with the binary fixture's jsonPath.txt-derived prefix
+//                     (i.e., the binary dump is stale w.r.t. the checked-in CSVs).
+enum class FixtureModeOverride { Auto, ForceBinary, ForceCsv };
+
+static FixtureModeOverride readFixtureModeOverride() {
+    const char* env = std::getenv("RTD_TEST_FIXTURE_MODE");
+    if (env == nullptr) return FixtureModeOverride::Auto;
+    const std::string v = trim_copy(std::string(env));
+    if (v == "binary" || v == "BINARY") return FixtureModeOverride::ForceBinary;
+    if (v == "csv" || v == "CSV") return FixtureModeOverride::ForceCsv;
+    return FixtureModeOverride::Auto;
+}
+
+static FixtureDiscovery discoverDefaultFixtureInput(const std::filesystem::path& testDataDir) {
+    FixtureDiscovery out;
+    if (!std::filesystem::exists(testDataDir) || !std::filesystem::is_directory(testDataDir)) {
+        return out;
+    }
+
+    std::vector<std::filesystem::path> dirs;
+    dirs.push_back(testDataDir);
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(testDataDir)) {
+        if (entry.is_directory()) {
+            dirs.push_back(entry.path());
+        }
+    }
+    std::sort(dirs.begin(), dirs.end());
+    dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
+
+    const FixtureModeOverride modeOverride = readFixtureModeOverride();
+
+    // 0.24: If the environment forces CSV mode, scan CSV candidates first and
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // return the first usable one. This lets users bypass any stale legacy
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // binary dump (e.g., <case>/output/*.bin with a jsonPath.txt pointing to a
+    // previous plan) without editing the test.
+    if (modeOverride == FixtureModeOverride::ForceCsv) {
+        for (const auto& dir : dirs) {
+            const std::string dirStr = dir.string();
+            const std::vector<std::string> prefixes = discoverBeamPrefixes(dirStr);
+            for (const auto& prefix : prefixes) {
+                if (!hasUsableCsvFixtureForPrefix(dirStr, prefix, testDataDir)) {
+                    continue;
+                }
+        if (rtdVerboseFineTiming()) {
+            std::cerr << "[TEST][FIXTURE] RTD_TEST_FIXTURE_MODE=csv: selecting CSV fixture "
+                      << dirStr << " prefix=" << prefix << std::endl;
+        }
+                out.inputDir = dirStr;
+                out.beamPrefix = prefix;
+                out.mode = FixtureInputMode::Csv;
+                return out;
+            }
+        }
+        // Fall through to the normal pipeline if no CSV fixture was found.
+    }
+
+    for (const auto& dir : dirs) {
+        const std::string dirStr = dir.string();
+        if (!hasRequiredBinaryFixtureFiles(dirStr)) {
+            continue;
+        }
+        const std::string prefix = discoverBeamPrefixFromBinaryFixtureDir(dirStr);
+        if (prefix.empty()) {
+            continue;
+        }
+
+        // 0.24: Cross-check against a sibling CSV fixture. If the CSV fixture
+        // advertises a different beam prefix, treat the binary dump as stale
+        // (e.g., <case>/output/ left over from a previous plan) and prefer the
+        // CSV fixture so the test reflects the current test_data content.
+        if (modeOverride != FixtureModeOverride::ForceBinary) {
+            const auto sibling = findSiblingCsvFixture(dir, testDataDir);
+            const std::string& csvDir = sibling.first;
+            const std::string& csvPrefix = sibling.second;
+            if (!csvDir.empty() && !csvPrefix.empty() && csvPrefix != prefix) {
+                if (rtdVerboseFineTiming()) {
+                    std::cerr << "[TEST][FIXTURE] Binary fixture at " << dirStr
+                              << " advertises beam prefix '" << prefix
+                              << "' via jsonPath.txt, but sibling CSV fixture at "
+                              << csvDir << " advertises '" << csvPrefix
+                              << "'. Preferring the CSV fixture (set "
+                              << "RTD_TEST_FIXTURE_MODE=binary to force the legacy "
+                              << "binary dump)." << std::endl;
+                }
+                out.inputDir = csvDir;
+                out.beamPrefix = csvPrefix;
+                out.mode = FixtureInputMode::Csv;
+                return out;
+            }
+        }
+
+        out.inputDir = dirStr;
+        out.beamPrefix = prefix;
+        out.mode = FixtureInputMode::Binary;
+        return out;
+    }
+
+    for (const auto& dir : dirs) {
+        const std::string dirStr = dir.string();
+        const std::vector<std::string> prefixes = discoverBeamPrefixes(dirStr);
+        for (const auto& prefix : prefixes) {
+            if (!hasUsableCsvFixtureForPrefix(dirStr, prefix, testDataDir)) {
+                continue;
+            }
+            out.inputDir = dirStr;
+            out.beamPrefix = prefix;
+            out.mode = FixtureInputMode::Csv;
+            return out;
+        }
+    }
+
+    return out;
+}
+
+struct BeamGridMeta {
+    int3 dims;
+    float3 spacing;
+    float3 corner;
+    float3 sourcePos;
+    float sad;
+};
+
+template <typename T>
+static std::vector<T> readBinaryArray(const std::filesystem::path& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open binary file: " + path.string());
+    }
+    f.seekg(0, std::ios::end);
+    const std::streamsize sizeBytes = f.tellg();
+    f.seekg(0, std::ios::beg);
+    if (sizeBytes < 0 || (sizeBytes % static_cast<std::streamsize>(sizeof(T))) != 0) {
+        throw std::runtime_error("Binary file size is not aligned for requested dtype: " + path.string());
+    }
+    std::vector<T> out(static_cast<size_t>(sizeBytes / static_cast<std::streamsize>(sizeof(T))));
+    if (!out.empty()) {
+        f.read(reinterpret_cast<char*>(out.data()), sizeBytes);
+    }
+    return out;
+}
+
+static std::streamoff fileSizeOrThrow(std::ifstream& f, const std::filesystem::path& path) {
+    f.seekg(0, std::ios::end);
+    const std::streamoff sizeBytes = f.tellg();
+    if (sizeBytes < 0) {
+        throw std::runtime_error("Failed to determine binary file size: " + path.string());
+    }
+    return sizeBytes;
+}
+
+static std::vector<float> readFloatPrefixRaw(
+    const std::filesystem::path& path,
+    size_t floatCount,
+    std::streamoff byteOffset = 0
+) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open binary file: " + path.string());
+    }
+
+    const std::streamoff sizeBytes = fileSizeOrThrow(f, path);
+    const size_t requiredBytes = floatCount * sizeof(float);
+    const std::streamoff requiredEnd = byteOffset + static_cast<std::streamoff>(requiredBytes);
+    if (byteOffset < 0 || requiredEnd < byteOffset || requiredEnd > sizeBytes) {
+        throw std::runtime_error(
+            "Binary file is smaller than the requested float prefix: " + path.string());
+    }
+
+    std::vector<float> out(floatCount, 0.0f);
+    if (requiredBytes == 0) {
+        return out;
+    }
+
+    f.seekg(byteOffset, std::ios::beg);
+    f.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(requiredBytes));
+    if (!f || static_cast<size_t>(f.gcount()) != requiredBytes) {
+        throw std::runtime_error("Failed to read requested float prefix: " + path.string());
+    }
+    return out;
+}
+
+static void verifyTrailingBytesAreZero(
+    const std::filesystem::path& path,
+    std::streamoff tailStartOffset
+) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open binary file: " + path.string());
+    }
+
+    const std::streamoff sizeBytes = fileSizeOrThrow(f, path);
+    if (tailStartOffset < 0 || tailStartOffset > sizeBytes) {
+        throw std::runtime_error("Invalid trailing-byte check range: " + path.string());
+    }
+    if (tailStartOffset == sizeBytes) {
+        return;
+    }
+
+    f.seekg(tailStartOffset, std::ios::beg);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::array<char, 4096> buffer{};
+    while (f.good()) {
+        f.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize got = f.gcount();
+        if (got <= 0) break;
+        for (std::streamsize i = 0; i < got; ++i) {
+            if (buffer[static_cast<size_t>(i)] != '\0') {
+                throw std::runtime_error(
+                    "Binary file has non-zero trailing bytes beyond the header-declared WEQ payload: " +
+                    path.string());
+            }
+        }
+    }
+}
+
+// Some checked-in WEQ fixtures preserve only the used prefix plus a variable all-zero
+// reserved tail. The loader normalizes to the authoritative header-declared prefix.
+static std::vector<float> readFloatPrefixAllowZeroTail(
+    const std::filesystem::path& path,
+    size_t floatCount,
+    std::streamoff byteOffset = 0
+) {
+    std::vector<float> out = readFloatPrefixRaw(path, floatCount, byteOffset);
+    verifyTrailingBytesAreZero(
+        path,
+        byteOffset + static_cast<std::streamoff>(floatCount * sizeof(float)));
+    return out;
+}
+
+static std::vector<float> loadWaterEquivalenceFromBinaryPrefix(const std::filesystem::path& path) {
+    const std::vector<float> header = readFloatPrefixRaw(path, 9, 0);
+    const int weqSteps = std::max(1, static_cast<int>(std::lround(header[2])));
+    const int weqNy = std::max(1, static_cast<int>(std::lround(header[5])));
+    const int weqNx = std::max(1, static_cast<int>(std::lround(header[8])));
+    const size_t usedElems =
+        9ull + static_cast<size_t>(weqSteps) * static_cast<size_t>(weqNy) * static_cast<size_t>(weqNx);
+    return readFloatPrefixAllowZeroTail(path, usedElems, 0);
+}
+
+static bool isPlausibleRoundedFloatVector(const std::vector<float>& values, int maxValueExclusive) {
+    if (values.empty()) return false;
+    for (float v : values) {
+        if (!std::isfinite(v)) return false;
+        if (v < 0.0f) return false;
+        if (std::fabs(v - std::round(v)) > 1.0e-3f) return false;
+        if (maxValueExclusive > 0 && v >= static_cast<float>(maxValueExclusive)) return false;
+    }
+    return true;
+}
+
+static bool isPlausibleIntVector(const std::vector<int>& values, int maxValueExclusive) {
+    if (values.empty()) return false;
+    for (int v : values) {
+        if (v < 0) return false;
+        if (maxValueExclusive > 0 && v >= maxValueExclusive) return false;
+    }
+    return true;
+}
+
+static std::vector<int> castRoundedFloatVectorToInt(const std::vector<float>& values) {
+    std::vector<int> out;
+    out.reserve(values.size());
+    for (float v : values) {
+        out.push_back(static_cast<int>(std::lround(v)));
+    }
+    return out;
+}
+
+static std::vector<int> loadDimsFromBinaryFixture(const std::filesystem::path& path) {
+    const std::vector<float> asFloat = readBinaryArray<float>(path);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (asFloat.size() == 3 && isPlausibleRoundedFloatVector(asFloat, 10000)) {
+        return castRoundedFloatVectorToInt(asFloat);
+    }
+
+    const std::vector<int> asInt = readBinaryArray<int>(path);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (asInt.size() == 3 && isPlausibleIntVector(asInt, 10000)) {
+        return asInt;
+    }
+
+    throw std::runtime_error("Could not infer doseGrid_dims dtype from fixture: " + path.string());
+}
+
+static std::vector<int> loadCountVectorFromBinaryFixture(const std::filesystem::path& path) {
+    const std::vector<float> asFloat = readBinaryArray<float>(path);
+    if (isPlausibleRoundedFloatVector(asFloat, 100000000)) {
+        return castRoundedFloatVectorToInt(asFloat);
+    }
+
+    const std::vector<int> asInt = readBinaryArray<int>(path);
+    if (isPlausibleIntVector(asInt, 100000000)) {
+        return asInt;
+    }
+
+    throw std::runtime_error("Could not infer integer-count dtype from fixture: " + path.string());
+}
+
+static std::vector<int> loadLinearIndicesFromBinaryFixture(const std::filesystem::path& path, int maxValueExclusive) {
+    const std::vector<int> asInt = readBinaryArray<int>(path);
+    if (isPlausibleIntVector(asInt, maxValueExclusive)) {
+        return asInt;
+    }
+
+    const std::vector<float> asFloat = readBinaryArray<float>(path);
+    if (isPlausibleRoundedFloatVector(asFloat, maxValueExclusive)) {
+        return castRoundedFloatVectorToInt(asFloat);
+    }
+
+    throw std::runtime_error("Could not infer ROI-index dtype from fixture: " + path.string());
+}
+
+static BeamGridMeta loadGridMetaFromCsv(const std::string& inputDir, const std::string& beamPrefix) {
+    const std::string path = inputDir + "/calc_required_meta.csv";
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Missing required CSV metadata: " + path);
+    }
+
+    auto split = [](const std::string& s) {
+        std::vector<std::string> fields;
+        std::stringstream ss(s);
+        std::string tok;
+        while (std::getline(ss, tok, ',')) fields.push_back(trim_copy(tok));
+        return fields;
+    };
+
+    std::string header;
+    if (!std::getline(f, header)) {
+        throw std::runtime_error("Empty calc_required_meta.csv");
+    }
+    const std::vector<std::string> cols = split(header);
+
+    auto colIndex = [&](const std::string& name) -> int {
+        for (int i = 0; i < static_cast<int>(cols.size()); ++i) {
+            if (cols[i] == name) return i;
+        }
+        return -1;
+    };
+
+    const int c_bg = colIndex("beam_group_id");
+    const int c_bid = colIndex("beam_id");
+    const int c_nx = colIndex("num_voxels_x");
+    const int c_ny = colIndex("num_voxels_y");
+    const int c_nz = colIndex("num_voxels_z");
+    const int c_rx = colIndex("resolution_x");
+    const int c_ry = colIndex("resolution_y");
+    const int c_rz = colIndex("resolution_z");
+    const int c_ox = colIndex("corner_x");
+    const int c_oy = colIndex("corner_y");
+    const int c_oz = colIndex("corner_z");
+    const int c_spx = colIndex("source_pos_x");
+    const int c_spy = colIndex("source_pos_y");
+    const int c_spz = colIndex("source_pos_z");
+    const int c_sad = colIndex("sad");
+
+    if (c_nx < 0 || c_ny < 0 || c_nz < 0 || c_rx < 0 || c_ry < 0 || c_rz < 0 || c_ox < 0 || c_oy < 0 || c_oz < 0 ||
+        c_spx < 0 || c_spy < 0 || c_spz < 0 || c_sad < 0) {
+        throw std::runtime_error("calc_required_meta.csv missing required geometry or beam columns");
+    }
+
+    int wantedBg = -1;
+    int wantedBeam = -1;
+    {
+        std::smatch m;
+        const std::regex re(R"(bg(\d+)_beam(\d+))");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (std::regex_match(beamPrefix, m, re) && m.size() == 3) {
+            wantedBg = std::stoi(m[1].str());
+            wantedBeam = std::stoi(m[2].str());
+        }
+    }
+
+    std::string line;
+    std::vector<std::string> selected;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        const std::vector<std::string> row = split(line);
+        if (row.size() < cols.size()) continue;
+
+        if (wantedBg >= 0 && wantedBeam >= 0 && c_bg >= 0 && c_bid >= 0) {
+            const int rowBg = std::stoi(row[c_bg]);
+            const int rowBeam = std::stoi(row[c_bid]);
+            if (rowBg != wantedBg || rowBeam != wantedBeam) continue;
+        }
+
+        selected = row;
+        break;
+    }
+
+    if (selected.empty()) {
+        throw std::runtime_error("No matching row in calc_required_meta.csv for beam prefix: " + beamPrefix);
+    }
+
+    BeamGridMeta m;
+    m.dims = make_int3(std::stoi(selected[c_nx]), std::stoi(selected[c_ny]), std::stoi(selected[c_nz]));
+    m.spacing = make_float3(std::stof(selected[c_rx]), std::stof(selected[c_ry]), std::stof(selected[c_rz]));
+    m.corner = make_float3(std::stof(selected[c_ox]), std::stof(selected[c_oy]), std::stof(selected[c_oz]));
+    m.sourcePos = make_float3(std::stof(selected[c_spx]), std::stof(selected[c_spy]), std::stof(selected[c_spz]));
+    m.sad = std::stof(selected[c_sad]);
+    return m;
+}
+
+static BeamGridMeta loadGridMetaFromBinaryFixture(const std::string& inputDir) {
+    const std::filesystem::path base(inputDir);
+    const std::vector<int> dims = loadDimsFromBinaryFixture(base / "doseGrid_dims.bin");
+    const std::vector<float> spacing = readBinaryArray<float>(base / "doseGrid_resolution.bin");
+    const std::vector<float> corner = readBinaryArray<float>(base / "doseGrid_corner.bin");
+    const std::vector<float> sourcePos = readBinaryArray<float>(base / "source_pos.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (dims.size() != 3 || spacing.size() != 3 || corner.size() != 3 || sourcePos.size() != 3) {
+        throw std::runtime_error("Incomplete binary fixture grid metadata under: " + inputDir);
+    }
+
+    BeamGridMeta m;
+    m.dims = make_int3(dims[0], dims[1], dims[2]);
+    m.spacing = make_float3(spacing[0], spacing[1], spacing[2]);
+    m.corner = make_float3(corner[0], corner[1], corner[2]);
+    m.sourcePos = make_float3(sourcePos[0], sourcePos[1], sourcePos[2]);
+    m.sad = std::stof(readSingleLineTrimmed(base / "SAD.txt"));
+    return m;
+}
+
+static std::vector<float> loadExported1D(const std::string& path) {
+    std::vector<int> shape;
+    const bool hasShape = readMetaShape(path, shape);
+    const size_t n = (hasShape && shape.size() == 1) ? static_cast<size_t>(shape[0]) : 0;
+
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::vector<float> out;
+    if (n > 0) out.assign(n, 0.0f);
+    int sequentialIdx = 0;
+
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("index", 0) == 0) continue; // header
+
+        const auto comma = line.find(',');
+        if (comma == std::string::npos) continue;
+        const std::string idxStr = trim_copy(line.substr(0, comma));
+        const std::string valStr = trim_copy(line.substr(comma + 1));
+        if (valStr.empty()) continue;
+
+        const float val = std::stof(valStr);
+
+        int idx = -1;
+        if (!idxStr.empty()) {
+            try {
+                idx = std::stoi(idxStr);
+            } catch (...) {
+                idx = -1;
+            }
+        }
+        if (idx < 0) {
+            idx = sequentialIdx;
+        }
+        ++sequentialIdx;
+
+        if (n > 0) {
+            if (idx >= 0 && static_cast<size_t>(idx) < out.size()) out[idx] = val;
+        } else {
+            // append in order
+            out.push_back(val);
+        }
+    }
+
+    return out;
+}
+
+static std::vector<float> loadExported1DPrefix(const std::string& path, size_t nKeep) {
+    std::vector<float> out;
+    out.reserve(nKeep);
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::string line;
+    while (std::getline(f, line) && out.size() < nKeep) {
+        if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("index", 0) == 0) continue;
+        const auto comma = line.find(',');
+        if (comma == std::string::npos) continue;
+        const std::string valStr = trim_copy(line.substr(comma + 1));
+        if (valStr.empty()) continue;
+        out.push_back(std::stof(valStr));
+    }
+    return out;
+}
+
+static std::vector<float> deriveLayerLongitudinalCutoffs(
+    const std::vector<float>& perSpotCutoffs,
+    const std::vector<int>& layerSpotCounts
+) {
+    std::vector<float> out;
+    out.reserve(layerSpotCounts.size());
+    size_t offset = 0;
+    for (size_t layer = 0; layer < layerSpotCounts.size(); ++layer) {
+        const int count = std::max(0, layerSpotCounts[layer]);
+        float layerCutoff = 0.0f;
+        if (count > 0 && offset < perSpotCutoffs.size()) {
+            layerCutoff = perSpotCutoffs[offset];
+        }
+        for (int i = 0; i < count; ++i) {
+            const size_t idx = offset + static_cast<size_t>(i);
+            if (idx >= perSpotCutoffs.size()) break;
+            if (i == 0) {
+                layerCutoff = perSpotCutoffs[idx];
+            } else if (std::fabs(perSpotCutoffs[idx] - layerCutoff) > 1.0e-3f && rtdInputAuditEnabled()) {
+                std::cout << "[INPUT_AUDIT][TEST] Warning: longitudal_cutoff varies within layer " << layer
+                          << " first=" << layerCutoff
+                          << " current=" << perSpotCutoffs[idx]
+                          << std::endl;
+            }
+        }
+        out.push_back(layerCutoff);
+        offset += static_cast<size_t>(count);
+    }
+    return out;
+}
+
+static std::vector<float> loadExported2D(const std::string& path, int& rows, int& cols, bool keepLogicalShape = false) {
+    std::vector<int> shape;
+    if (!readMetaShape(path, shape) || shape.size() != 2) {
+        throw std::runtime_error("2D CSV missing/invalid #meta,shape: " + path);
+    }
+    rows = shape[0];
+    cols = shape[1];
+    std::vector<std::tuple<int, int, float>> entries;
+    entries.reserve(1024);
+    int maxISeen = -1;
+    int maxJSeen = -1;
+
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("i", 0) == 0) continue; // header i,j,value
+
+        // i,j,value
+        size_t p1 = line.find(',');
+        if (p1 == std::string::npos) continue;
+        size_t p2 = line.find(',', p1 + 1);
+        if (p2 == std::string::npos) continue;
+
+        const int i = std::stoi(trim_copy(line.substr(0, p1)));
+        const int j = std::stoi(trim_copy(line.substr(p1 + 1, p2 - p1 - 1)));
+        const float v = std::stof(trim_copy(line.substr(p2 + 1)));
+
+        if (i < 0 || j < 0) continue;
+        entries.emplace_back(i, j, v);
+        if (i > maxISeen) maxISeen = i;
+        if (j > maxJSeen) maxJSeen = j;
+    }
+
+    if (maxISeen < 0 || maxJSeen < 0) {
+        rows = 0;
+        cols = 0;
+        return {};
+    }
+
+    // Some exported CSVs carry the full logical shape in metadata but only dump a
+    // dense slice of the populated region. Most compact spot/profile exports should
+    // use the observed range, but physics tables like IDD must preserve the logical
+    // full depth axis from metadata.
+    if (!keepLogicalShape) {
+        if (maxISeen + 1 < rows) rows = maxISeen + 1;
+        if (maxJSeen + 1 < cols) cols = maxJSeen + 1;
+    }
+
+    std::vector<float> out(static_cast<size_t>(rows) * cols, 0.0f);
+    for (const auto& [i, j, v] : entries) {
+        if (i < rows && j < cols) {
+            out[static_cast<size_t>(i) * cols + j] = v;
+        }
+    }
+
+    return out;
+}
+
+static std::vector<float> loadExported3D(const std::string& path, int& d0, int& d1, int& d2, bool keepLogicalShape = false) {
+    std::vector<int> shape;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (!readMetaShape(path, shape) || shape.size() != 3) {
+        throw std::runtime_error("3D CSV missing/invalid #meta,shape: " + path);
+    }
+    d0 = shape[0];
+    d1 = shape[1];
+    d2 = shape[2];
+
+    struct Entry { int i, j, k; float v; };
+    std::vector<Entry> entries;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    entries.reserve(4096);
+    int maxISeen = -1, maxJSeen = -1, maxKSeen = -1;
+
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("i", 0) == 0) continue; // header i,j,k,value
+
+        const size_t p1 = line.find(',');
+        if (p1 == std::string::npos) continue;
+        const size_t p2 = line.find(',', p1 + 1);
+        if (p2 == std::string::npos) continue;
+        const size_t p3 = line.find(',', p2 + 1);
+        if (p3 == std::string::npos) continue;
+
+        const int i = std::stoi(trim_copy(line.substr(0, p1)));
+        const int j = std::stoi(trim_copy(line.substr(p1 + 1, p2 - p1 - 1)));
+        const int k = std::stoi(trim_copy(line.substr(p2 + 1, p3 - p2 - 1)));
+        const float v = std::stof(trim_copy(line.substr(p3 + 1)));
+        if (i < 0 || j < 0 || k < 0) continue;
+        entries.push_back({i, j, k, v});
+        maxISeen = std::max(maxISeen, i);
+        maxJSeen = std::max(maxJSeen, j);
+        maxKSeen = std::max(maxKSeen, k);
+    }
+
+    if (maxISeen < 0 || maxJSeen < 0 || maxKSeen < 0) {
+        d0 = d1 = d2 = 0;
+        return {};
+    }
+
+    if (!keepLogicalShape) {
+        if (maxISeen + 1 < d0) d0 = maxISeen + 1;
+        if (maxJSeen + 1 < d1) d1 = maxJSeen + 1;
+        if (maxKSeen + 1 < d2) d2 = maxKSeen + 1;
+    }
+
+    std::vector<float> out(static_cast<size_t>(d0) * d1 * d2, 0.0f);
+    for (const Entry& e : entries) {
+        if (e.i < d0 && e.j < d1 && e.k < d2) {
+            out[(static_cast<size_t>(e.i) * d1 + static_cast<size_t>(e.j)) * d2 + static_cast<size_t>(e.k)] = e.v;
+        }
+    }
+    return out;
+}
+
+struct WaterEquivalenceMeta {
+    int beamGroupId = -1;
+    int beamId = -1;
+    std::string source;
+    std::string dtype;
+    size_t totalLen = 0;
+    size_t headerLen = 0;
+    size_t dataLenExcludingHeader = 0;
+    int nStep = 0;
+    float y0 = 0.0f;
+    float dy = 0.0f;
+    int ny = 0;
+    float x0 = 0.0f;
+    float dx = 0.0f;
+    int nx = 0;
+    std::string fullBinPath;
+    std::string dataOnlyBinPath;
+};
+
+static std::vector<std::string> splitCsvRow(const std::string& s) {
+    std::vector<std::string> fields;
+    std::stringstream ss(s);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) fields.push_back(trim_copy(tok));
+    return fields;
+}
+
+static WaterEquivalenceMeta loadWaterEquivalenceMeta(const std::string& metaPath, const std::string& beamPrefix) {
+    std::ifstream f(metaPath);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open water equivalence metadata: " + metaPath);
+    }
+
+    std::string header;
+    if (!std::getline(f, header)) {
+        throw std::runtime_error("Empty water equivalence metadata CSV: " + metaPath);
+    }
+
+    const std::vector<std::string> cols = splitCsvRow(header);
+    auto colIndex = [&](const std::string& name) -> int {
+        for (int i = 0; i < static_cast<int>(cols.size()); ++i) {
+            if (cols[i] == name) return i;
+        }
+        return -1;
+    };
+
+    const int cBg = colIndex("beam_group_id");
+    const int cBeam = colIndex("beam_id");
+    const int cSource = colIndex("source");
+    const int cDtype = colIndex("dtype");
+    const int cTotalLen = colIndex("total_len");
+    const int cHeaderLen = colIndex("header_len");
+    const int cDataLen = colIndex("data_len_excluding_header");
+    const int cNStep = colIndex("n_step");
+    const int cY0 = colIndex("y0");
+    const int cDy = colIndex("dy");
+    const int cNy = colIndex("ny");
+    const int cX0 = colIndex("x0");
+    const int cDx = colIndex("dx");
+    const int cNx = colIndex("nx");
+    const int cFullBinPath = colIndex("full_bin_path");
+    const int cDataOnlyBinPath = colIndex("data_only_bin_path");
+
+    if (cBg < 0 || cBeam < 0 || cDtype < 0 || cTotalLen < 0 || cHeaderLen < 0 || cDataLen < 0 ||
+        cNStep < 0 || cY0 < 0 || cDy < 0 || cNy < 0 || cX0 < 0 || cDx < 0 || cNx < 0 || cDataOnlyBinPath < 0) {
+        throw std::runtime_error("water_equivalence_meta.csv missing required columns");
+    }
+
+    int wantedBg = -1;
+    int wantedBeam = -1;
+    {
+        std::smatch m;
+        const std::regex re(R"(bg(\d+)_beam(\d+))");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (std::regex_match(beamPrefix, m, re) && m.size() == 3) {
+            wantedBg = std::stoi(m[1].str());
+            wantedBeam = std::stoi(m[2].str());
+        }
+    }
+
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        const std::vector<std::string> row = splitCsvRow(line);
+        if (row.size() < cols.size()) continue;
+
+        const int rowBg = std::stoi(row[cBg]);
+        const int rowBeam = std::stoi(row[cBeam]);
+        if (wantedBg >= 0 && wantedBeam >= 0 && (rowBg != wantedBg || rowBeam != wantedBeam)) {
+            continue;
+        }
+
+        WaterEquivalenceMeta meta;
+        meta.beamGroupId = rowBg;
+        meta.beamId = rowBeam;
+        meta.source = (cSource >= 0) ? row[cSource] : std::string();
+        meta.dtype = row[cDtype];
+        meta.totalLen = static_cast<size_t>(std::stoull(row[cTotalLen]));
+        meta.headerLen = static_cast<size_t>(std::stoull(row[cHeaderLen]));
+        meta.dataLenExcludingHeader = static_cast<size_t>(std::stoull(row[cDataLen]));
+        meta.nStep = std::stoi(row[cNStep]);
+        meta.y0 = std::stof(row[cY0]);
+        meta.dy = std::stof(row[cDy]);
+        meta.ny = std::stoi(row[cNy]);
+        meta.x0 = std::stof(row[cX0]);
+        meta.dx = std::stof(row[cDx]);
+        meta.nx = std::stoi(row[cNx]);
+        meta.fullBinPath = (cFullBinPath >= 0) ? row[cFullBinPath] : std::string();
+        meta.dataOnlyBinPath = row[cDataOnlyBinPath];
+        return meta;
+    }
+
+    throw std::runtime_error("No matching row in water_equivalence_meta.csv for beam prefix: " + beamPrefix);
+}
+
+static std::filesystem::path resolveWaterEquivalenceMetaPath(const std::string& inputDir) {
+    const std::filesystem::path inputPath(inputDir);
+    const std::filesystem::path localMeta = inputPath / "water_equivalence_meta.csv";
+    if (std::filesystem::exists(localMeta)) return localMeta;
+
+    const std::filesystem::path parentMeta = inputPath.parent_path() / "water_equivalence_meta.csv";
+    if (std::filesystem::exists(parentMeta)) return parentMeta;
+
+    const std::filesystem::path localBundleMeta = inputPath / "water_equivalence_bin" / "water_equivalence_meta.csv";
+    if (std::filesystem::exists(localBundleMeta)) return localBundleMeta;
+
+    const std::filesystem::path siblingBundleMeta =
+        inputPath.parent_path() / "water_equivalence_bin" / "water_equivalence_meta.csv";
+    if (std::filesystem::exists(siblingBundleMeta)) return siblingBundleMeta;
+
+    throw std::runtime_error(
+        "Failed to locate water_equivalence_meta.csv near inputDir: " + inputDir);
+}
+
+static std::vector<float> loadWaterEquivalenceFromMetaAndBin(const std::string& inputDir, const std::string& beamPrefix) {
+    const std::filesystem::path metaPath = resolveWaterEquivalenceMetaPath(inputDir);
+    const WaterEquivalenceMeta meta = loadWaterEquivalenceMeta(metaPath.string(), beamPrefix);
+
+    if (meta.dtype != "float32") {
+        throw std::runtime_error("Unsupported water equivalence dtype: " + meta.dtype + " (expected float32)");
+    }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (meta.headerLen < 9) {
+        throw std::runtime_error("water equivalence metadata header_len must be at least 9");
+    }
+
+    if (meta.dataLenExcludingHeader == 0) {
+        throw std::runtime_error("water equivalence metadata describes an empty BIN payload");
+    }
+    const size_t usedBodyElems =
+        static_cast<size_t>(std::max(1, meta.nStep)) *
+        static_cast<size_t>(std::max(1, meta.ny)) *
+        static_cast<size_t>(std::max(1, meta.nx));
+    if (meta.dataLenExcludingHeader < usedBodyElems) {
+        throw std::runtime_error(
+            "water equivalence metadata data_len_excluding_header is smaller than nx* ny* nStep");
+    }
+    if (meta.totalLen < meta.headerLen + usedBodyElems) {
+        throw std::runtime_error(
+            "water equivalence metadata total_len is smaller than header_len + nx* ny* nStep");
+    }
+
+    const std::filesystem::path headerCsvPath = std::filesystem::path(inputDir) / (beamPrefix + "_water_equivalence.csv");
+    std::vector<float> out = loadExported1DPrefix(headerCsvPath.string(), meta.headerLen);
+    if (out.size() != meta.headerLen) {
+        throw std::runtime_error(
+            "Failed to read complete water equivalence header from CSV: " + headerCsvPath.string());
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (meta.headerLen >= 9) {
+        if (static_cast<int>(std::lround(out[2])) != meta.nStep ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            fabsf(out[3] - meta.y0) > 1e-5f ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            fabsf(out[4] - meta.dy) > 1e-5f ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            static_cast<int>(std::lround(out[5])) != meta.ny ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            fabsf(out[6] - meta.x0) > 1e-5f ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            fabsf(out[7] - meta.dx) > 1e-5f ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            static_cast<int>(std::lround(out[8])) != meta.nx) {
+            throw std::runtime_error(
+                "water equivalence CSV header is inconsistent with water_equivalence_meta.csv");
+        }
+    }
+
+    try {
+        const std::filesystem::path dataOnlyPath = metaPath.parent_path() / meta.dataOnlyBinPath;
+        const std::vector<float> body = readFloatPrefixAllowZeroTail(dataOnlyPath, usedBodyElems, 0);
+        out.insert(out.end(), body.begin(), body.end());
+        return out;
+    } catch (const std::exception&) {
+        if (meta.fullBinPath.empty()) {
+            throw;
+        }
+        const std::filesystem::path fullPath = metaPath.parent_path() / meta.fullBinPath;
+        std::vector<float> full = readFloatPrefixAllowZeroTail(fullPath, meta.headerLen + usedBodyElems, 0);
+        if (static_cast<int>(full.size()) < meta.headerLen) {
+            throw std::runtime_error("water equivalence full BIN did not provide the full header: " + fullPath.string());
+        }
+        for (int i = 0; i < meta.headerLen; ++i) {
+            if (std::fabs(full[static_cast<size_t>(i)] - out[static_cast<size_t>(i)]) > 1.0e-5f) {
+                throw std::runtime_error(
+                    "water equivalence full BIN header disagrees with CSV header: " + fullPath.string());
+            }
+        }
+        return full;
+    }
+}
+
+static std::vector<float2> loadSpotSigmasPerSpot(
+    const std::string& inputDir,
+    const std::string& beamPrefix,
+    size_t expectedCount
+) {
+    const std::string sigmaxyPath = inputDir + "/" + beamPrefix + "_spot_energy_sigmaxy.csv";
+    const std::string sigmaxPath = inputDir + "/" + beamPrefix + "_spot_sigmax.csv";
+    const std::string sigmayPath = inputDir + "/" + beamPrefix + "_spot_sigmay.csv";
+
+    std::vector<float2> out;
+    if (std::filesystem::exists(sigmaxyPath)) {
+        int rows = 0;
+        int cols = 0;
+        const std::vector<float> flat = loadExported2D(sigmaxyPath, rows, cols);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (cols >= 3) {
+            out.resize(static_cast<size_t>(rows), make_float2(0.0f, 0.0f));
+            for (int i = 0; i < rows; ++i) {
+                out[static_cast<size_t>(i)] = make_float2(
+                    flat[static_cast<size_t>(i) * cols + 1],
+                    flat[static_cast<size_t>(i) * cols + 2]
+                );
+            }
+        }
+    } else if (std::filesystem::exists(sigmaxPath) && std::filesystem::exists(sigmayPath)) {
+        const std::vector<float> sx = loadExported1D(sigmaxPath);
+        const std::vector<float> sy = loadExported1D(sigmayPath);
+        const size_t n = std::min(sx.size(), sy.size());
+        out.resize(n, make_float2(0.0f, 0.0f));
+        for (size_t i = 0; i < n; ++i) {
+            out[i] = make_float2(sx[i], sy[i]);
+        }
+    }
+
+    if (!out.empty() && expectedCount > 0 && out.size() != expectedCount) {
+        std::cerr << "[TEST] Warning: spot sigma count mismatch. expected " << expectedCount
+                  << ", got " << out.size() << ". Ignoring per-spot sigma CSV." << std::endl;
+        out.clear();
+    }
+    return out;
+}
+
+static RTDEnergyStruct loadEnergyDataFromReferenceTables(const std::string& tablesDir);
+
+static std::vector<float2> buildLayerSpotSigmasFromPerSpot(
+    const std::vector<int>& layerSpotCounts,
+    const std::vector<float>& spotWeights,
+    const std::vector<float2>& perSpotSigmas
+) {
+    std::vector<float2> out(layerSpotCounts.size(), make_float2(0.0f, 0.0f));
+    if (layerSpotCounts.empty() || perSpotSigmas.empty()) return out;
+
+    size_t offset = 0;
+    for (size_t layer = 0; layer < layerSpotCounts.size(); ++layer) {
+        const int count = layerSpotCounts[layer];
+        if (count <= 0) continue;
+
+        double sumW = 0.0;
+        double sumSX = 0.0;
+        double sumSY = 0.0;
+        float2 fallback = make_float2(0.0f, 0.0f);
+
+        for (int i = 0; i < count; ++i) {
+            if (offset + static_cast<size_t>(i) >= perSpotSigmas.size()) break;
+            const float2 s = perSpotSigmas[offset + static_cast<size_t>(i)];
+            fallback = s;
+            const float w = (offset + static_cast<size_t>(i) < spotWeights.size()) ? spotWeights[offset + static_cast<size_t>(i)] : 1.0f;
+            const double ww = (std::isfinite(w) && w > 0.0f) ? static_cast<double>(w) : 1.0;
+            sumW += ww;
+            sumSX += ww * s.x;
+            sumSY += ww * s.y;
+        }
+
+        if (sumW > 0.0) {
+            out[layer] = make_float2(static_cast<float>(sumSX / sumW), static_cast<float>(sumSY / sumW));
+        } else {
+            out[layer] = fallback;
+        }
+        offset += static_cast<size_t>(count);
+    }
+
+    return out;
+}
+
+static void loadCompactSubspotCSV(
+    const std::string& path,
+    int& numLayers,
+    int& maxSubspotsPerLayer,
+    std::vector<float>& subspotDataOut,
+    std::vector<float2>& spotSigmasOut
+) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Compact CSV format (provided separately):
+    // #meta,shape,(L,S,5)
+    // header: ... energy_layer, ..., deltax,deltay,weight,sigmax,sigmay
+
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::string line;
+
+    // Parse #meta,shape
+    std::vector<int> shape;
+    while (std::getline(f, line)) {
+        if (line.rfind("#meta,shape", 0) == 0) {
+            const auto lp = line.find('(');
+            const auto rp = line.find(')');
+            if (lp == std::string::npos || rp == std::string::npos || rp <= lp) {
+                throw std::runtime_error("Invalid #meta,shape in subspot CSV");
+            }
+            const std::string inside = line.substr(lp + 1, rp - lp - 1);
+            std::stringstream ss(inside);
+            std::string tok;
+            shape.clear();
+            while (std::getline(ss, tok, ',')) {
+                tok = trim_copy(tok);
+                if (tok.empty()) continue;
+                shape.push_back(std::stoi(tok));
+            }
+            break;
+        }
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (shape.size() != 3 || shape[2] != 5) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        throw std::runtime_error("Expected #meta,shape,(L,S,5) in subspot CSV");
+    }
+
+    numLayers = shape[0];
+    maxSubspotsPerLayer = shape[1];
+
+    // Read header line
+    std::string header;
+    while (std::getline(f, header)) {
+        if (header.empty() || header[0] == '#') continue;
+        break;
+    }
+
+    if (header.empty()) {
+        throw std::runtime_error("Missing header in subspot CSV");
+    }
+
+    std::vector<std::string> cols;
+    {
+        std::stringstream ss(header);
+        std::string tok;
+        while (std::getline(ss, tok, ',')) cols.push_back(trim_copy(tok));
+    }
+
+    auto colIndex = [&](const std::string& name) -> int {
+        for (int i = 0; i < static_cast<int>(cols.size()); ++i) {
+            if (cols[i] == name) return i;
+        }
+        return -1;
+    };
+
+    int c_energy_layer = colIndex("energy_layer");
+    if (c_energy_layer < 0) {
+        c_energy_layer = colIndex("energy_idx");
+    }
+    const int c_max_subspots = colIndex("max_subspots_per_layer");
+    const int c_deltax = colIndex("deltax");
+    const int c_deltay = colIndex("deltay");
+    const int c_weight = colIndex("weight");
+    const int c_sigmax = colIndex("sigmax");
+    const int c_sigmay = colIndex("sigmay");
+
+    if (c_energy_layer < 0 || c_deltax < 0 || c_deltay < 0 || c_weight < 0 || c_sigmax < 0 || c_sigmay < 0) {
+        throw std::runtime_error("Subspot CSV missing required columns");
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    subspotDataOut.assign(static_cast<size_t>(numLayers) * maxSubspotsPerLayer * 5, 0.0f);
+    spotSigmasOut.assign(numLayers, make_float2(0.0f, 0.0f));
+
+    std::vector<int> perLayerCount(numLayers, 0);
+
+    // Parse data rows
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        std::vector<std::string> fields;
+        {
+            std::stringstream ss(line);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) fields.push_back(trim_copy(tok));
+        }
+
+        if (static_cast<int>(fields.size()) < static_cast<int>(cols.size())) continue;
+
+        const int layer = std::stoi(fields[c_energy_layer]);
+        if (layer < 0 || layer >= numLayers) continue;
+
+        // Trust maxSubspotsPerLayer from meta, but warn if per-row says otherwise
+        if (c_max_subspots >= 0) {
+            const int rowMax = std::stoi(fields[c_max_subspots]);
+            if (rowMax != maxSubspotsPerLayer) {
+                std::cerr << "[TEST] Warning: subspot row reports max_subspots_per_layer=" << rowMax
+                          << " but meta says " << maxSubspotsPerLayer << std::endl;
+            }
+        }
+
+        const int subspotIdx = perLayerCount[layer]++;
+        if (subspotIdx >= maxSubspotsPerLayer) {
+            std::cerr << "[TEST] Warning: layer " << layer << " has more than maxSubspotsPerLayer rows; extra rows ignored." << std::endl;
+            continue;
+        }
+
+        const float dx = std::stof(fields[c_deltax]);
+        const float dy = std::stof(fields[c_deltay]);
+        const float w = std::stof(fields[c_weight]);
+        const float sx = std::stof(fields[c_sigmax]);
+        const float sy = std::stof(fields[c_sigmay]);
+
+        const size_t base = (static_cast<size_t>(layer) * maxSubspotsPerLayer + subspotIdx) * 5;
+        subspotDataOut[base + 0] = dx;
+        subspotDataOut[base + 1] = dy;
+        subspotDataOut[base + 2] = w;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        subspotDataOut[base + 3] = sx;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        subspotDataOut[base + 4] = sy;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // For now, set the layer sigma to the first subspot's sigma (common case: 1 subspot)
+        if (subspotIdx == 0) {
+            spotSigmasOut[layer] = make_float2(sx, sy);
+        }
+    }
+}
+
+static void loadDosecalSubspotDataCSV(
+    const std::string& path,
+    int& numLayers,
+    int& maxSubspotsPerLayer,
+    std::vector<float>& subspotDataOut,
+    std::vector<float2>& spotSigmasOut
+) {
+    std::vector<int> shape;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (!readMetaShape(path, shape) || shape.size() != 3 || shape[2] != 5) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        throw std::runtime_error("subspot_data CSV missing/invalid #meta,shape,(L,S,5): " + path);
+    }
+
+    numLayers = shape[0];
+    maxSubspotsPerLayer = shape[1];
+    subspotDataOut.assign(static_cast<size_t>(numLayers) * maxSubspotsPerLayer * 5ull, 0.0f);
+    spotSigmasOut.assign(static_cast<size_t>(numLayers), make_float2(0.0f, 0.0f));
+
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        throw std::runtime_error("Failed to open: " + path);
+    }
+
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("i", 0) == 0) continue; // header i,j,k,value
+
+        size_t p1 = line.find(',');
+        if (p1 == std::string::npos) continue;
+        size_t p2 = line.find(',', p1 + 1);
+        if (p2 == std::string::npos) continue;
+        size_t p3 = line.find(',', p2 + 1);
+        if (p3 == std::string::npos) continue;
+
+        const int layer = std::stoi(trim_copy(line.substr(0, p1)));
+        const int subspot = std::stoi(trim_copy(line.substr(p1 + 1, p2 - p1 - 1)));
+        const int channel = std::stoi(trim_copy(line.substr(p2 + 1, p3 - p2 - 1)));
+        const float value = std::stof(trim_copy(line.substr(p3 + 1)));
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (layer < 0 || layer >= numLayers || subspot < 0 || subspot >= maxSubspotsPerLayer || channel < 0 || channel >= 5) {
+            continue;
+        }
+
+        const size_t base = (static_cast<size_t>(layer) * maxSubspotsPerLayer + static_cast<size_t>(subspot)) * 5ull;
+        subspotDataOut[base + static_cast<size_t>(channel)] = value;
+    }
+
+    for (int layer = 0; layer < numLayers; ++layer) {
+        for (int subspot = 0; subspot < maxSubspotsPerLayer; ++subspot) {
+            const size_t base = (static_cast<size_t>(layer) * maxSubspotsPerLayer + static_cast<size_t>(subspot)) * 5ull;
+            if (subspotDataOut[base + 2] > 0.0f) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                spotSigmasOut[static_cast<size_t>(layer)] = make_float2(subspotDataOut[base + 3], subspotDataOut[base + 4]);
+                break;
+            }
+        }
+    }
+}
+
+static float findOrderedFloatIndex(const std::vector<float>& xs, float x) {
+    if (xs.empty()) return 0.0f;
+    if (xs.size() == 1) return 0.0f;
+
+    const bool ascending = xs.front() <= xs.back();
+    const float xmin = ascending ? xs.front() : xs.back();
+    const float xmax = ascending ? xs.back() : xs.front();
+    if (x <= xmin) return ascending ? 0.0f : static_cast<float>(xs.size() - 1);
+    if (x >= xmax) return ascending ? static_cast<float>(xs.size() - 1) : 0.0f;
+
+    for (size_t i = 0; i + 1 < xs.size(); ++i) {
+        const float a = xs[i];
+        const float b = xs[i + 1];
+        const float lo = std::min(a, b);
+        const float hi = std::max(a, b);
+        if (x < lo || x > hi) continue;
+        const float denom = b - a;
+        const float t = (std::fabs(denom) > 1e-6f) ? ((x - a) / denom) : 0.0f;
+        return static_cast<float>(i) + std::min(1.0f, std::max(0.0f, t));
+    }
+
+    return ascending ? static_cast<float>(xs.size() - 1) : 0.0f;
+}
+
+static bool hasPositiveSpotSigmas(const std::vector<float2>& spotSigmas) {
+    for (const float2& sigma : spotSigmas) {
+        if (sigma.x > 0.0f || sigma.y > 0.0f) return true;
+    }
+    return false;
+}
+
+static std::vector<float2> deriveLayerSpotSigmasFromBeamParaData(
+    const std::vector<float>& sourceEnergies,
+    const std::vector<float>& beamParaData,
+    const std::vector<float>& actualLayerEnergies
+) {
+    std::vector<float2> out(actualLayerEnergies.size(), make_float2(0.0f, 0.0f));
+    if (beamParaData.empty() || (beamParaData.size() % 3u) != 0u) return out;
+
+    const int rows = static_cast<int>(beamParaData.size() / 3u);
+    auto sampleTwoSigmaSq = [&](float rowIdx) {
+        const float clamped = std::min(std::max(rowIdx, 0.0f), static_cast<float>(std::max(0, rows - 1)));
+        const int i0 = std::max(0, std::min(rows - 1, static_cast<int>(std::floor(clamped))));
+        const int i1 = std::max(0, std::min(rows - 1, i0 + 1));
+        const float t = clamped - static_cast<float>(i0);
+        const float v0 = beamParaData[static_cast<size_t>(i0) * 3ull];
+        const float v1 = beamParaData[static_cast<size_t>(i1) * 3ull];
+        return v0 + (v1 - v0) * t;
+    };
+
+    if (rows == static_cast<int>(actualLayerEnergies.size())) {
+        for (size_t layer = 0; layer < actualLayerEnergies.size(); ++layer) {
+            const float twoSigmaSq = beamParaData[layer * 3ull];
+            const float sigma = std::sqrt(std::max(0.0f, 0.5f * twoSigmaSq));
+            out[layer] = make_float2(sigma, sigma);
+        }
+        return out;
+    }
+
+    if (static_cast<int>(sourceEnergies.size()) == rows && !sourceEnergies.empty()) {
+        for (size_t layer = 0; layer < actualLayerEnergies.size(); ++layer) {
+            const float rowIdx = findOrderedFloatIndex(sourceEnergies, actualLayerEnergies[layer]);
+            const float twoSigmaSq = sampleTwoSigmaSq(rowIdx);
+            const float sigma = std::sqrt(std::max(0.0f, 0.5f * twoSigmaSq));
+            out[layer] = make_float2(sigma, sigma);
+        }
+        return out;
+    }
+
+    throw std::runtime_error(
+        "beam_para_data rows cannot be mapped to actual layer energies without a matching energy axis");
+}
+
+static std::vector<int> inferLayerSpotCountsFromAllEnergies(
+    const std::vector<float>& actualLayerEnergies,
+    const std::vector<float>& allSpotEnergies
+) {
+    std::vector<int> counts(actualLayerEnergies.size(), 0);
+    if (actualLayerEnergies.empty() || allSpotEnergies.empty()) return counts;
+
+    for (float e : allSpotEnergies) {
+        float bestAbs = std::numeric_limits<float>::infinity();
+        size_t bestIdx = 0;
+        for (size_t i = 0; i < actualLayerEnergies.size(); ++i) {
+            const float d = std::fabs(actualLayerEnergies[i] - e);
+            if (d < bestAbs) {
+                bestAbs = d;
+                bestIdx = i;
+            }
+        }
+        counts[bestIdx] += 1;
+    }
+    return counts;
+}
+
+static void remapSubspotLutToActualLayers(
+    const std::vector<float>& lutEnergies,
+    const std::vector<float>& lutSubspotData,
+    const std::vector<float2>& lutSpotSigmas,
+    int lutLayerCount,
+    int maxSubspotsPerLayer,
+    const std::vector<float>& actualLayerEnergies,
+    std::vector<float>& outSubspotData,
+    std::vector<float2>& outSpotSigmas
+) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    outSubspotData.assign(static_cast<size_t>(actualLayerEnergies.size()) * maxSubspotsPerLayer * 5, 0.0f);
+    outSpotSigmas.assign(actualLayerEnergies.size(), make_float2(0.0f, 0.0f));
+    if (lutLayerCount <= 0 || maxSubspotsPerLayer <= 0 || lutEnergies.empty()) return;
+
+    for (size_t layer = 0; layer < actualLayerEnergies.size(); ++layer) {
+        const float lutIdx = findOrderedFloatIndex(lutEnergies, actualLayerEnergies[layer]);
+        float idxInt = 0.0f;
+        const float frac = std::modf(lutIdx, &idxInt);
+        const int i0 = std::max(0, std::min(lutLayerCount - 1, static_cast<int>(idxInt)));
+        const int i1 = std::max(0, std::min(lutLayerCount - 1, i0 + ((frac > 0.0f) ? 1 : 0)));
+
+        for (int s = 0; s < maxSubspotsPerLayer; ++s) {
+            for (int c = 0; c < 5; ++c) {
+                const size_t base0 = (static_cast<size_t>(i0) * maxSubspotsPerLayer + s) * 5 + c;
+                const size_t base1 = (static_cast<size_t>(i1) * maxSubspotsPerLayer + s) * 5 + c;
+                const float v0 = lutSubspotData[base0];
+                const float v1 = lutSubspotData[base1];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                outSubspotData[(static_cast<size_t>(layer) * maxSubspotsPerLayer + s) * 5 + c] =
+                    v0 + (v1 - v0) * frac;
+            }
+        }
+
+        const float2 s0 = lutSpotSigmas[std::min(i0, static_cast<int>(lutSpotSigmas.size()) - 1)];
+        const float2 s1 = lutSpotSigmas[std::min(i1, static_cast<int>(lutSpotSigmas.size()) - 1)];
+        outSpotSigmas[layer] = make_float2(
+            s0.x + (s1.x - s0.x) * frac,
+            s0.y + (s1.y - s0.y) * frac
+        );
+    }
+}
+
+static std::vector<float2> deriveLayerSpotSigmasFromSubspotData(
+    const std::vector<float>& subspotData,
+    int numLayers,
+    int maxSubspotsPerLayer
+) {
+    std::vector<float2> out(static_cast<size_t>(std::max(0, numLayers)), make_float2(0.0f, 0.0f));
+    if (numLayers <= 0 || maxSubspotsPerLayer <= 0) return out;
+
+    for (int layer = 0; layer < numLayers; ++layer) {
+        for (int subspot = 0; subspot < maxSubspotsPerLayer; ++subspot) {
+            const size_t base = (static_cast<size_t>(layer) * maxSubspotsPerLayer + static_cast<size_t>(subspot)) * 5ull;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            if (base + 4 >= subspotData.size()) {
+                break;
+            }
+            if (subspotData[base + 2] > 0.0f || subspot == 0) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                out[static_cast<size_t>(layer)] = make_float2(subspotData[base + 3], subspotData[base + 4]);
+                if (subspotData[base + 2] > 0.0f) break;
+            }
+        }
+    }
+    return out;
+}
+
+static RTDBeamSettings loadBeamSettingsFromCsv(const std::string& inputDir, const std::string& subspotCsv, const std::string& beamPrefix) {
+    RTDBeamSettings beam;
+
+    const std::vector<float> lutEnergies = loadExported1D(inputDir + "/" + beamPrefix + "_energy_list.csv");
+    const SliceMode profileSliceMode = parseSliceModeEnv("RTD_PROFILE_SLICE_MODE", SliceMode::Tail);
+    std::vector<float> actualLayerEnergies = loadExported1D(inputDir + "/" + beamPrefix + "_layer_energy.csv");
+    if (actualLayerEnergies.empty()) {
+        const std::vector<float> allSpotEnergies = loadExported1D(inputDir + "/" + beamPrefix + "_all_energies.csv");
+        for (float e : allSpotEnergies) {
+            if (actualLayerEnergies.empty() || std::fabs(actualLayerEnergies.back() - e) > 1e-4f) {
+                actualLayerEnergies.push_back(e);
+            }
+        }
+    }
+    if (actualLayerEnergies.empty()) {
+        actualLayerEnergies = lutEnergies;
+    }
+    beam.energies = actualLayerEnergies;
+    beam.profileEnergies = lutEnergies;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Beam geometry (CarbonPBS style)
+    {
+        const std::vector<float> src = loadExported1D(inputDir + "/" + beamPrefix + "_source_pos.csv");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (src.size() != 3) throw std::runtime_error("source_pos must have 3 values");
+        beam.sourcePosition = make_float3(src[0], src[1], src[2]);
+    }
+    {
+        const std::vector<float> sad = loadExported1D(inputDir + "/" + beamPrefix + "_sad.csv");
+        if (sad.empty()) throw std::runtime_error("sad missing");
+        beam.sad = sad[0];
+    }
+
+    // bmxdir/bmydir
+    {
+        const std::vector<float> xdir = loadExported1D(inputDir + "/" + beamPrefix + "_beam_xdir.csv");
+        const std::vector<float> ydir = loadExported1D(inputDir + "/" + beamPrefix + "_beam_ydir.csv");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (xdir.size() != 3 || ydir.size() != 3) throw std::runtime_error("beam_xdir/beam_ydir must have 3 values");
+        beam.bmXDirection = make_float3(xdir[0], xdir[1], xdir[2]);
+        beam.bmYDirection = make_float3(ydir[0], ydir[1], ydir[2]);
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // beam_dir is exported as a flattened array (N*3). We use the mean direction.
+    {
+        const std::vector<float> dirFlat = loadExported1D(inputDir + "/" + beamPrefix + "_beam_dir.csv");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (dirFlat.size() < 3 || (dirFlat.size() % 3) != 0) {
+            throw std::runtime_error("beam_dir must be a flat vector with length multiple of 3");
+        }
+        double sx = 0.0, sy = 0.0, sz = 0.0;
+        const size_t n = dirFlat.size() / 3;
+        for (size_t i = 0; i < n; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sx += dirFlat[i * 3 + 0];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sy += dirFlat[i * 3 + 1];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sz += dirFlat[i * 3 + 2];
+        }
+        float3 d = make_float3(static_cast<float>(sx / n), static_cast<float>(sy / n), static_cast<float>(sz / n));
+        const float len = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (len > 0.0f) {
+            d.x /= len; d.y /= len; d.z /= len;
+        }
+        beam.beamDirection = d;
+        beam.spotBeamDirections = dirFlat;
+    }
+
+    {
+        int rows = 0;
+        int cols = 0;
+        beam.spotPositions = loadExported2D(inputDir + "/" + beamPrefix + "_idbeamxy.csv", rows, cols);
+        if (cols != 2) {
+            throw std::runtime_error("idbeamxy must be shape (N,2)");
+        }
+    }
+    beam.waterEquivalence = loadWaterEquivalenceFromMetaAndBin(inputDir, beamPrefix);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.waterEquivalence.size() >= 9) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        beam.rayWeqHeader.assign(beam.waterEquivalence.begin(), beam.waterEquivalence.begin() + 9);
+    }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.waterEquivalence.size() < 9) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        throw std::runtime_error("water_equivalence header must provide at least 9 values");
+    }
+    for (float v : loadExported1D(inputDir + "/" + beamPrefix + "_layer_info.csv")) {
+        beam.layerSpotCounts.push_back(static_cast<int>(std::lround(v)));
+    }
+    beam.spotWeights = loadExported1D(inputDir + "/" + beamPrefix + "_number_particle.csv");
+    const std::vector<float> allSpotEnergies = loadExported1D(inputDir + "/" + beamPrefix + "_all_energies.csv");
+    const std::string longitudinalCutoffPath = inputDir + "/" + beamPrefix + "_longitudal_cutoff.csv";
+    const std::vector<float> allSpotLongitudinalCutoffs =
+        std::filesystem::exists(longitudinalCutoffPath) ? loadExported1D(longitudinalCutoffPath) : std::vector<float>();
+    const std::vector<float2> perSpotSigmas = loadSpotSigmasPerSpot(inputDir, beamPrefix, beam.spotWeights.size());
+    const std::string profileDataPath = inputDir + "/" + beamPrefix + "_profile_data.csv";
+    const bool profileSliceExport = isSliceExport(profileDataPath);
+    beam.profileSetting = loadExported1D(inputDir + "/" + beamPrefix + "_profile_setting.csv");
+    {
+        int bpRows = 0;
+        int bpCols = 0;
+        beam.beamParaData = loadExported2D(inputDir + "/" + beamPrefix + "_beam_para_data.csv", bpRows, bpCols, true);
+    }
+    {
+        int pd0 = 0, pd1 = 0, pd2 = 0;
+        beam.profileData = loadExported3D(profileDataPath, pd0, pd1, pd2, !profileSliceExport);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (profileSliceExport && beam.profileSetting.size() >= 3 && pd1 > 0) {
+            const int logicalDepthN = std::max(0, static_cast<int>(std::lround(beam.profileSetting[2])));
+            if (logicalDepthN > pd1) {
+                beam.profileSetting[1] *= static_cast<float>(logicalDepthN) / static_cast<float>(pd1);
+            }
+            beam.profileSetting[2] = static_cast<float>(pd1);
+        }
+        if (profileSliceExport && pd0 > 0 && !lutEnergies.empty()) {
+            beam.profileEnergies = selectSliceEnergies(lutEnergies, pd0, profileSliceMode);
+        }
+        if (pd0 != static_cast<int>(beam.energies.size()) && rtdVerboseFineTiming()) {
+            std::cout << "[TEST] Warning: profile_data first dim=" << pd0
+                      << " differs from num layers=" << beam.energies.size() << std::endl;
+        }
+    }
+    beam.beamParaPos = 0.0f;
+
+    const int totalSpots = static_cast<int>(beam.spotWeights.size());
+    int countedSpots = 0;
+    for (int v : beam.layerSpotCounts) countedSpots += v;
+    if (beam.layerSpotCounts.empty() || countedSpots != totalSpots || static_cast<int>(beam.layerSpotCounts.size()) != static_cast<int>(beam.energies.size())) {
+        beam.layerSpotCounts = inferLayerSpotCountsFromAllEnergies(beam.energies, allSpotEnergies);
+        countedSpots = 0;
+        for (int v : beam.layerSpotCounts) countedSpots += v;
+        if (countedSpots != totalSpots) {
+            throw std::runtime_error("Unable to reconcile layer_info/all_energies with spot count");
+        }
+    }
+    if (!allSpotLongitudinalCutoffs.empty()) {
+        if (static_cast<int>(allSpotLongitudinalCutoffs.size()) != totalSpots) {
+            throw std::runtime_error("longitudal_cutoff size does not match spot count");
+        }
+        beam.layerLongitudinalCutoffs = deriveLayerLongitudinalCutoffs(allSpotLongitudinalCutoffs, beam.layerSpotCounts);
+    }
+
+    // Subspot data remains optional in strict RTD-baseline mode. Load it only for
+    // audit / future comparison; it must not be required to drive the main path.
+    int lutLayerCount = 0;
+    int maxSubspots = 0;
+    std::vector<float> lutSubspotData;
+    std::vector<float2> lutSpotSigmas;
+    const std::string subspotDataCsv = defaultDosecalSubspotDataCsvForPrefix(inputDir, beamPrefix);
+    if (!subspotDataCsv.empty()) {
+        loadDosecalSubspotDataCSV(subspotDataCsv, lutLayerCount, maxSubspots, lutSubspotData, lutSpotSigmas);
+    } else if (!subspotCsv.empty() && std::filesystem::exists(subspotCsv)) {
+        loadCompactSubspotCSV(subspotCsv, lutLayerCount, maxSubspots, lutSubspotData, lutSpotSigmas);
+    }
+
+    if (maxSubspots > 0 && static_cast<int>(lutEnergies.size()) != lutLayerCount) {
+        std::cerr << "[TEST] Warning: energy_list has " << lutEnergies.size() << " LUT energies but subspot CSV reports " << lutLayerCount << std::endl;
+    }
+
+    beam.maxSubspotsPerLayer = maxSubspots;
+    if (maxSubspots > 0) {
+        remapSubspotLutToActualLayers(
+            lutEnergies,
+            lutSubspotData,
+            lutSpotSigmas,
+            lutLayerCount,
+            maxSubspots,
+            beam.energies,
+            beam.subspotData,
+            beam.spotSigmas
+        );
+    } else {
+        beam.subspotData.clear();
+        beam.spotSigmas.clear();
+    }
+
+    const std::vector<float2> subspotAuditSigmas = beam.spotSigmas;
+    if (!beam.beamParaData.empty()) {
+        beam.spotSigmas = deriveLayerSpotSigmasFromBeamParaData(lutEnergies, beam.beamParaData, beam.energies);
+    }
+    if (!hasPositiveSpotSigmas(beam.spotSigmas)) {
+        if (maxSubspots > 0 && !subspotAuditSigmas.empty()) {
+            beam.spotSigmas = subspotAuditSigmas;
+        }
+        if (maxSubspots > 0 && rtdVerboseFineTiming()) {
+            std::cout << "[TEST] Warning: beam_para_data did not yield positive RTD spot sigmas; keeping subspot-derived values for audit."
+                      << std::endl;
+        }
+        if (!hasPositiveSpotSigmas(beam.spotSigmas) && maxSubspots <= 0) {
+            throw std::runtime_error("Unable to derive RTD spotSigmas from beam_para_data");
+        }
+    }
+
+    if (!perSpotSigmas.empty() && rtdVerboseFineTiming()) {
+        const std::vector<float2> debugLayerSigmas =
+            buildLayerSpotSigmasFromPerSpot(beam.layerSpotCounts, beam.spotWeights, perSpotSigmas);
+        std::cout << "[TEST] Per-spot sigma CSV detected but not used for RTD entry convolution."
+                  << " Sample layer sigma=("
+                  << (debugLayerSigmas.empty() ? 0.0f : debugLayerSigmas.front().x) << ","
+                  << (debugLayerSigmas.empty() ? 0.0f : debugLayerSigmas.front().y) << ")"
+                  << std::endl;
+    }
+
+    // Remaining wrapper-required values from CSV settings
+    {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        beam.raySpacing = make_float2(beam.waterEquivalence[7], beam.waterEquivalence[4]);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // spotDelta is physical PB spacing, NOT CPB/WEQ spacing. Leave at (0,0,0);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // the wrapper infers it via buildPhysicalPBLatticeView().
+        beam.spotDelta = make_float3(0.0f, 0.0f, 0.0f);
+    }
+    beam.spotPositionsAreIndices = true;
+    beam.steps = std::max(1, static_cast<int>(std::lround(beam.waterEquivalence[2])));
+    beam.sourceDist = make_float2(0.0f, 0.0f);     // wrapper fallback => SAD
+    beam.spotOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam.refPlaneZ = 0.0f;
+
+    const std::filesystem::path inputPath(inputDir);
+    const std::string planPrefix = beamPrefix.substr(0, beamPrefix.find("_beam"));
+    const std::filesystem::path roiPath = inputPath.parent_path() / (planPrefix + "_ext_contour_linear.csv");
+    if (std::filesystem::exists(roiPath)) {
+        std::string exportMode;
+        const bool hasExportMode = readMetaValue(roiPath.string(), "export_mode", exportMode);
+        if (hasExportMode && exportMode != "full") {
+            if (rtdVerboseFineTiming()) {
+                std::cout << "[TEST] Ignoring ROI linear indices from " << roiPath
+                          << " because export_mode=" << exportMode
+                          << " (need full-volume mask for CT phantom construction)" << std::endl;
+            }
+            return beam;
+        }
+
+        beam.roiLinearIndices.reserve(1024);
+        std::ifstream roiFile(roiPath);
+        std::string line;
+        while (std::getline(roiFile, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            const std::string trimmed = trim_copy(line);
+            if (trimmed == "index,linear") continue;
+            std::stringstream ss(line);
+            std::string idxTok, linearTok;
+            if (!std::getline(ss, idxTok, ',')) continue;
+            if (!std::getline(ss, linearTok, ',')) continue;
+            linearTok = trim_copy(linearTok);
+            if (linearTok.empty() || !std::isdigit(static_cast<unsigned char>(linearTok[0]))) continue;
+            beam.roiLinearIndices.push_back(std::stoi(linearTok));
+        }
+        if (rtdVerboseFineTiming()) {
+            std::cout << "[TEST] Loaded ROI linear indices: " << beam.roiLinearIndices.size()
+                      << " from " << roiPath << std::endl;
+        }
+
+        std::vector<int> roiShape;
+        const bool hasRoiShape = readMetaShape(roiPath.string(), roiShape);
+        const size_t totalVoxels =
+            (hasRoiShape && !roiShape.empty() && roiShape[0] > 0) ? static_cast<size_t>(roiShape[0]) : 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (totalVoxels > 0 && beam.roiLinearIndices.size() < std::max<size_t>(1024, totalVoxels / 200)) {
+            if (rtdVerboseFineTiming()) {
+                std::cout << "[TEST] Ignoring ROI linear indices from " << roiPath
+                          << " because mask is too sparse for a body phantom: "
+                          << beam.roiLinearIndices.size() << " voxels vs total " << totalVoxels
+                          << std::endl;
+            }
+            beam.roiLinearIndices.clear();
+        }
+    }
+
+    if (rtdInputAuditEnabled()) {
+        std::cout << "[INPUT_AUDIT][TEST] profileSliceExport=" << (profileSliceExport ? 1 : 0)
+                  << " profileSliceMode=" << sliceModeName(profileSliceMode)
+                  << " profileRows=" << static_cast<int>(beam.profileEnergies.size())
+                  << " profileRawSize=" << beam.profileData.size()
+                  << " beamParaRows=" << static_cast<int>(beam.beamParaData.size() / 3ull)
+                  << std::endl;
+        printProfileAudit("TEST", beam);
+    }
+
+    return beam;
+}
+
+static RTDBeamSettings loadBeamSettingsFromBinaryFixture(const std::string& inputDir) {
+    RTDBeamSettings beam;
+    const std::filesystem::path base(inputDir);
+
+    const std::vector<float> lutEnergies = readBinaryArray<float>(base / "energy_list.bin");
+    std::vector<float> actualLayerEnergies = readBinaryArray<float>(base / "layer_energy.bin");
+    const std::vector<float> allSpotEnergies = readBinaryArray<float>(base / "all_energies.bin");
+    if (actualLayerEnergies.empty()) {
+        for (float e : allSpotEnergies) {
+            if (actualLayerEnergies.empty() || std::fabs(actualLayerEnergies.back() - e) > 1.0e-4f) {
+                actualLayerEnergies.push_back(e);
+            }
+        }
+    }
+    if (actualLayerEnergies.empty()) {
+        actualLayerEnergies = lutEnergies;
+    }
+    beam.energies = actualLayerEnergies;
+    beam.profileEnergies = lutEnergies;
+
+    {
+        const std::vector<float> src = readBinaryArray<float>(base / "source_pos.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (src.size() != 3) throw std::runtime_error("source_pos.bin must contain 3 float32 values");
+        beam.sourcePosition = make_float3(src[0], src[1], src[2]);
+    }
+    beam.sad = std::stof(readSingleLineTrimmed(base / "SAD.txt"));
+
+    {
+        const std::vector<float> xdir = readBinaryArray<float>(base / "beam_xdir.bin");
+        const std::vector<float> ydir = readBinaryArray<float>(base / "beam_ydir.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        if (xdir.size() != 3 || ydir.size() != 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            throw std::runtime_error("beam_xdir.bin/beam_ydir.bin must contain 3 float32 values");
+        }
+        beam.bmXDirection = make_float3(xdir[0], xdir[1], xdir[2]);
+        beam.bmYDirection = make_float3(ydir[0], ydir[1], ydir[2]);
+    }
+
+    beam.spotBeamDirections = readBinaryArray<float>(base / "beam_dir.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.spotBeamDirections.size() < 3 || (beam.spotBeamDirections.size() % 3) != 0) {
+        throw std::runtime_error("beam_dir.bin must flatten to an Nx3 float32 array");
+    }
+    {
+        double sx = 0.0;
+        double sy = 0.0;
+        double sz = 0.0;
+        const size_t n = beam.spotBeamDirections.size() / 3;
+        for (size_t i = 0; i < n; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sx += beam.spotBeamDirections[i * 3 + 0];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sy += beam.spotBeamDirections[i * 3 + 1];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            sz += beam.spotBeamDirections[i * 3 + 2];
+        }
+        float3 d = make_float3(static_cast<float>(sx / n), static_cast<float>(sy / n), static_cast<float>(sz / n));
+        const float len = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (len > 0.0f) {
+            d.x /= len;
+            d.y /= len;
+            d.z /= len;
+        }
+        beam.beamDirection = d;
+    }
+
+    beam.spotPositions = readBinaryArray<float>(base / "idbeamxy.bin");
+    if (beam.spotPositions.empty() || (beam.spotPositions.size() % 2) != 0) {
+        throw std::runtime_error("idbeamxy.bin must flatten to an Nx2 float32 array");
+    }
+
+    beam.waterEquivalence = loadWaterEquivalenceFromBinaryPrefix(base / "water_equivalence.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (beam.waterEquivalence.size() < 9) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        throw std::runtime_error("water_equivalence.bin must include the 9-value CarbonPBS header");
+    }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam.rayWeqHeader.assign(beam.waterEquivalence.begin(), beam.waterEquivalence.begin() + 9);
+
+    beam.layerSpotCounts = loadCountVectorFromBinaryFixture(base / "layer_info.bin");
+    if (std::filesystem::exists(base / "num_particles_per_beam.bin")) {
+        beam.spotWeights = readBinaryArray<float>(base / "num_particles_per_beam.bin");
+    } else {
+        beam.spotWeights = readBinaryArray<float>(base / "number_particle.bin");
+    }
+    beam.profileSetting = readBinaryArray<float>(base / "profile_setting.bin");
+    beam.beamParaData = readBinaryArray<float>(base / "beam_para_data.bin");
+    beam.profileData = readBinaryArray<float>(base / "profile_data.bin");
+    beam.beamParaPos = 0.0f;
+
+    const int totalSpots = static_cast<int>(beam.spotWeights.size());
+    int countedSpots = 0;
+    for (int v : beam.layerSpotCounts) countedSpots += v;
+    if (beam.layerSpotCounts.empty() ||
+        countedSpots != totalSpots ||
+        static_cast<int>(beam.layerSpotCounts.size()) != static_cast<int>(beam.energies.size())) {
+        beam.layerSpotCounts = inferLayerSpotCountsFromAllEnergies(beam.energies, allSpotEnergies);
+        countedSpots = 0;
+        for (int v : beam.layerSpotCounts) countedSpots += v;
+        if (countedSpots != totalSpots) {
+            throw std::runtime_error("Unable to reconcile layer_info.bin/all_energies.bin with spot count");
+        }
+    }
+
+    const std::filesystem::path longitudinalCutoffPath = base / "longitudal_cutoff.bin";
+    if (std::filesystem::exists(longitudinalCutoffPath)) {
+        const std::vector<float> allSpotLongitudinalCutoffs = readBinaryArray<float>(longitudinalCutoffPath);
+        if (!allSpotLongitudinalCutoffs.empty()) {
+            if (static_cast<int>(allSpotLongitudinalCutoffs.size()) != totalSpots) {
+                throw std::runtime_error("longitudal_cutoff.bin size does not match spot count");
+            }
+            beam.layerLongitudinalCutoffs = deriveLayerLongitudinalCutoffs(allSpotLongitudinalCutoffs, beam.layerSpotCounts);
+        }
+    }
+
+    const std::vector<float> lutSubspotData = readBinaryArray<float>(base / "subspot_data.bin");
+    if (!lutSubspotData.empty()) {
+        const int lutLayerCount = static_cast<int>(lutEnergies.size());
+        if (lutLayerCount <= 0 || (lutSubspotData.size() % (static_cast<size_t>(lutLayerCount) * 5ull)) != 0ull) {
+            throw std::runtime_error("subspot_data.bin size is incompatible with energy_list.bin");
+        }
+        const int maxSubspotsPerLayer = static_cast<int>(lutSubspotData.size() / (static_cast<size_t>(lutLayerCount) * 5ull));
+        const std::vector<float2> lutSpotSigmas =
+            deriveLayerSpotSigmasFromSubspotData(lutSubspotData, lutLayerCount, maxSubspotsPerLayer);
+        beam.maxSubspotsPerLayer = maxSubspotsPerLayer;
+        remapSubspotLutToActualLayers(
+            lutEnergies,
+            lutSubspotData,
+            lutSpotSigmas,
+            lutLayerCount,
+            maxSubspotsPerLayer,
+            beam.energies,
+            beam.subspotData,
+            beam.spotSigmas
+        );
+    } else {
+        beam.maxSubspotsPerLayer = 0;
+        beam.subspotData.clear();
+        beam.spotSigmas.clear();
+    }
+
+    const std::vector<float2> subspotAuditSigmas = beam.spotSigmas;
+    if (!beam.beamParaData.empty()) {
+        beam.spotSigmas = deriveLayerSpotSigmasFromBeamParaData(lutEnergies, beam.beamParaData, beam.energies);
+    }
+    if (!hasPositiveSpotSigmas(beam.spotSigmas) && beam.maxSubspotsPerLayer > 0) {
+        beam.spotSigmas = subspotAuditSigmas;
+    }
+    if (!hasPositiveSpotSigmas(beam.spotSigmas) && beam.maxSubspotsPerLayer <= 0) {
+        throw std::runtime_error("Unable to derive RTD spotSigmas from beam_para_data.bin");
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam.raySpacing = make_float2(beam.waterEquivalence[7], beam.waterEquivalence[4]);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // spotDelta is physical PB spacing, NOT CPB/WEQ spacing. Leave at (0,0,0);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // the wrapper infers it via buildPhysicalPBLatticeView().
+    beam.spotDelta = make_float3(0.0f, 0.0f, 0.0f);
+    beam.spotPositionsAreIndices = true;
+    beam.steps = std::max(1, static_cast<int>(std::lround(beam.waterEquivalence[2])));
+    beam.sourceDist = make_float2(0.0f, 0.0f);
+    beam.spotOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam.refPlaneZ = 0.0f;
+
+    const std::vector<int> dims = loadDimsFromBinaryFixture(base / "doseGrid_dims.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (dims.size() == 3) {
+        const int totalVoxels = dims[0] * dims[1] * dims[2];
+        const std::filesystem::path bodyPath = base / "ext_contour_linear.bin";
+        const std::filesystem::path optPath = base / "ext_contour_linear_opt.bin";
+        if (std::filesystem::exists(bodyPath)) {
+            beam.roiLinearIndices = loadLinearIndicesFromBinaryFixture(bodyPath, totalVoxels);
+        } else if (std::filesystem::exists(optPath)) {
+            beam.roiLinearIndices = loadLinearIndicesFromBinaryFixture(optPath, totalVoxels);
+        }
+    }
+
+    if (rtdInputAuditEnabled()) {
+        std::cout << "[INPUT_AUDIT][TEST] binaryFixture=1"
+                  << " profileRows=" << static_cast<int>(beam.profileEnergies.size())
+                  << " profileRawSize=" << beam.profileData.size()
+                  << " beamParaRows=" << static_cast<int>(beam.beamParaData.size() / 3ull)
+                  << std::endl;
+        printProfileAudit("TEST", beam);
+    }
+
+    return beam;
+}
+
+static RTDEnergyStruct loadEnergyDataFromCsv(
+    const std::string& inputDir,
+    const std::string& tablesDir,
+    const std::vector<float>& energies,
+    const std::string& beamPrefix
+) {
+    RTDEnergyStruct out;
+
+    const std::string iddPath = inputDir + "/" + beamPrefix + "_idd_data.csv";
+    const bool iddSliceExport = isSliceExport(iddPath);
+    const SliceMode iddSliceMode = parseSliceModeEnv("RTD_IDD_SLICE_MODE", SliceMode::Tail);
+    if (iddSliceExport && rtdVerboseFineTiming()) {
+        std::cout << "[TEST] IDD table is export_mode=slice; preserving exported sparse values and logical shape"
+                  << std::endl;
+    }
+
+    // IDD settings: [start_mm, step_mm, nSamples]
+    const std::vector<float> iddSetting = loadExported1D(inputDir + "/" + beamPrefix + "_idd_setting.csv");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (iddSetting.size() < 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        throw std::runtime_error("idd_setting must have 3 values");
+    }
+    const float startRaw = iddSetting[0];
+    const float stepRaw = iddSetting[1];
+
+    int rows = 0, cols = 0;
+    std::vector<float> idd = loadExported2D(iddPath, rows, cols, !iddSliceExport);
+
+    if (rows != static_cast<int>(energies.size()) && rtdVerboseFineTiming()) {
+        std::cerr << "[TEST] Warning: idd_data rows=" << rows << " but energies.size()=" << energies.size() << std::endl;
+    }
+
+    out.nEnergies = rows;
+    out.nEnergySamples = cols;
+    out.energiesPerU = iddSliceExport ? selectSliceEnergies(energies, rows, iddSliceMode) : energies;
+
+    // Slice exports compact the logical depth axis into a reduced sample count.
+    // Preserve the original physical span by scaling the effective step to the
+    // ratio between logical and exported columns.
+    const int logicalCols = static_cast<int>(std::lround(iddSetting[2]));
+    float sliceDepthScale = 1.0f;
+    if (iddSliceExport && cols > 0 && logicalCols > cols) {
+        sliceDepthScale = static_cast<float>(logicalCols) / static_cast<float>(cols);
+    }
+
+    // CarbonPBS exports often store IDD depth axes in mm. Old heuristics inferred
+    // cm from the compact slice, which collapses dose to zero for these exports.
+    // Keep slice exports in their native unit and only apply the old cm->mm guess
+    // to non-slice tables.
+    float iddDepthUnitToMm = 1.0f;
+    const float observedDepthSpanRaw = (cols > 1) ? ((cols - 1) * stepRaw * sliceDepthScale) : (stepRaw * sliceDepthScale);
+    const float maxEnergy = energies.empty() ? 0.0f : *std::max_element(energies.begin(), energies.end());
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (!iddSliceExport && stepRaw > 0.0f && stepRaw < 1.0f && observedDepthSpanRaw < 20.0f) {
+        iddDepthUnitToMm = 10.0f;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    } else if (!iddSliceExport && maxEnergy >= 250.0f && observedDepthSpanRaw > 20.0f && observedDepthSpanRaw <= 100.0f) {
+        // For proton/carbon depth-dose tables, a max depth under 100 "mm" at 250+ MeV
+        // is physically implausible but perfectly plausible in cm.
+        iddDepthUnitToMm = 10.0f;
+        if (rtdVerboseFineTiming()) {
+            std::cout << "[TEST] Interpreting IDD depth axis as cm based on energy/depth plausibility: "
+                      << "maxEnergy=" << maxEnergy << " MeV, rawDepthSpan=" << observedDepthSpanRaw
+                      << std::endl;
+        }
+    }
+    const float start = startRaw * iddDepthUnitToMm;
+    const float step = stepRaw * sliceDepthScale * iddDepthUnitToMm;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // scaleFacts convert WEPL(mm) -> sample index. If table spacing is 'step' mm, scale=1/step.
+    out.scaleFacts.assign(out.nEnergies, (step > 0.0f) ? (1.0f / step) : 1.0f);
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Convert differential IDD -> cumulative integral IDD (CIDD).
+    out.ciddMatrix.assign(static_cast<size_t>(out.nEnergies) * out.nEnergySamples, 0.0f);
+    for (int e = 0; e < out.nEnergies; ++e) {
+        float accum = 0.0f;
+        for (int j = 0; j < out.nEnergySamples; ++j) {
+            accum += idd[static_cast<size_t>(e) * out.nEnergySamples + j] * step;
+            out.ciddMatrix[static_cast<size_t>(e) * out.nEnergySamples + j] = accum;
+        }
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Tissue LUTs (density / stopping power / radiation length) from reference tables
+    EnergyStruct ref = energyReader(tablesDir);
+    out.nDensitySamples = ref.nDensitySamples;
+    out.densityScaleFact = ref.densityScaleFact;
+    out.densityVector = ref.densityVector;
+
+    out.nSpSamples = ref.nSpSamples;
+    out.spScaleFact = ref.spScaleFact;
+    out.spVector = ref.spVector;
+
+    out.nRRlSamples = ref.nRRlSamples;
+    out.rRlScaleFact = ref.rRlScaleFact;
+    out.rRlVector = ref.rRlVector;
+
+    out.peakDepths.assign(out.nEnergies, 0.0f);
+    for (int e = 0; e < out.nEnergies; ++e) {
+        const float energyPerU = (e < static_cast<int>(out.energiesPerU.size())) ? out.energiesPerU[static_cast<size_t>(e)] : 0.0f;
+        out.peakDepths[static_cast<size_t>(e)] = interpolatePeakDepthFromReference(ref, energyPerU);
+    }
+
+    if (rtdInputAuditEnabled()) {
+        std::cout << "[INPUT_AUDIT][TEST] iddSliceExport=" << (iddSliceExport ? 1 : 0)
+                  << " iddSliceMode=" << sliceModeName(iddSliceMode)
+                  << " rawStep=" << stepRaw
+                  << " logicalCols=" << logicalCols
+                  << " exportedCols=" << cols
+                  << " effectiveStep=" << step
+                  << std::endl;
+        printCiddAudit("TEST", out);
+    }
+
+    rtd::nuclear::alignNuclearTablesToPrimaryAxis(ref, out, "wrapper_integration_test CSV nuclear LUT alignment");
+
+    return out;
+}
+
+static RTDEnergyStruct loadEnergyDataFromBinaryFixture(
+    const std::string& inputDir,
+    const std::string& tablesDir
+) {
+    RTDEnergyStruct out;
+    const std::filesystem::path base(inputDir);
+
+    out.energiesPerU = readBinaryArray<float>(base / "energy_list.bin");
+    if (out.energiesPerU.empty()) {
+        throw std::runtime_error("energy_list.bin must not be empty");
+    }
+
+    const std::vector<float> iddSetting = readBinaryArray<float>(base / "idd_setting.bin");
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (iddSetting.size() < 3) {
+        throw std::runtime_error("idd_setting.bin must provide [start, step, nSamples]");
+    }
+
+    const std::vector<float> idd = readBinaryArray<float>(base / "idd_data.bin");
+    const int rows = static_cast<int>(out.energiesPerU.size());
+    if (rows <= 0 || (idd.size() % static_cast<size_t>(rows)) != 0ull) {
+        throw std::runtime_error("idd_data.bin size is incompatible with energy_list.bin");
+    }
+    const int cols = static_cast<int>(idd.size() / static_cast<size_t>(rows));
+    out.nEnergies = rows;
+    out.nEnergySamples = cols;
+
+    const float stepRaw = iddSetting[1];
+    const int logicalCols = static_cast<int>(std::lround(iddSetting[2]));
+    const bool compactedDepthAxis = cols > 0 && logicalCols > cols;
+    float sliceDepthScale = 1.0f;
+    if (compactedDepthAxis) {
+        sliceDepthScale = static_cast<float>(logicalCols) / static_cast<float>(cols);
+    }
+
+    float iddDepthUnitToMm = 1.0f;
+    const float observedDepthSpanRaw =
+        (cols > 1) ? ((cols - 1) * stepRaw * sliceDepthScale) : (stepRaw * sliceDepthScale);
+    const float maxEnergy = *std::max_element(out.energiesPerU.begin(), out.energiesPerU.end());
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (!compactedDepthAxis && stepRaw > 0.0f && stepRaw < 1.0f && observedDepthSpanRaw < 20.0f) {
+        iddDepthUnitToMm = 10.0f;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    } else if (!compactedDepthAxis && maxEnergy >= 250.0f && observedDepthSpanRaw > 20.0f && observedDepthSpanRaw <= 100.0f) {
+        iddDepthUnitToMm = 10.0f;
+    }
+    const float start = iddSetting[0] * iddDepthUnitToMm;
+    const float step = stepRaw * sliceDepthScale * iddDepthUnitToMm;
+
+    out.scaleFacts.assign(static_cast<size_t>(out.nEnergies), (step > 0.0f) ? (1.0f / step) : 1.0f);
+    out.ciddMatrix.assign(static_cast<size_t>(out.nEnergies) * out.nEnergySamples, 0.0f);
+    for (int e = 0; e < out.nEnergies; ++e) {
+        float accum = 0.0f;
+        for (int j = 0; j < out.nEnergySamples; ++j) {
+            accum += idd[static_cast<size_t>(e) * out.nEnergySamples + static_cast<size_t>(j)] * step;
+            out.ciddMatrix[static_cast<size_t>(e) * out.nEnergySamples + static_cast<size_t>(j)] = accum;
+        }
+    }
+
+    EnergyStruct ref = energyReader(tablesDir);
+    out.nDensitySamples = ref.nDensitySamples;
+    out.densityScaleFact = ref.densityScaleFact;
+    out.densityVector = ref.densityVector;
+    out.nSpSamples = ref.nSpSamples;
+    out.spScaleFact = ref.spScaleFact;
+    out.spVector = ref.spVector;
+    out.nRRlSamples = ref.nRRlSamples;
+    out.rRlScaleFact = ref.rRlScaleFact;
+    out.rRlVector = ref.rRlVector;
+
+    out.peakDepths = derivePeakDepthsFromIdd(idd, out.nEnergies, out.nEnergySamples, start, step);
+    if (std::none_of(out.peakDepths.begin(), out.peakDepths.end(), [](float v) { return v > 0.0f; })) {
+        out.peakDepths.assign(static_cast<size_t>(out.nEnergies), 0.0f);
+        for (int e = 0; e < out.nEnergies; ++e) {
+            out.peakDepths[static_cast<size_t>(e)] =
+                interpolatePeakDepthFromReference(ref, out.energiesPerU[static_cast<size_t>(e)]);
+        }
+    }
+
+    if (rtdInputAuditEnabled()) {
+        std::cout << "[INPUT_AUDIT][TEST] iddBinaryFixture=1"
+                  << " rows=" << rows
+                  << " cols=" << cols
+                  << " rawStep=" << stepRaw
+                  << " logicalCols=" << logicalCols
+                  << " effectiveStep=" << step
+                  << std::endl;
+        printCiddAudit("TEST", out);
+    }
+
+    rtd::nuclear::alignNuclearTablesToPrimaryAxis(ref, out, "wrapper_integration_test binary nuclear LUT alignment");
+
+    return out;
+}
+
+
+// Test data generation - ORIGINAL SPHERICAL PHANTOM
+std::vector<float> createTestCTDataSpherical(int3 dims) {
+    std::vector<float> data(dims.x * dims.y * dims.z);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::default_random_engine generator(42);
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Generate HU values (HU+1000 format for RayTracedicom)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // HU values: -1000 (air) to 3000 (bone)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // HU+1000: 0 (air) to 4000 (bone)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // We'll use mostly water-like tissue (HU ~ 0, so HU+1000 ~ 1000)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::uniform_real_distribution<float> huDist(800.0f, 1200.0f); // Water-like tissue (HU ~ 0, HU+1000 ~ 1000)
+
+    // Create a simple phantom: central region with tissue
+    int centerX = dims.x / 2;
+    int centerY = dims.y / 2;
+    int centerZ = dims.z / 2;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int radius = std::min({dims.x, dims.y, dims.z}) / 3;
+
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                int idx = z * dims.x * dims.y + y * dims.x + x;
+
+                // Calculate distance from center
+                float dx = x - centerX;
+                float dy = y - centerY;
+                float dz = z - centerZ;
+                float dist = sqrtf(dx* dx + dy* dy + dz* dz);
+
+                if (dist < radius) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                    // Inside phantom: tissue (HU+1000 ~ 1000)
+                    data[idx] = huDist(generator);
+                } else {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                    // Outside phantom: air (HU+1000 ~ 0)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                    data[idx] = 50.0f + huDist(generator) * 0.1f; // Small value for air
+                }
+            }
+        }
+    }
+
+    return data;
+}
+
+// Test data generation - UNIFORM WATER PHANTOM
+// This creates a completely uniform water layer extending to full depth z
+// allowing observation of Bragg peaks at their full physical depths
+// (103.75mm for 120MeV, 173.92mm for 160MeV, 214.05mm for 180MeV)
+std::vector<float> createTestCTDataWaterPhantom(int3 dims) {
+    std::vector<float> data(dims.x * dims.y * dims.z);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::default_random_engine generator(42);
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Generate HU values (HU+1000 format for RayTracedicom)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Water HU = 0, so HU+1000 = 1000
+    std::uniform_real_distribution<float> waterNoise(-10.0f, 10.0f); // Small noise for realism
+
+    // Create UNIFORM water phantom throughout entire volume
+    // This ensures ray-tracing extends to full depth
+    const float WATER_HU_PLUS_1000 = 1000.0f;  // Water at HU=0
+
+    for (int z = 0; z < dims.z; ++z) {
+        for (int y = 0; y < dims.y; ++y) {
+            for (int x = 0; x < dims.x; ++x) {
+                int idx = z * dims.x * dims.y + y * dims.x + x;
+                data[idx] = WATER_HU_PLUS_1000 + waterNoise(generator);
+            }
+        }
+    }
+
+    return data;
+}
+
+static std::vector<float> createCtDataFromRoiMask(int3 dims, const std::vector<int>& roiLinearIndices) {
+    const size_t n = static_cast<size_t>(dims.x) * dims.y * dims.z;
+    std::vector<float> data(n, 0.0f); // air in HU+1000 convention
+    for (int idx : roiLinearIndices) {
+        if (idx >= 0 && static_cast<size_t>(idx) < n) {
+            data[static_cast<size_t>(idx)] = 1000.0f; // water
+        }
+    }
+    return data;
+}
+
+// LEGACY: alias - can switch between water and spherical phantoms
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+// Both verified to use identical raytracedicom algorithm (see VERIFICATION_REPORT.md)
+std::vector<float> createTestCTData(int3 dims) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Option 1: Water phantom (to see Bragg peaks at full depth)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // return createTestCTDataWaterPhantom(dims);
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Option 2: Spherical phantom (ORIGINAL for 32mm test)
+    return createTestCTDataSpherical(dims);  // ORIGINAL SPHERICAL
+}
+
+RTDBeamSettings createTestBeamSettings() {
+    RTDBeamSettings beam;
+
+    // Add energy layers
+    beam.energies = {120.0f, 160.0f, 180.0f};
+
+    // Add spot sigmas
+    beam.spotSigmas = {{1.0f, 1.0f}, {1.2f, 1.2f}, {1.4f, 1.4f}};
+
+    // Ray spacing
+    beam.raySpacing = {0.1f, 0.1f};
+
+    // Steps - for 256mm volume at 1mm spacing
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam.steps = 256;
+
+    // Source distance
+    beam.sourceDist = {100.0f, 100.0f};
+
+    // Spot offset and delta
+    beam.spotOffset = {0.0f, 0.0f, 0.0f};
+    beam.spotDelta = {0.0f, 0.0f, 0.0f};
+
+    // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // CarbonPBS-compatible subspotData (required by the wrapper)
+    // ------------------------------------------------------------------------
+    beam.maxSubspotsPerLayer = 16;
+    const int numLayers = static_cast<int>(beam.energies.size());
+    beam.subspotData.resize(static_cast<size_t>(numLayers) * beam.maxSubspotsPerLayer * 5ull);
+    for (int l = 0; l < numLayers; ++l) {
+        const float2 sxy = beam.spotSigmas[l];
+        for (int s = 0; s < beam.maxSubspotsPerLayer; ++s) {
+            const size_t base = (static_cast<size_t>(l) * beam.maxSubspotsPerLayer + static_cast<size_t>(s)) * 5ull;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+            // Simple ring sampling around the spot center (synthetic test only)
+            const float ang = (2.0f * 3.14159265358979323846f) * (static_cast<float>(s) / static_cast<float>(beam.maxSubspotsPerLayer));
+            const float r = 0.25f; // cm
+            beam.subspotData[base + 0] = r * cosf(ang) + 1.0f *s;            // deltaX
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam.subspotData[base + 1] = r * sinf(ang) + 3.0f *l;            // deltaY
+            beam.subspotData[base + 2] = 100000000.0f / beam.maxSubspotsPerLayer; // weight
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam.subspotData[base + 3] = sxy.x;                    // sigmaX
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam.subspotData[base + 4] = sxy.y;                    // sigmaY
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Beam geometry (synthetic identity gantry geometry for this test)
+    // ------------------------------------------------------------------------
+    beam.beamDirection  = {0.0f, 0.0f, 1.0f};
+    beam.bmXDirection   = {1.0f, 0.0f, 0.0f};
+    beam.bmYDirection   = {0.0f, 1.0f, 0.0f};
+    beam.sad            = beam.sourceDist.x;
+    beam.sourcePosition = {0.0f, 0.0f, -beam.sad};
+    beam.refPlaneZ      = 0.0f;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Transform matrices (identity for now)
+    beam.gantryToImOffset = {0.0f, 0.0f, 0.0f};
+    beam.gantryToImMatrix = {1.0f, 0.0f, 0.0f};
+    beam.gantryToDoseOffset = {0.0f, 0.0f, 0.0f};
+    beam.gantryToDoseMatrix = {1.0f, 0.0f, 0.0f};
+
+    return beam;
+}
+
+RTDEnergyStruct createTestEnergyData() {
+    RTDEnergyStruct energy;
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.nEnergySamples = 50;   // Number of depth samples per energy (texture width)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.nEnergies      = 3;    // Number of discrete energies (texture height)
+
+    // IMPORTANT:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // The wrapper assumes energiesPerU is monotonic (ascending or descending) for interpolation.
+    // Keep this list sorted and reorder peakDepths/scaleFacts accordingly.
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.energiesPerU = {120.0f, 120.0f, 280.0f};
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Peak depths (one per energy). For this synthetic test we treat these as "table units"
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // consistent with cumulSp increments (i.e., ~mm when stepLength=1mm).
+    // Keep monotonic with energy.
+    energy.peakDepths  = {10.0f, 12.0f, 14.0f};
+
+    // Scale factors mapping cumulSp -> depth sample index. With synthetic data, keep 1.0.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // (depthIdx = cumulSp * scaleFact + 0.5)
+    energy.scaleFacts  = {1.0f, 1.0f, 1.0f};
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // LUT scale factors used by the BEV tracer (HU_to_density / HU_to_sp) and RL lookup.
+    // If not set, they will be garbage and can break BEV tracing.
+    energy.densityScaleFact = 1.0f;
+    energy.spScaleFact      = 1.0f;
+    energy.rRlScaleFact     = 1.0f;
+
+    // CIDD matrix: [energy][sample] = ciddMatrix[e * nEnergySamples + s]
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Texture: width=nEnergySamples, height=nEnergies
+    //
+    // NOTE: The algorithm expects CUMULATIVE dose vs depth. We generate a simple cumulative
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // curve by integrating a Gaussian IDD (always increasing).
+    energy.ciddMatrix.resize(energy.nEnergySamples * energy.nEnergies);
+    for (int e = 0; e < energy.nEnergies; ++e) {
+        float cumul = 0.0f;
+        const float peakDepth = energy.peakDepths[e];
+        const float sigma = 3.0f;  // "mm" (synthetic width)
+        for (int s = 0; s < energy.nEnergySamples; ++s) {
+            const float depth = static_cast<float>(s);  // "mm" (synthetic)
+            const float idd = expf(-0.5f * (depth - peakDepth) * (depth - peakDepth) / (sigma * sigma));
+            cumul += idd;
+            energy.ciddMatrix[e * energy.nEnergySamples + s] = cumul * 10.0f;  // Scale to reasonable values
+        }
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Density vector (synthetic)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.nDensitySamples = 20;
+    energy.densityVector.resize(energy.nDensitySamples);
+    for (int i = 0; i < energy.nDensitySamples; ++i) {
+        energy.densityVector[i] = 0.5f + i * 0.1f;
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Stopping power vector (synthetic)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.nSpSamples = 20;
+    energy.spVector.resize(energy.nSpSamples);
+    for (int i = 0; i < energy.nSpSamples; ++i) {
+        energy.spVector[i] = 1.0f + i * 0.05f;
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Radiation length vector (synthetic)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy.nRRlSamples = 20;
+    energy.rRlVector.resize(energy.nRRlSamples);
+    for (int i = 0; i < energy.nRRlSamples; ++i) {
+        energy.rRlVector[i] = 0.1f + i * 0.01f;
+    }
+
+    return energy;
+}
+
+static RTDEnergyStruct loadEnergyDataFromReferenceTables(const std::string& tablesDir) {
+    EnergyStruct e = energyReader(tablesDir);
+    RTDEnergyStruct out;
+    out.nEnergySamples   = e.nEnergySamples;
+    out.nEnergies        = e.nEnergies;
+    out.energiesPerU     = e.energiesPerU;
+    out.peakDepths       = e.peakDepths;
+    out.scaleFacts       = e.scaleFacts;
+    out.ciddMatrix       = e.ciddMatrix;
+
+    out.nDensitySamples  = e.nDensitySamples;
+    out.densityScaleFact = e.densityScaleFact;
+    out.densityVector    = e.densityVector;
+
+    out.nSpSamples       = e.nSpSamples;
+    out.spScaleFact      = e.spScaleFact;
+    out.spVector         = e.spVector;
+
+    out.nRRlSamples      = e.nRRlSamples;
+    out.rRlScaleFact     = e.rRlScaleFact;
+    out.rRlVector        = e.rRlVector;
+    rtd::nuclear::alignNuclearTablesToPrimaryAxis(e, out, "wrapper_integration_test reference nuclear LUT alignment");
+    return out;
+}
+
+static bool allowSyntheticFallback() {
+    const char* env = std::getenv("RTD_TEST_ALLOW_SYNTHETIC");
+    return env && std::string(env) == "1";
+}
+
+static bool envFlagEnabled(const char* envName, bool fallback = false) {
+    const char* env = std::getenv(envName);
+    if (!env || !*env) return fallback;
+    std::string s(env);
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (s == "1" || s == "true" || s == "on" || s == "yes") return true;
+    if (s == "0" || s == "false" || s == "off" || s == "no") return false;
+    return fallback;
+}
+
+static const char* compiledNuclearCorrMode() {
+#ifdef NUCLEAR_CORR
+#if NUCLEAR_CORR == SOUKUP
+    return "SOUKUP";
+#elif NUCLEAR_CORR == FLUKA
+    return "FLUKA";
+#elif NUCLEAR_CORR == GAUSS_FIT
+    return "GAUSS_FIT";
+#else
+    return "ON";
+#endif
+#else
+    return "OFF";
+#endif
+}
+
+static char currentHaloGate(bool runtimeNuclearCorrection) {
+#ifdef NUCLEAR_CORR
+    return runtimeNuclearCorrection ? 'C' : 'B';
+#else
+    (void)runtimeNuclearCorrection;
+    return 'A';
+#endif
+}
+
+static const char* haloGateSummary(char gate) {
+    switch (gate) {
+        case 'A': return "gate A (NUCLEAR_CORR=OFF, nuclear_correction=false)";
+        case 'B': return "gate B (NUCLEAR_CORR build, nuclear_correction=false)";
+        case 'C': return "gate C (NUCLEAR_CORR build, nuclear_correction=true)";
+        default: return "gate ?";
+    }
+}
+
+static bool reportDoseComparison(const char* title,
+                                 const char* fileLabel,
+                                 const std::filesystem::path& refPath,
+                                 const std::vector<float>& testDose,
+                                 const int3& dims,
+                                 const float3& spacing,
+                                 const float3& origin,
+                                 int depthAxis,
+                                 std::vector<float>& refDoseOut,
+                                 DoseCompareStats* statsOut = nullptr) {
+    refDoseOut.clear();
+    if (refPath.empty()) {
+        std::cout << "\n" << title << ":" << std::endl;
+        std::cout << "  Skipped: reference path is empty" << std::endl;
+        return false;
+    }
+    if (!loadRawDoseBin(refPath, testDose.size(), refDoseOut)) {
+        std::cout << "\n" << title << ":" << std::endl;
+        std::cout << "  Skipped: could not load raw float32 dose from " << refPath << std::endl;
+        return false;
+    }
+
+    refDoseOut = convertDoseLayoutXMajorToZMajor(refDoseOut, dims);
+    const DoseCompareStats cmp = compareDoseVectors(testDose, refDoseOut);
+    if (!cmp.valid) {
+        std::cout << "\n" << title << ":" << std::endl;
+        std::cout << "  Skipped: loaded reference size is incompatible with current dose grid" << std::endl;
+        refDoseOut.clear();
+        return false;
+    }
+
+    if (statsOut) *statsOut = cmp;
+
+    std::cout << "\n" << title << ":" << std::endl;
+    std::cout << "  " << fileLabel << ": " << refPath << std::endl;
+    std::cout << "  Sum test/ref: " << cmp.sumTest << " / " << cmp.sumRef << std::endl;
+    std::cout << "  Max test/ref: " << cmp.maxTest << " / " << cmp.maxRef << std::endl;
+    std::cout << "  MAE: " << cmp.mae << std::endl;
+    std::cout << "  RMSE: " << cmp.rmse << std::endl;
+    std::cout << "  Max abs diff: " << cmp.maxAbs << std::endl;
+    printZProjectionCompare(testDose, refDoseOut, dims, spacing, origin, depthAxis);
+    printPeakSliceLateralCompare(testDose, refDoseOut, dims, spacing, origin, depthAxis);
+    printPerAxisSliceDominanceSummary(testDose, refDoseOut, dims, depthAxis);
+    printVoxelDiffSummary(testDose,
+                          refDoseOut,
+                          dims,
+                          spacing,
+                          origin,
+                          std::max(1.0e-6f, cmp.maxRef * 1.0e-3f));
+    return true;
+}
+
+static void writeDoseOutputs(const std::filesystem::path& outputDir,
+                             const std::string& beamPrefix,
+                             const int3& doseVolDims,
+                             const float3& doseVolSpacing,
+                             const float3& doseVolOrigin,
+                             const std::vector<float>& doseVolData,
+                             bool useFixtureInputs,
+                             bool verbose) {
+    std::filesystem::create_directories(outputDir);
+
+    const auto writeDoseFileWithHeader = [&](const std::filesystem::path& filePath,
+                                             const std::vector<float>& payload) {
+        std::ofstream doseStream(filePath, std::ios::binary);
+        if (!doseStream.is_open()) {
+            throw std::runtime_error("Could not open dose output file: " + filePath.string());
+        }
+
+        doseStream.write(reinterpret_cast<const char*>(&doseVolDims.x), sizeof(int));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolDims.y), sizeof(int));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolDims.z), sizeof(int));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolSpacing.x), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolSpacing.y), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolSpacing.z), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolOrigin.x), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolOrigin.y), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(&doseVolOrigin.z), sizeof(float));
+        doseStream.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size() * sizeof(float)));
+        doseStream.close();
+    };
+
+    const std::string doseFileName = useFixtureInputs ? ("dose_" + beamPrefix + ".bin") : "dose_distribution.bin";
+    const std::filesystem::path doseFile = outputDir / doseFileName;
+    writeDoseFileWithHeader(doseFile, doseVolData);
+
+    std::cout << "  Dose file: " << doseFile << std::endl;
+
+    const std::vector<float> doseGridXMajor = convertDoseLayoutZMajorToXMajor(doseVolData, doseVolDims);
+    const std::filesystem::path pybindDoseGridFile =
+        outputDir / (useFixtureInputs ? (beamPrefix + "_dose_grid.bin") : "dose_grid.bin");
+    writeDoseFileWithHeader(pybindDoseGridFile, doseGridXMajor);
+    std::cout << "  Pybind-equivalent dose grid bin: " << pybindDoseGridFile
+              << " (shape=(Nx,Ny,Nz), C-order)" << std::endl;
+
+    if (useFixtureInputs) {
+        const std::filesystem::path rawDoseFile = outputDir / (beamPrefix + "_final_dose.bin");
+        std::ofstream doseRawStream(rawDoseFile, std::ios::binary);
+        if (!doseRawStream.is_open()) {
+            throw std::runtime_error("Could not open raw dose output file: " + rawDoseFile.string());
+        }
+        doseRawStream.write(reinterpret_cast<const char*>(doseGridXMajor.data()),
+                            static_cast<std::streamsize>(doseGridXMajor.size() * sizeof(float)));
+        doseRawStream.close();
+
+        std::cout << "  Raw dose bin: " << rawDoseFile << std::endl;
+    }
+}
+
+int main(int argc, char** argv) {
+    const int verboseLevel = rtdVerboseLevel();
+    const bool fineTiming = rtdVerboseFineTiming();
+    const bool summaryTiming = rtdVerboseSummary();
+    setRTDVerbose(verboseLevel);
+    const bool runtimeNuclearCorrection = envFlagEnabled("RTD_TEST_NUCLEAR_CORRECTION", false);
+    const char haloGate = currentHaloGate(runtimeNuclearCorrection);
+    if (fineTiming) {
+        std::cout << "=== Wrapper Integration Test with Subspot to CPB Convolution ===" << std::endl;
+    }
+    if (fineTiming) {
+        std::cout << "[HALO_AUDIT] build_nuclear_corr=" << compiledNuclearCorrMode()
+                  << " runtime_nuclear_correction=" << (runtimeNuclearCorrection ? "true" : "false")
+                  << " gate=" << haloGate << " " << haloGateSummary(haloGate) << std::endl;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // ------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Prefer CSV inputs (dose_inputs_csv + compact subspot CSV) if available.
+    // Use project root, not build directory.
+    // ------------------------------------------------------------
+    // Find project root by searching upward for CMakeLists.txt
+    std::filesystem::path projectRoot = std::filesystem::absolute(argv[0]).parent_path();
+    while (!projectRoot.empty() && !std::filesystem::exists(projectRoot / "CMakeLists.txt")) {
+        projectRoot = projectRoot.parent_path();
+    }
+    if (projectRoot.empty()) {
+        // Fallback: assume standard layout
+        const std::filesystem::path exeDir = std::filesystem::absolute(argv[0]).parent_path();
+        projectRoot = exeDir.parent_path().parent_path(); // bin/../.. or build/../../
+    }
+
+    const std::filesystem::path defaultTestDataDir = projectRoot / "test_data";
+    const std::string defaultTablesDir = (projectRoot / "tables").string() + std::string("/");
+
+    std::string inputDir;
+    std::string beamPrefix;
+    FixtureInputMode inputMode = FixtureInputMode::Synthetic;
+    if (const char* inputEnv = std::getenv("RTD_TEST_INPUT_DIR")) {
+        inputDir = inputEnv;
+    } else {
+        const FixtureDiscovery discovered = discoverDefaultFixtureInput(defaultTestDataDir);
+        inputDir = discovered.inputDir;
+        beamPrefix = discovered.beamPrefix;
+        inputMode = discovered.mode;
+        // 0.24: announce the selected fixture and which mode is active so
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // a wrong-plan fixture (e.g., stale <case>/output/*.bin) is visible in logs.
+        const char* modeStr =
+            (inputMode == FixtureInputMode::Binary) ? "Binary" :
+            (inputMode == FixtureInputMode::Csv)    ? "CSV"    :
+                                                      "Synthetic";
+        if (fineTiming) {
+            std::cerr << "[TEST][FIXTURE] Selected inputDir=" << inputDir
+                      << " beamPrefix=" << beamPrefix
+                      << " mode=" << modeStr
+                      << " (override RTD_TEST_FIXTURE_MODE=binary|csv|auto, "
+                      << "or RTD_TEST_INPUT_DIR / RTD_TEST_BEAM_PREFIX)" << std::endl;
+        }
+    }
+    std::string tablesDir = std::getenv("RTD_TABLES_DIR") ? std::getenv("RTD_TABLES_DIR") : defaultTablesDir;
+
+    if (const char* pref = std::getenv("RTD_TEST_BEAM_PREFIX")) {
+        beamPrefix = pref;
+    } else if (beamPrefix.empty() && hasRequiredBinaryFixtureFiles(inputDir)) {
+        beamPrefix = discoverBeamPrefixFromBinaryFixtureDir(inputDir);
+    } else if (beamPrefix.empty()) {
+        const std::vector<std::string> prefixes = discoverBeamPrefixes(inputDir);
+        for (const auto& p : prefixes) {
+            if (hasRequiredBeamFiles(inputDir, p)) {
+                beamPrefix = p;
+                break;
+            }
+        }
+    }
+
+    std::string subspotCsv;
+    std::string subspotDataCsv;
+    if (const char* subspotEnv = std::getenv("RTD_TEST_SUBSPOT_CSV")) {
+        subspotCsv = subspotEnv;
+    } else if (!beamPrefix.empty()) {
+        subspotCsv = defaultSubspotCsvForPrefix(defaultTestDataDir, std::filesystem::path(inputDir), beamPrefix);
+    }
+    if (!beamPrefix.empty()) {
+        subspotDataCsv = defaultDosecalSubspotDataCsvForPrefix(inputDir, beamPrefix);
+    }
+
+    if (beamPrefix.empty() && hasRequiredBinaryFixtureFiles(inputDir)) {
+        std::cerr << "[TEST] Binary fixture inputs were found under " << inputDir
+                  << " but beamPrefix could not be derived from jsonPath.txt."
+                  << std::endl;
+        return 2;
+    }
+
+    const bool useBinaryInputs =
+        !beamPrefix.empty() &&
+        hasRequiredBinaryFixtureFiles(inputDir);
+    bool useCsvInputs =
+        !useBinaryInputs &&
+        !beamPrefix.empty() &&
+        hasUsableCsvFixtureForPrefix(inputDir, beamPrefix, defaultTestDataDir);
+    if (useBinaryInputs) {
+        inputMode = FixtureInputMode::Binary;
+    } else if (useCsvInputs) {
+        inputMode = FixtureInputMode::Csv;
+    }
+    const bool useFixtureInputs = inputMode != FixtureInputMode::Synthetic;
+
+    int3 imVolDims;
+    float3 imVolSpacing;
+    float3 imVolOrigin;
+
+    int3 doseVolDims;
+    float3 doseVolSpacing;
+    float3 doseVolOrigin;
+
+    RTDBeamSettings beam;
+    RTDEnergyStruct energy;
+
+    if (inputMode == FixtureInputMode::Binary) {
+        if (fineTiming) {
+            std::cout << "[TEST] Using binary fixture inputs:\n"
+                      << "  beamPrefix: " << beamPrefix << "\n"
+                      << "  inputDir: " << inputDir << "\n"
+                      << "  tablesDir: " << tablesDir << std::endl;
+        }
+
+        beam = loadBeamSettingsFromBinaryFixture(inputDir);
+        energy = loadEnergyDataFromBinaryFixture(inputDir, tablesDir);
+        printEnergyAudit("TEST", beam, energy);
+        const BeamGridMeta gridMeta = loadGridMetaFromBinaryFixture(inputDir);
+
+        imVolDims = gridMeta.dims;
+        imVolSpacing = gridMeta.spacing;
+        imVolOrigin = gridMeta.corner;
+
+        beam.sourcePosition = gridMeta.sourcePos;
+        beam.sad = gridMeta.sad;
+
+        doseVolDims = imVolDims;
+        doseVolSpacing = imVolSpacing;
+        doseVolOrigin = imVolOrigin;
+    } else if (inputMode == FixtureInputMode::Csv) {
+        if (fineTiming) {
+            std::cout << "[TEST] Using CSV inputs:\n"
+                      << "  beamPrefix: " << beamPrefix << "\n"
+                      << "  inputDir: " << inputDir << "\n"
+                      << "  subspotCsv: " << subspotCsv << "\n"
+                      << "  tablesDir: " << tablesDir << std::endl;
+        }
+
+        beam = loadBeamSettingsFromCsv(inputDir, subspotCsv, beamPrefix);
+        energy = loadEnergyDataFromCsv(inputDir, tablesDir, loadExported1D(inputDir + "/" + beamPrefix + "_energy_list.csv"), beamPrefix);
+        printEnergyAudit("TEST", beam, energy);
+        const BeamGridMeta gridMeta = loadGridMetaFromCsv(inputDir, beamPrefix);
+
+        // No hardcoded geometry: use metadata exported with this beam.
+        imVolDims = gridMeta.dims;
+        imVolSpacing = gridMeta.spacing;
+        imVolOrigin = gridMeta.corner;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // Override beam geometry with calc_required_meta values (authoritative source)
+        beam.sourcePosition = gridMeta.sourcePos;
+        beam.sad = gridMeta.sad;
+
+        doseVolDims = imVolDims;
+        doseVolSpacing = imVolSpacing;
+        doseVolOrigin = imVolOrigin;
+    } else {
+        if (!allowSyntheticFallback()) {
+            std::cerr << "[TEST] CSV inputs are incomplete for fully data-driven run.\n"
+                      << "       Missing beam files, subspot file, or calc_required_meta.csv.\n"
+                      << "       Synthetic defaults are disabled unless RTD_TEST_ALLOW_SYNTHETIC=1."
+                      << std::endl;
+            return 2;
+        }
+
+        std::cout << "[TEST] CSV inputs not found; using original synthetic inputs (explicitly allowed)." << std::endl;
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+        // Original test parameters (cm units; ctResolution.z < 0.3 => wrapper assumes cm and scales to mm internally)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        imVolDims = make_int3(512, 512, 256);
+        imVolSpacing = make_float3(0.1f, 0.1f, 0.1f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        imVolOrigin = make_float3(-20.0f, -20.0f, 0.0f);
+
+        doseVolDims = imVolDims;
+        doseVolSpacing = imVolSpacing;
+        doseVolOrigin = imVolOrigin;
+
+        beam = createTestBeamSettings();
+
+        const char* useRef = std::getenv("RTD_TEST_USE_REFERENCE_LUT");
+        if (useRef && std::string(useRef) == "1") {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+            // Use the reference LUT shipped with the repo (tables/proton_cumul_ddd_data.txt)
+            energy = loadEnergyDataFromReferenceTables(tablesDir);
+            if (fineTiming) std::cout << "[TEST] Using reference LUT tables/proton_cumul_ddd_data.txt" << std::endl;
+
+            // For a clean test without CLAMP_HIGH, keep energies within the LUT range.
+            // (This is only a test override; production energies come from plan input.)
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam.energies = {120.0f, 160.0f, 220.0f};
+        } else {
+            energy = createTestEnergyData();
+            if (fineTiming) std::cout << "[TEST] Using synthetic createTestEnergyData() LUT" << std::endl;
+        }
+    }
+
+    // Create test data
+    if (fineTiming) std::cout << "Creating test data..." << std::endl;
+    std::vector<float> imVolData;
+    if (useFixtureInputs && !beam.roiLinearIndices.empty()) {
+        imVolData = createCtDataFromRoiMask(imVolDims, beam.roiLinearIndices);
+        if (fineTiming) {
+            std::cout << "[TEST] Using ROI-derived water phantom from fixture ROI indices with "
+                      << beam.roiLinearIndices.size() << " in-body voxels" << std::endl;
+        }
+    } else {
+        imVolData = createTestCTDataWaterPhantom(imVolDims);
+        if (fineTiming && useFixtureInputs) {
+            std::cout << "[TEST] Using full-volume synthetic water phantom" << std::endl;
+        }
+    }
+    std::vector<float> doseVolData(doseVolDims.x * doseVolDims.y * doseVolDims.z, 0.0f);
+
+    if (fineTiming) {
+        std::cout << "\nTest data created:" << std::endl;
+        std::cout << "  Image volume: " << imVolDims.x << "x" << imVolDims.y << "x" << imVolDims.z << std::endl;
+        std::cout << "  Dose volume: " << doseVolDims.x << "x" << doseVolDims.y << "x" << doseVolDims.z << std::endl;
+        std::cout << "  Energy layers: " << beam.energies.size() << std::endl;
+        std::cout << "  Ray steps: " << beam.steps << std::endl;
+    }
+
+    validateTestEntryContractOrThrow(
+        beam, energy,
+        imVolDims, imVolSpacing,
+        doseVolDims, doseVolSpacing
+    );
+    printEntryAuditSummary(
+        "TEST_ENTRY", 0,
+        beam, energy,
+        imVolDims, imVolSpacing, imVolOrigin,
+        doseVolDims, doseVolSpacing, doseVolOrigin
+    );
+
+    // Call the wrapper function
+    if (fineTiming) std::cout << "\nCalling subsecondWrapper..." << std::endl;
+
+    try {
+        subsecondWrapper(
+            imVolData.data(), imVolDims, imVolSpacing, imVolOrigin,
+            doseVolData.data(), doseVolDims, doseVolSpacing, doseVolOrigin,
+            &beam, 1, &energy,
+            0, runtimeNuclearCorrection, 2
+        );  //verboseLevel
+        if (fineTiming) {
+            std::cout << "Wrapper completed successfully!" << std::endl;
+        }
+
+        // Analyze results
+        float totalDose = 0.0f;
+        float maxDose = 0.0f;
+        int nonZeroCount = 0;
+
+        for (float dose : doseVolData) {
+            if (dose > 1e-15f) {  // Even lower threshold to detect very small dose values
+                nonZeroCount++;
+                totalDose += dose;
+                maxDose = std::max(maxDose, dose);
+            }
+        }
+
+        std::cout << "\nDose Analysis:" << std::endl;
+        std::cout << "  Total dose: " << totalDose << std::endl;
+        std::cout << "  Max dose: " << maxDose << std::endl;
+        std::cout << "  Non-zero voxels: " << nonZeroCount << "/" << doseVolData.size() << std::endl;
+
+        if (nonZeroCount > 0) {
+            std::cout << "  Average dose (non-zero voxels): " << totalDose / nonZeroCount << std::endl;
+        }
+
+        // Calculate average dose across all voxels
+        float averageDoseAllVoxels = totalDose / doseVolData.size();
+        std::cout << "  Average dose (all voxels): " << averageDoseAllVoxels << std::endl;
+
+        const int depthAxis = inferDepthAxisFromBeam(beam);
+        printBeamAxisAudit(beam, depthAxis);
+        std::vector<float> auditReferenceDose;
+        bool hasAuditReferenceDose = false;
+        std::filesystem::path protonBaselinePath;
+        if (const char* protonEnv = std::getenv("RTD_TEST_PROTON_BASELINE_BIN")) {
+            protonBaselinePath = protonEnv;
+        }
+        if (haloGate == 'B') {
+            if (!protonBaselinePath.empty()) {
+                hasAuditReferenceDose = reportDoseComparison("Halo Gate B Proton Baseline Comparison",
+                                                             "Proton baseline file",
+                                                             protonBaselinePath,
+                                                             doseVolData,
+                                                             doseVolDims,
+                                                             doseVolSpacing,
+                                                             doseVolOrigin,
+                                                             depthAxis,
+                                                             auditReferenceDose);
+            } else {
+                std::cout << "\nHalo Gate B Proton Baseline Comparison:" << std::endl;
+                std::cout << "  Skipped: set RTD_TEST_PROTON_BASELINE_BIN to a gate-A raw dose bin for proton invariance audit" << std::endl;
+            }
+        }
+
+        std::filesystem::path referenceDosePath;
+        std::vector<float> referenceDose;
+        bool hasReferenceDose = false;
+        if (const char* refEnv = std::getenv("RTD_TEST_REFERENCE_DOSE_BIN")) {
+            referenceDosePath = refEnv;
+        } else if (useFixtureInputs) {
+            const std::filesystem::path candidate = projectRoot / "test_data" / (beamPrefix + "_final_dose.bin");
+            if (std::filesystem::exists(candidate)) {
+                referenceDosePath = candidate;
+            }
+        }
+        if (!referenceDosePath.empty()) {
+            const char* refTitle =
+                (haloGate == 'C') ? "Halo Gate C Reference Comparison" :
+                "Reference Dose Comparison";
+            hasReferenceDose = reportDoseComparison(refTitle,
+                                                    "Reference file",
+                                                    referenceDosePath,
+                                                    doseVolData,
+                                                    doseVolDims,
+                                                    doseVolSpacing,
+                                                    doseVolOrigin,
+                                                    depthAxis,
+                                                    referenceDose);
+        }
+
+        printFinalAcceptanceSummary(doseVolData,
+                                    hasAuditReferenceDose ? &auditReferenceDose :
+                                    (hasReferenceDose ? &referenceDose : nullptr),
+                                    doseVolDims,
+                                    doseVolSpacing,
+                                    doseVolOrigin,
+                                    depthAxis);
+
+        const std::filesystem::path outputDir =
+            std::getenv("RTD_TEST_OUTPUT_DIR") ? std::filesystem::path(std::getenv("RTD_TEST_OUTPUT_DIR"))
+                                               : (projectRoot / "output");
+        if (fineTiming) std::cout << "\nWriting dose distribution to file..." << std::endl;
+        writeDoseOutputs(outputDir, beamPrefix, doseVolDims, doseVolSpacing, doseVolOrigin, doseVolData, useFixtureInputs, fineTiming);
+
+    } catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    if (summaryTiming) {
+        std::cout << "\nTotal execution time: " << duration.count() << " μs" << std::endl;
+    }
+    if (fineTiming) {
+        std::cout << "=== Test Complete ===" << std::endl;
+    }
+
+    return 0;
+}

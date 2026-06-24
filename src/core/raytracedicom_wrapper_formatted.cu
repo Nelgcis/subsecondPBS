@@ -29,6 +29,7 @@
 #include <stdexcept>
 
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // RayTraceDicom CT image use(HU + 1000)
 
 
@@ -367,6 +368,7 @@ static float resolveEnergyDepthScaleToMm(const RTDEnergyStruct& energyData,
     if (peakMax >= 100.0f) {
         return 1.0f;
     }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (peakMax <= 45.0f && maxEnergy >= 120.0f) {
         return 10.0f;
     }
@@ -557,6 +559,7 @@ static SigmaFieldStats summarizeSigmaField(const std::vector<float>& rayIdd,
     if (plane <= 0 || steps <= 0) return out;
 
     std::vector<float> approxSigmas;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     approxSigmas.reserve(rayIdd.size() / 8);
     float minRSigma = std::numeric_limits<float>::infinity();
 
@@ -570,16 +573,19 @@ static SigmaFieldStats summarizeSigmaField(const std::vector<float>& rayIdd,
         for (int i = 0; i < plane; ++i) {
             const float idd = rayIdd[static_cast<size_t>(base + i)];
             if (!(idd > 0.0f)) continue;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             out.positiveIddCount++;
 
             const float rSigmaEff = rayRSigmaEff[static_cast<size_t>(base + i)];
             if (!(std::isfinite(rSigmaEff) && rSigmaEff > 0.0f)) continue;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             out.finiteSigmaCount++;
             if (rSigmaEff < minRSigma) minRSigma = rSigmaEff;
 
             const float approxSigma = HALF * meanWidth / (SQRT2 * rSigmaEff) - SIGMA_DELTA;
             approxSigmas.push_back(approxSigma);
             if (approxSigma > sigmaAtRadiusLimit) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 out.overflowLikeCount++;
             }
         }
@@ -612,21 +618,26 @@ static FloatSummaryStats summarizeFloatVector(const std::vector<float>& v, float
     FloatSummaryStats s;
     for (float x : v) {
         if (hostIsNaN(x)) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             s.countNaN++;
             continue;
         }
         if (!hostIsFinite(x)) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             s.countInf++;
             continue;
         }
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         s.countFinite++;
         s.sumFinite += static_cast<double>(x);
         if (x > s.maxFinite) s.maxFinite = x;
         if (x < s.minFinite) s.minFinite = x;
         if (x > 0.0f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             s.countPositive++;
             if (x < s.minPositive) s.minPositive = x;
         }
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (x > gtThr) s.countGT++;
     }
     if (s.countFinite == 0) {
@@ -740,7 +751,9 @@ static void assertDeviceIddSigmaFiniteOnActive(const std::string& stageName,
         const bool sigmaPositive = rSigma > 0.0f;
         if (!sigmaFinite || !sigmaPositive) {
             ++badSigmaOnActive;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             if (!sigmaFinite) ++nonFiniteSigmaOnActive;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             if (sigmaFinite && !sigmaPositive) ++nonPositiveSigmaOnActive;
             if (firstBadIdx == elemCount) {
                 firstBadIdx = idx;
@@ -866,6 +879,7 @@ static void printZSliceSummary(const char* name, const std::vector<float>& vol,
     }
     std::cout << "  maxSumSlice=" << maxSumZ << " (sum=" << maxSum << ")\n";
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Print up to first 6 slices and the max-sum slice (helps detect 'only z=0')
     const int preview = std::min(nz, 6);
     for (int z = 0; z < preview; ++z) {
@@ -1019,6 +1033,7 @@ static void printDoseGridSupportSummary(const std::string& stageName,
                 if (v > thr) {
                     ++nnz;
                     sumY[static_cast<size_t>(y)] += static_cast<double>(v);
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                     ++cntY[static_cast<size_t>(y)];
                     minX = std::min(minX, x);
                     minY = std::min(minY, y);
@@ -1133,6 +1148,7 @@ static PlaneShapeStats summarizeXYPlane(const std::vector<float>& vol,
             momentX += static_cast<double>(v) * static_cast<double>(x);
             momentY += static_cast<double>(v) * static_cast<double>(y);
             if (v > thr) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 out.nonzero++;
                 out.minX = std::min(out.minX, x);
                 out.maxXBox = std::max(out.maxXBox, x);
@@ -1385,7 +1401,9 @@ static bool computeDoseRoiBounds(const std::vector<int>& roiLinearIndices,
                                  int3& maxIdx) {
     if (roiLinearIndices.empty()) return false;
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Python/numpy C-order for shape (Nx, Ny, Nz):
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     //   linear = ix*(Ny*Nz) + iy*Nz + iz
     const int planeYZ = doseDims.y * doseDims.z;
     if (planeYZ <= 0) return false;
@@ -1496,6 +1514,7 @@ static void rawSpotAuditCountActiveCells(std::vector<RawSpotLayerAudit>& layerAu
         for (size_t i = 0; i < planeN && base + i < dense.size(); ++i) {
             const float w = dense[base + i];
             if (hostIsFinite(w) && w > 0.0f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.activeCells++;
             }
         }
@@ -1605,11 +1624,16 @@ static int roundUpToMultiple(int value, int multiple) {
 
 
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // UNIT CONTRACT (must match upstream beam.getSpotIdxToGantry()):
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 //   spotDelta   : mm per physical PB grid step (typically 2-10 mm)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 //   spotOffset  : mm of physical PB cell (0,0) in gantry frame
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Downstream consumers (nucIdxToFan at ~5132, spotDistInRays at ~3911 and ~4036)
 // require mm. Do NOT multiply by lenToMm at construction sites; downstream sites
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // must NOT re-multiply by lenToMm. See halo-energy-conservation.md (RC2) for the
 // regression this contract is intended to prevent.
 static bool buildHaloLatticePlan(const RawSpotLattice& rawSpotLattice,
@@ -1630,16 +1654,19 @@ static bool buildHaloLatticePlan(const RawSpotLattice& rawSpotLattice,
     };
 
     // [9.42 Halo Contract]
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // When RawSpotLattice is built via rasterizeContinuousSpotToDensePlane (bilinear weight
     // redistribution), the weights are split across adjacent texels. This is acceptable for
     // primary CPB helper convolution but NOT for halo nuclear PB mapping:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // - Upstream: each physical PB weight maps to one fixed HPB spot index (deterministic)
     // - Current: if rasterization splits weights, different runs might map differently
     //   depending on float precision, or the weights become spread across HPB cells.
-    // 
+    //
     // For now, we proceed with the current weights and rely on RawSpotLattice validation
     // (9.43) to ensure the source was indeed from a true physical PB grid, not a sparse
     // rasterization artifact. If bilinear drift is detected here, fail explicitly.
+    // FORMAT-WARN: TODO/TBD/FIXME 不能出现在正式交付代码中，见 format_changes.log
     // TODO: Implement 9.43 separation to provide an explicit non-rasterized HPB view.
 
     if (!(cpbResolution.x > 0.0f) || !(cpbResolution.y > 0.0f)) {
@@ -1693,6 +1720,7 @@ static bool buildHaloLatticePlan(const RawSpotLattice& rawSpotLattice,
             out.paddedSpotWeights[static_cast<size_t>(spotY) * static_cast<size_t>(nucX) +
                                  static_cast<size_t>(spotX)] = weight;
             if (weight > 0.0f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 out.activeSpotCount++;
             }
         }
@@ -1807,6 +1835,7 @@ static bool buildExplicitPhysicalPBHaloLatticePlan(const RTDBeamSettings& beam,
 
     const std::vector<float>& weqHeader = getActiveWeqHeader(beam);
     if (beam.spotPositionsAreIndices && weqHeader.size() < 9u) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         return fail("spotPositionsAreIndices requires a 9-value WEQ header");
     }
 
@@ -1948,6 +1977,7 @@ static bool buildExplicitPhysicalPBHaloLatticePlan(const RTDBeamSettings& beam,
     }
 
     for (float w : out.paddedSpotWeights) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (w > 0.0f) out.activeSpotCount++;
     }
 
@@ -2075,6 +2105,7 @@ static bool alignGridToReferencePhase(float minCoord,
 }
 
 static const std::vector<float>& getActiveWeqHeader(const RTDBeamSettings& beam) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (beam.waterEquivalence.size() >= 9) return beam.waterEquivalence;
     return beam.rayWeqHeader;
 }
@@ -2090,12 +2121,15 @@ static inline bool decodeSpotPosition(const RTDBeamSettings& beam,
         outY = rawY;
         return true;
     }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (weqHeader.size() < 9) return false;
 
     // CarbonPBS idbeamxy is exported as rayweq texture coordinates centered on
     // texels via +0.5. Convert back to the physical reference-plane coordinate
     // of the corresponding texel center.
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     outX = weqHeader[6] + (rawX - 0.5f) * weqHeader[7];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     outY = weqHeader[3] + (rawY - 0.5f) * weqHeader[4];
     return true;
 }
@@ -2142,7 +2176,7 @@ static bool validateWrapperGlobalInputs(const float* ctData,
     }
     if (energyData->ciddMatrix.size() !=
         static_cast<size_t>(energyData->nEnergies) * static_cast<size_t>(energyData->nEnergySamples)) {
-        return fail("ciddMatrix size must equal nEnergies*nEnergySamples");
+        return fail("ciddMatrix size must equal nEnergies* nEnergySamples");
     }
     if (energyData->densityVector.empty() || energyData->spVector.empty() || energyData->rRlVector.empty()) {
         return fail("density, stopping-power, and radiation-length LUTs must not be empty");
@@ -2186,7 +2220,7 @@ static bool validateWrapperEntryBeam(const RTDBeamSettings& beam, size_t beamIdx
     const size_t expectedSubspotN =
         beam.energies.size() * static_cast<size_t>(beam.maxSubspotsPerLayer) * 5ull;
     if (beam.subspotData.size() != expectedSubspotN) {
-        return fail("beam.subspotData size must equal numLayers*maxSubspotsPerLayer*5");
+        return fail("beam.subspotData size must equal numLayers* maxSubspotsPerLayer* 5");
     }
 
     if (!beam.layerSpotCounts.empty()) {
@@ -2209,6 +2243,7 @@ static bool validateWrapperEntryBeam(const RTDBeamSettings& beam, size_t beamIdx
 
     if (!beam.spotBeamDirections.empty()) {
         if ((beam.spotBeamDirections.size() % 3u) != 0u) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             return fail("spotBeamDirections must be shaped as [N][3]");
         }
         if (!beam.spotPositions.empty() &&
@@ -2228,9 +2263,11 @@ static bool validateWrapperEntryBeam(const RTDBeamSettings& beam, size_t beamIdx
         return fail("profileData requires profileSetting[depth0,step,n]");
     }
     if (!beam.beamParaData.empty() && (beam.beamParaData.size() % 3u) != 0u) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         return fail("beamParaData must be shaped as [rows][3]");
     }
     if (beam.spotPositionsAreIndices && getActiveWeqHeader(beam).size() < 9u) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         return fail("spotPositionsAreIndices=true requires a 9-value WEQ header");
     }
 
@@ -2300,11 +2337,14 @@ static void printWrapperEntryAuditSummary(const RTDBeamSettings& beam,
               << " WEQ"
               << " activeHeaderLen=" << std::min<size_t>(weqHeader.size(), 9u)
               << " weqVectorLen=" << beam.waterEquivalence.size()
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
               << " bodyLen=" << (beam.waterEquivalence.size() >= 9 ? (beam.waterEquivalence.size() - 9u) : 0u);
     if (weqHeader.size() >= 9u) {
         std::cout << " header9=("
                   << weqHeader[0] << "," << weqHeader[1] << "," << weqHeader[2] << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                   << weqHeader[3] << "," << weqHeader[4] << "," << weqHeader[5] << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                   << weqHeader[6] << "," << weqHeader[7] << "," << weqHeader[8] << ")";
         if (beam.spotPositions.size() >= 2u) {
             const float rawX = beam.spotPositions[0];
@@ -2370,7 +2410,9 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
     }
 
     const std::vector<float>& weqHeader = getActiveWeqHeader(beam);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (beam.spotPositionsAreIndices && weqHeader.size() < 9) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         return fail("spotPositionsAreIndices requires a 9-value WEQ header");
     }
 
@@ -2408,10 +2450,13 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
                                 " localSpot=" + std::to_string(i));
                 }
                 if (weight == 0.0f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                     out.skippedZeroWeightSpots++;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                     layerAudit.zeroWeightSpots++;
                     continue;
                 }
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 layerAudit.positiveInputSpots++;
                 layerAudit.inputWeightSum += static_cast<double>(weight);
                 // CarbonPBS uses idbeamxy directly as continuous rayweq texture coordinates.
@@ -2526,7 +2571,9 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
                             " localSpot=" + std::to_string(i));
             }
             if (weight == 0.0f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 out.skippedZeroWeightSpots++;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 layerAudit.zeroWeightSpots++;
                 continue;
             }
@@ -2548,6 +2595,7 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
                 return fail("positive-weight decoded spot does not align with inferred lattice phase at layer=" +
                             std::to_string(layer) + " localSpot=" + std::to_string(i));
             }
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             layerAudit.positiveInputSpots++;
             layerAudit.inputWeightSum += static_cast<double>(weight);
             layerAudit.rasterizedWeightSum += static_cast<double>(weight);
@@ -2583,15 +2631,22 @@ static bool buildRawSpotLattice(const RTDBeamSettings& beam, RawSpotLattice& out
 // Build a physical PB-like spot lattice view that avoids bilinear/barycentric
 // weight splitting onto a dense WEQ departure plane.
 //
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // This is needed for halo/nuclear mapping when spotPositionsAreIndices=true:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // in that mode, the regular buildRawSpotLattice(...) intentionally rasterizes
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // onto the full ray/WEQ texel lattice (dense), which is NOT the physical PB
 // grid contract expected by the upstream halo normalization.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // UNIT CONTRACT (must match upstream beam.getSpotIdxToGantry()):
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 //   spotDelta   : mm per physical PB grid step (typically 2-10 mm)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 //   spotOffset  : mm of physical PB cell (0,0) in gantry frame
 // The lattice axes returned in spotDelta/spotOffset are consumed downstream as
 // mm; do NOT multiply by lenToMm here, and downstream sites must not multiply
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // by lenToMm again. Decoded (x,y) below come from decodeSpotPosition which
 // already returns mm.
 static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLattice& out, bool verbose) {
@@ -2626,12 +2681,15 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
     }
 
     const std::vector<float>& weqHeader = getActiveWeqHeader(beam);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (beam.spotPositionsAreIndices && weqHeader.size() < 9) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         return fail("spotPositionsAreIndices requires a 9-value WEQ header");
     }
 
     // Infer physical PB lattice axes from the decoded spot center coordinates.
     // Important: do NOT infer axes from only positive-weight spots; allow zero
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // weights to keep geometry complete (the caller can still leave weight=0 cells empty).
     std::vector<float> allX;
     std::vector<float> allY;
@@ -2651,14 +2709,19 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
 
     // [9.23] Try to infer the canonical physical PB lattice from the decoded spot
     // center coordinates themselves. Upstream RTD-main exposes this as
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // beam.getSpotIdxToGantry() (kernel_wrapper.cu:903-908). Local equivalent:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // project the decoded (x,y) cloud onto a uniform 2D lattice and compute
     // (nx, ny, dx, dy, ox, oy) from the projection.
     //
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // BEST-EFFORT: when canonical inference fails (non-uniform plan, sub-texel
     // jitter, very dense plans where every WEQ texel hosts a spot), the caller
     // falls back to weqHeader[8/5/7/4/6/3] so halo can still run with the RC2 BEV
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // fix active. The fallback is NOT upstream-equivalent for lateral profile;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // see halo-energy-conservation.md (RC1/RC3/RC4) and the fallback warning.
     auto inferAxis = [](const std::vector<float>& vals,
                         float& outDelta,
@@ -2711,6 +2774,7 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
         for (float d : diffs) {
             const float ratio = d / median;
             const float roundedRatio = std::round(ratio);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             if (roundedRatio < 1.0f || roundedRatio > 32.0f) {
                 whyFailed = "lattice step deviates from canonical multiples (ratio=" +
                             std::to_string(ratio) + ")";
@@ -2769,6 +2833,7 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
             spotOffset2 += beam.layerSpotCounts[layer];
         }
         bool perLayerOk = false;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (bestLayerIdx >= 0 && bestLayerCount >= 3) {
             std::vector<float> layerX, layerY;
             layerX.reserve(static_cast<size_t>(bestLayerCount));
@@ -2817,19 +2882,29 @@ static bool buildPhysicalPBLatticeView(const RTDBeamSettings& beam, RawSpotLatti
 
         if (!perLayerOk) {
         // Fall back to the WEQ texel grid. For CarbonPBS exports with
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // spotPositionsAreIndices=true this IS the actual spot-bearing grid; the
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // canonical "physical PB lattice" concept may not apply. RC2 (BEV
         // positioning) still gets fixed because nucIdxToFan no longer doubles
         // lenToMm; the lateral profile is not upstream-equivalent in fallback
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // mode -- expect halo width = primary width and missing broad umbrella.
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (weqHeader.size() < 9) {
             return fail("canonical PB lattice inference failed and WEQ header is too short for fallback");
         }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         nxRef = std::max(1, static_cast<int>(std::lround(weqHeader[8])));
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         nyRef = std::max(1, static_cast<int>(std::lround(weqHeader[5])));
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         dxRef = weqHeader[7];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         dyRef = weqHeader[4];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         oxRef = weqHeader[6];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         oyRef = weqHeader[3];
         usingFallback = true;
         if (verbose || true) {
@@ -2934,6 +3009,7 @@ static bool computeDecodedSpotBounds(const RTDBeamSettings& beam,
                                      float& maxY) {
     if (beam.layerSpotCounts.empty() || beam.spotPositions.empty()) return false;
     const std::vector<float>& weqHeader = getActiveWeqHeader(beam);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (beam.spotPositionsAreIndices && weqHeader.size() < 9) return false;
 
     minX = INF; maxX = -INF;
@@ -2961,6 +3037,7 @@ static bool estimateVirtualSourceDistancesFromSpots(const RTDBeamSettings& beam,
                                                     float& sadY) {
     if (!(sad > 1.0e-6f)) return false;
     if (beam.spotBeamDirections.empty() || beam.spotPositions.empty()) return false;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if ((beam.spotBeamDirections.size() % 3) != 0 || (beam.spotPositions.size() % 2) != 0) return false;
 
     const size_t nDirs = beam.spotBeamDirections.size() / 3;
@@ -2988,15 +3065,20 @@ static bool estimateVirtualSourceDistancesFromSpots(const RTDBeamSettings& beam,
         float spotY = rawY;
         if (beam.spotPositionsAreIndices) {
             if (!haveHeader) return false;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // dosecal.py exports idbeamxy = physical_index + offset + 0.5
             // Recover the physical reference-plane coordinate used to build
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // spot-specific beam directions: coord = start + (raw - 0.5) * step.
             spotX = x0 + (rawX - 0.5f) * dx;
             spotY = y0 + (rawY - 0.5f) * dy;
         }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         vec3f dir = make_vec3f(beam.spotBeamDirections[i * 3 + 0],
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                                beam.spotBeamDirections[i * 3 + 1],
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                                beam.spotBeamDirections[i * 3 + 2]);
         const float dirLen = sqrtf(dot(dir, dir));
         if (!(dirLen > 1.0e-6f)) continue;
@@ -3140,14 +3222,17 @@ static WeqLateralSamplingAudit auditWeqLateralSampling(const float* weqVolume,
             const bool linearInside = linearXInside && linearYInside;
 
             if (nearestInside) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.nearestInsideRays++;
                 seenX[static_cast<size_t>(nearestX)] = 1u;
                 seenY[static_cast<size_t>(nearestY)] = 1u;
             } else {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.nearestOutsideRays++;
             }
 
             if (linearInside) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.linearInsideRays++;
                 const float fracX = std::fabs(fx - std::round(fx));
                 const float fracY = std::fabs(fy - std::round(fy));
@@ -3156,10 +3241,12 @@ static WeqLateralSamplingAudit auditWeqLateralSampling(const float* weqVolume,
                 audit.maxNearestFracX = std::max(audit.maxNearestFracX, fracX);
                 audit.maxNearestFracY = std::max(audit.maxNearestFracY, fracY);
             } else {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.linearOutsideRays++;
             }
 
             if (nearestInside != linearInside) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.supportMismatchRays++;
             }
 
@@ -3175,15 +3262,18 @@ static WeqLateralSamplingAudit auditWeqLateralSampling(const float* weqVolume,
                 const float delta = std::fabs(linear - nearest);
                 audit.deltaAbsSum += static_cast<double>(delta);
                 audit.maxAbsDelta = std::max(audit.maxAbsDelta, delta);
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                 audit.deltaSamples++;
             }
         }
     }
 
     for (unsigned char v : seenX) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (v) audit.uniqueNearestX++;
     }
     for (unsigned char v : seenY) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (v) audit.uniqueNearestY++;
     }
     return audit;
@@ -3342,6 +3432,7 @@ __global__ void sliceMinVarIgnoreNeverEnter(const float* __restrict__ devIn,
     }
 }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Pad ray IDD / sigma arrays to the superposition tile pitch (RayTraceDicom expects
 // rayDimsX % SUPERP_TILE_X == 0 and rayDimsY % SUPERP_TILE_Y == 0 for the tile kernels).
 __global__ void padRayIddSigmaKernel(const float* __restrict__ srcIdd,
@@ -3406,12 +3497,19 @@ __device__ void recordIddSigmaInvariantBad(IddSigmaInvariantStats* stats,
     switch (code) {
         case 1: atomicAdd(&stats->invalidDensity, 1); break;
         case 2: atomicAdd(&stats->invalidCumulSp, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 3: atomicAdd(&stats->invalidVoxelWidth, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 4: atomicAdd(&stats->invalidStepVol, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 5: atomicAdd(&stats->invalidSigmaSq, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 6: atomicAdd(&stats->invalidRSigmaEff, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 7: atomicAdd(&stats->invalidMass, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 8: atomicAdd(&stats->invalidNucSigmaSq, 1); break;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         case 9: atomicAdd(&stats->invalidNucRSigmaEff, 1); break;
         default: break;
     }
@@ -3472,6 +3570,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
         eRefSq = 190.44f;
         sigmaDelta = 0.0f;
 #elif NUCLEAR_CORR == FLUKA
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         eRefSq = 216.09f;
         sigmaDelta = 0.08f;
 #elif NUCLEAR_CORR == GAUSS_FIT
@@ -3503,9 +3602,11 @@ __global__ void validateIddSigmaTransportInvariantKernel(
             if (!isfinite(voxelWidth.x) || !(voxelWidth.x > 0.0f) ||
                 !isfinite(voxelWidth.y) || !(voxelWidth.y > 0.0f)) {
                 recordIddSigmaInvariantBad(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     stats, 3, rayIdx, static_cast<int>(stepNo), 0.5f * (voxelWidth.x + voxelWidth.y));
             }
             if (!isfinite(stepVol) || !(stepVol > 0.0f)) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 recordIddSigmaInvariantBad(stats, 4, rayIdx, static_cast<int>(stepNo), stepVol);
             }
 
@@ -3513,6 +3614,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
             if (cumulSp < params.getPeakDepth()) {
                 const float residualDepth = params.getPeakDepth() - HALF * (cumulSp + cumulSpOld);
                 if (!isfinite(residualDepth) || !(residualDepth > 0.0f)) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), residualDepth);
                 } else {
                     const float resE = E_COEF * __powf(residualDepth, P_INV);
@@ -3521,6 +3623,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
                         rRadiationLengthTex, density * params.getRRlScale() + HALF);
                     const float thetaSq = eRefSq / (betaP * betaP) * params.getStepLength() * rRl;
                     if (!isfinite(rRl) || rRl < 0.0f || !isfinite(thetaSq) || thetaSq < 0.0f) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), thetaSq);
                     }
 
@@ -3536,12 +3639,14 @@ __global__ void validateIddSigmaTransportInvariantKernel(
             }
 
             if (!isfinite(sigmaSq) || sigmaSq < 0.0f) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 recordIddSigmaInvariantBad(stats, 5, rayIdx, static_cast<int>(stepNo), sigmaSq);
             } else {
                 const float meanWidth = 0.5f * (voxelWidth.x + voxelWidth.y);
                 const float denom = SQRT2 * (sqrtf(sigmaSq) + sigmaDelta);
                 const float rSigmaEff = meanWidth / denom;
                 if (!isfinite(rSigmaEff) || !(rSigmaEff > 0.0f)) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     recordIddSigmaInvariantBad(stats, 6, rayIdx, static_cast<int>(stepNo), rSigmaEff);
                 }
 #ifdef NUCLEAR_CORR
@@ -3552,6 +3657,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
                     const float nucSqSigma = tex2D<float>(nucSqSigmaTex, depthMidIdx, energyTexIdx);
                     const float nucSigmaSq = sigmaSq + nucSqSigma + params.getEntrySigmaSq();
                     if (!isfinite(nucSqSigma) || !isfinite(nucSigmaSq) || !(nucSigmaSq > 0.0f)) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         recordIddSigmaInvariantBad(stats, 8, rayIdx, static_cast<int>(stepNo), nucSigmaSq);
                     } else {
                         const float nucRSigmaEff =
@@ -3559,6 +3665,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
                             (SQRT2 * sqrtf(nucSigmaSq));
                         if (!isfinite(nucRSigmaEff) || !(nucRSigmaEff > 0.0f)) {
                             recordIddSigmaInvariantBad(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                                 stats, 9, rayIdx, static_cast<int>(stepNo), nucRSigmaEff);
                         }
                     }
@@ -3572,6 +3679,7 @@ __global__ void validateIddSigmaTransportInvariantKernel(
             const float mass = density * stepVol;
 #endif
             if (!isfinite(mass) || mass < 0.0f) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 recordIddSigmaInvariantBad(stats, 7, rayIdx, static_cast<int>(stepNo), mass);
             }
 
@@ -3667,6 +3775,7 @@ __global__ void overrideRSigmaFromCarbonProfileKernel(
 ) {
     const unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
     const unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     if (x >= (unsigned)rayDimsX || y >= (unsigned)rayDimsY) return;
 
     const unsigned int plane = (unsigned int)(rayDimsX * rayDimsY);
@@ -3735,6 +3844,7 @@ __global__ void applyCarbonProfileOverallWeightKernel(
 ) {
     const unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
     const unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     if (x >= (unsigned)rayDimsX || y >= (unsigned)rayDimsY) return;
     if (profileTex == 0 || profileDepthN <= 0 || !(profileDepthStep > 0.0f) || profileChannels <= 0) return;
 
@@ -3850,9 +3960,13 @@ __global__ void gatherCarbonSigmaDebugKernel(
 
 enum class CtInputType {
     Auto,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     HU,           // [-1000, 3000]
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     HUPlus1000,   // [0, 4000]
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     Density,      // ~[0.5, 2.0]
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     SPR           // ~[0.5, 2.0]
 };
 
@@ -3860,6 +3974,7 @@ static CtInputType parseCtInputTypeEnv() {
     const char* v = std::getenv("RTD_CT_INPUT_TYPE");
     if (!v) return CtInputType::Auto;
     std::string s(v);
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return (char)std::tolower(c); });
     if (s == "hu") return CtInputType::HU;
     if (s == "hu+1000" || s == "huplus1000" || s == "hup1000") return CtInputType::HUPlus1000;
@@ -3898,11 +4013,14 @@ static CtInputType autoDetectCtType(const CtStats& st) {
     //  - HU contains negatives.
     //  - HU+1000 is usually non-negative, up to a few thousand.
     //  - Density / SPR are around 1.0.
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (st.minV < -200.0f) return CtInputType::HU;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (st.maxV <= 20.0f && st.minV >= 0.0f) return CtInputType::Density;
     return CtInputType::HUPlus1000;
 }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Find fractional index for a monotonic LUT (vec[idx] ≈ value).
 // Returns index in [0, n-1].
 static float findFractionalIndexMonotonic(const std::vector<float>& vec, float value) {
@@ -3970,6 +4088,7 @@ static bool convertCtToHUPlus1000(
                   << std::endl;
     }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // If already HU+1000, just reference input (no conversion needed).
     if (type == CtInputType::HUPlus1000) {
         return false; // indicates no conversion (caller can use ctIn directly)
@@ -4001,7 +4120,9 @@ static bool convertCtToHUPlus1000(
     for (size_t i = 0; i < n; ++i) {
         const float v = ctIn[i];
         const float idx = findFractionalIndexMonotonic(lut, v);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Texture coordinate = HUplus1000 * scale + 0.5 -> index+0.5
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // => HUplus1000 * scale = index
         ctOutHUPlus1000[i] = idx / scale;
     }
@@ -4053,81 +4174,54 @@ void subsecondWrapper(
             beamIdx
         );
     }
-    
+
     // Initialize CUDA
     cudaSetDevice(gpuId);
     cudaFree(0);
-    
+
     if (fineTiming) {
         printDeviceInfo();
         printMemoryInfo();
     }
 
     // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // CT input conversion (CarbonPBS -> RayTraceDicom)
     // ------------------------------------------------------------------------
-    // The CT 3D texture (imVolTex / devCtLinear fallback) is read ONLY by
-    // rayTracingBEVKernel, i.e. the CT-direct ray-tracing path. When every beam
-    // carries a precomputed WEQ volume, fillBevFromWeqVolumeKernel is used
-    // instead and the CT texture is never sampled. In that (current WEQ-mode)
-    // case the per beam-call 274^3 CT upload + density->HU+1000 conversion is
-    // pure waste, so we skip it. As soon as ANY beam lacks a WEQ volume we build
-    // the CT texture exactly as before — re-enabling CT-direct needs no further
-    // change here. Cleanup paths are safe with imVolTex==0 (destroyTextureObject
-    // AndArray early-returns) and devCtLinear==nullptr.
-    cudaTextureObject_t imVolTex = 0;
+    const size_t ctElemN = static_cast<size_t>(ctDims.x) * static_cast<size_t>(ctDims.y) * static_cast<size_t>(ctDims.z);
+    std::vector<float> ctHUPlus1000;
+    const float* ctForTexture = ctData;
+
+    CtInputType forcedType = parseCtInputTypeEnv();
+    CtInputType chosenType = forcedType;
+    if (chosenType == CtInputType::Auto) {
+        chosenType = autoDetectCtType(sampleCtStats(ctData, ctElemN));
+    }
+
+    const bool needConversion = (chosenType != CtInputType::HUPlus1000);
+    bool converted = false;
+    if (needConversion) {
+        // If conversion returns true -> use ctHUPlus1000 buffer.
+        // If conversion returns false here -> conversion failed.
+        converted = convertCtToHUPlus1000(ctData, ctElemN, energyData, ctHUPlus1000, chosenType, fineTiming);
+        if (!converted || ctHUPlus1000.empty()) {
+            std::cerr << "[CT_ADAPTER] Fatal: CT conversion to HU+1000 failed. Set RTD_CT_INPUT_TYPE=HU|HU+1000|DENSITY|SPR to override." << std::endl;
+            return;
+        }
+        ctForTexture = ctHUPlus1000.data();
+    }
+
+    cudaTextureObject_t imVolTex = create3DTexture(ctForTexture, ctDims, cudaFilterModeLinear, cudaAddressModeBorder);
     float* devCtLinear = nullptr;
-
-    bool needCtTexture = false;
-    for (size_t ctBeamIdx = 0; ctBeamIdx < numBeams; ++ctBeamIdx) {
-        const RTDBeamSettings& ctBeam = beamSettings[ctBeamIdx];
-        const std::vector<float>& ctWeqHeader = getActiveWeqHeader(ctBeam);
-        // Mirror the per-beam hasWeqVolume test at the kernel dispatch site below.
-        const bool hasWeqVolume = (ctWeqHeader.size() >= 9) && (ctBeam.waterEquivalence.size() > 9);
-        if (!hasWeqVolume) {
-            needCtTexture = true;
-            break;
+    if (imVolTex == 0) {
+        if (fineTiming) {
+            std::cerr << "[RTD] CT 3D texture creation failed; falling back to linear-memory trilinear sampling." << std::endl;
         }
-    }
-    if (!needCtTexture && fineTiming) {
-        std::cout << "[CT_ADAPTER] All beams carry a WEQ volume; skipping CT 3D texture upload/conversion." << std::endl;
+        devCtLinear = (float*)allocateDeviceMemory(ctElemN * sizeof(float));
+        copyToDevice(devCtLinear, ctForTexture, ctElemN * sizeof(float));
     }
 
-    if (needCtTexture) {
-        const size_t ctElemN = static_cast<size_t>(ctDims.x) * static_cast<size_t>(ctDims.y) * static_cast<size_t>(ctDims.z);
-        std::vector<float> ctHUPlus1000;
-        const float* ctForTexture = ctData;
-
-        CtInputType forcedType = parseCtInputTypeEnv();
-        CtInputType chosenType = forcedType;
-        if (chosenType == CtInputType::Auto) {
-            chosenType = autoDetectCtType(sampleCtStats(ctData, ctElemN));
-        }
-
-        const bool needConversion = (chosenType != CtInputType::HUPlus1000);
-        bool converted = false;
-        if (needConversion) {
-            // If conversion returns true -> use ctHUPlus1000 buffer.
-            // If conversion returns false here -> conversion failed.
-            converted = convertCtToHUPlus1000(ctData, ctElemN, energyData, ctHUPlus1000, chosenType, fineTiming);
-            if (!converted || ctHUPlus1000.empty()) {
-                std::cerr << "[CT_ADAPTER] Fatal: CT conversion to HU+1000 failed. Set RTD_CT_INPUT_TYPE=HU|HU+1000|DENSITY|SPR to override." << std::endl;
-                return;
-            }
-            ctForTexture = ctHUPlus1000.data();
-        }
-
-        imVolTex = create3DTexture(ctForTexture, ctDims, cudaFilterModeLinear, cudaAddressModeBorder);
-        if (imVolTex == 0) {
-            if (fineTiming) {
-                std::cerr << "[RTD] CT 3D texture creation failed; falling back to linear-memory trilinear sampling." << std::endl;
-            }
-            devCtLinear = (float*)allocateDeviceMemory(ctElemN * sizeof(float));
-            copyToDevice(devCtLinear, ctForTexture, ctElemN * sizeof(float));
-        }
-    }
-
-    cudaTextureObject_t cumulIddTex = create2DTexture(&energyData->ciddMatrix[0], 
+    cudaTextureObject_t cumulIddTex = create2DTexture(&energyData->ciddMatrix[0],
                                                      make_int2(energyData->nEnergySamples, energyData->nEnergies),
                                                      cudaFilterModeLinear, cudaAddressModeClamp);
     if (cumulIddTex == 0) {
@@ -4135,8 +4229,8 @@ void subsecondWrapper(
         destroyTextureObjectAndArray(imVolTex);
         return;
     }
-    
-    cudaTextureObject_t densityTex = create1DTexture(&energyData->densityVector[0], 
+
+    cudaTextureObject_t densityTex = create1DTexture(&energyData->densityVector[0],
                                                     energyData->nDensitySamples,
                                                     cudaFilterModeLinear, cudaAddressModeClamp);
     if (densityTex == 0) {
@@ -4145,8 +4239,8 @@ void subsecondWrapper(
         destroyTextureObjectAndArray(cumulIddTex);
         return;
     }
-    
-    cudaTextureObject_t stoppingPowerTex = create1DTexture(&energyData->spVector[0], 
+
+    cudaTextureObject_t stoppingPowerTex = create1DTexture(&energyData->spVector[0],
                                                           energyData->nSpSamples,
                                                           cudaFilterModeLinear, cudaAddressModeClamp);
     if (stoppingPowerTex == 0) {
@@ -4156,8 +4250,8 @@ void subsecondWrapper(
         destroyTextureObjectAndArray(densityTex);
         return;
     }
-    
-    cudaTextureObject_t rRadiationLengthTex = create1DTexture(&energyData->rRlVector[0], 
+
+    cudaTextureObject_t rRadiationLengthTex = create1DTexture(&energyData->rRlVector[0],
                                                              energyData->nRRlSamples,
                                                              cudaFilterModeLinear, cudaAddressModeClamp);
     if (rRadiationLengthTex == 0) {
@@ -4194,6 +4288,7 @@ void subsecondWrapper(
 #endif
 
     // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Energy table diagnostics (helps detect clamping / unsorted energy vectors)
     // ------------------------------------------------------------------------
     if (fineTiming && energyData && !energyData->energiesPerU.empty()) {
@@ -4219,6 +4314,7 @@ void subsecondWrapper(
             std::cout << "[ENERGY_TABLE] scaleFacts=[" << energyData->scaleFacts.front() << ", " << energyData->scaleFacts.back() << "]" << std::endl;
         }
         // Quick sanity check: are CIDD curves actually different across energy?
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // If rows are identical, changing energy will not change the dose (by design/bug).
         if (!energyData->ciddMatrix.empty() && energyData->nEnergies > 1 && energyData->nEnergySamples > 0) {
             const int nS = energyData->nEnergySamples;
@@ -4231,9 +4327,11 @@ void subsecondWrapper(
             float maxAbsDiff = 0.0f;
             for (int s = 0; s < nS; ++s) {
                 const float d = std::fabs(row0[s] - rowN[s]);
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
                 meanAbsDiff += (double)d;
                 if (d > maxAbsDiff) maxAbsDiff = d;
             }
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
             meanAbsDiff /= (double)nS;
 
             std::cout << "[ENERGY_TABLE] CIDD row0 vs rowLast: meanAbsDiff=" << meanAbsDiff
@@ -4246,18 +4344,18 @@ void subsecondWrapper(
         }
 
     }
-    
+
     size_t doseSize = doseDims.x * doseDims.y * doseDims.z;
     float* devDoseVol = (float*)allocateDeviceMemory(doseSize * sizeof(float));
-    
+
     // Debug: Check if devDoseVol allocation was successful
     if (devDoseVol == nullptr) {
         std::cout << "Error: Failed to allocate devDoseVol memory!" << std::endl;
         return;
     }
-    
+
     copyToDevice(devDoseVol, doseData, doseSize * sizeof(float));
-    
+
     for (size_t beamIdx = 0; beamIdx < numBeams; ++beamIdx) {
         const RTDBeamSettings& beam = beamSettings[beamIdx];
         BeamStageTiming beamTiming;
@@ -4271,6 +4369,7 @@ void subsecondWrapper(
             std::cout << "Processing beam " << beamIdx << " with " << beam.energies.size() << " energy layers" << std::endl;
         }
         if (fineTiming) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             std::cout << "  [BEAM] energies (first up to 8): ";
             const size_t nE = beam.energies.size();
             const size_t nPrint = std::min<size_t>(nE, 8);
@@ -4284,16 +4383,18 @@ void subsecondWrapper(
             std::cout << std::endl;
         }
 
-        
+
         // ============================================================================
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Pre-compute CPB convolution for all layers (energy layer  is executed inside)
         // ============================================================================
-        
+
         const int numLayers = static_cast<int>(beam.energies.size());
         const int maxSubspotsPerLayer = beam.maxSubspotsPerLayer;
 
         // IMPORTANT:
         //  - Per requirements: wrapper must NOT synthesize / hard-code subspot data.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //  - subspotData must be supplied by the caller (CarbonPBS plan parsing pipeline).
         if (maxSubspotsPerLayer <= 0 || beam.subspotData.empty()) {
             std::ostringstream oss;
@@ -4311,6 +4412,7 @@ void subsecondWrapper(
             oss << "[RTD] beamIdx=" << beamIdx
                 << " beam-critical subspotData size mismatch: expected="
                 << expectedSubspotN
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 << " floats (= numLayers*maxSubspotsPerLayer*5), actual="
                 << beam.subspotData.size()
                 << " numLayers=" << numLayers
@@ -4319,33 +4421,43 @@ void subsecondWrapper(
         }
 
         // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Geometry + coordinate system (CarbonPBS -> RayTraceDicom)
         // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // RayTraceDicom's BEV/fan geometry is defined in a beam-centric ("gantry") coordinate
         // system where:
         //   - z points *away* from the beam direction
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   - the source is at (0,0,dist)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   - the reference plane (isocenter) is at z=0
         // Here we construct a world<->gantry rotation from CarbonPBS inputs:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   bmdir (beam direction), bmxdir, bmydir, source position, SAD.
         //
         // Unit handling:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   CarbonPBS commonly uses cm (e.g. 0.1 == 1 mm), while RTD tables
         //   and kernels operate in mm. Accept only clearly cm/mm geometry or
         //   explicit overrides; ambiguous spacing now fails before kernels run.
         const float lenToMm = resolveGeometryLengthScaleToMm(ctResolution, doseResolution, fineTiming);
 
         // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Energy depth unit normalization (EnergyStruct peakDepth/scaleFacts -> mm)
         //
         // RayTraceDicom internally treats:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   - cumulSp (WEPL) in *length units* (typically mm)
         //   - peakDepth in the same units as cumulSp
         //   - energyScaleFact converts cumulSp to the depth-index of cumulIddTex
         //
         // CarbonPBS tables may be stored in cm. We resolve/override and convert
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // peakDepth and scaleFacts so that WEPL(mm) maps to the correct IDD depth.
         // Override options:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         //   RTD_ENERGY_DEPTH_UNIT=mm|cm
         //   RTD_ENERGY_DEPTH_SCALE=<float>   (e.g. 10 for cm->mm)
         // ------------------------------------------------------------------------
@@ -4377,6 +4489,7 @@ void subsecondWrapper(
         int profileChannels = 0;
         const bool hasBeamParaData = beam.beamParaData.size() >= static_cast<size_t>(numLayers) * 3ull;
         const bool hasProfileModel =
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             beam.profileSetting.size() >= 3 &&
             static_cast<int>(std::lround(beam.profileSetting[2])) > 0 &&
             !beam.profileData.empty();
@@ -4447,12 +4560,14 @@ void subsecondWrapper(
             return v;
         };
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Beam geometry parameters (from CarbonPBS / caller)
         vec3f beamDirectionW = normalizeSafe(toVec3f(beam.beamDirection));
         vec3f bmXDirectionW  = normalizeSafe(toVec3f(beam.bmXDirection));
         vec3f bmYDirectionW  = normalizeSafe(toVec3f(beam.bmYDirection));
         vec3f sourcePositionW_cm = toVec3f(beam.sourcePosition);
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // SAD fallback: if not provided explicitly, fall back to sourceDist.x (legacy)
         const float sad_cm = (beam.sad > 0.0f) ? beam.sad : beam.sourceDist.x;
 
@@ -4490,6 +4605,7 @@ void subsecondWrapper(
         const vec3f gY = bmY;
         const vec3f gZ = bmZ * -1.0f;
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Gantry origin at isocenter (source + beamDir * SAD)
         const vec3f sourcePositionW_mm = sourcePositionW_cm * lenToMm;
         const float sad_mm = sad_cm * lenToMm;
@@ -4520,6 +4636,7 @@ void subsecondWrapper(
             throw std::runtime_error(oss.str());
         }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Gantry->World affine transform (mm)
         const Matrix3x3 gantryToWorldMat(
             make_vec3f(gX.x, gY.x, gZ.x),
@@ -4528,8 +4645,9 @@ void subsecondWrapper(
         );
         const Float3AffineTransform gantryToWorld(gantryToWorldMat, isoW_mm);
         const Float3AffineTransform worldToGantry = gantryToWorld.inverse();
-        
+
         // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // CPB / ray grid definition (in gantry coordinates, on z=0 reference plane)
         // ------------------------------------------------------------------------
         // We define the CPB/ray grid to cover the *dose volume projection* in gantry X/Y.
@@ -4548,6 +4666,7 @@ void subsecondWrapper(
         // (ROI bounds are used elsewhere for dose masking, but cannot restrict the
         //  CPB grid or the beam center / high-energy rays will fall outside.)
         const vec3f projCorner_mm = doseCorner_mm;  // always full volume
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // CarbonPBS CSV corner/origin is voxel-center based. Use (dims-1)*spacing
         // for geometric extents; using dims*spacing shifts the traced fan one voxel
         // beyond the CT/dose box and causes border-grazing rays.
@@ -4580,6 +4699,7 @@ void subsecondWrapper(
             for (int li = 0; li < nLayers; ++li) {
                 for (int si = 0; si < mspl; ++si) {
                     const int base = (li * mspl + si) * 5;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     if (static_cast<int>(beam.subspotData.size()) <= base + 4) break;
                     if (beam.subspotData[base + 2] > 0.0f) {  // weight > 0
                         const float sx = beam.subspotData[base + 0] / lenToMm;
@@ -4725,10 +4845,14 @@ void subsecondWrapper(
                 }
             }
             if (!croppedBySpotBounds) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 cpbCorner = make_vec3f(weqHeader[6] / lenToMm, weqHeader[3] / lenToMm, 0.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 cpbResolution = make_vec3f(weqHeader[7] / lenToMm, weqHeader[4] / lenToMm, doseResolution.z);
                 cpbDims = make_vec3i(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     roundUpTo(std::max(1, static_cast<int>(std::lround(weqHeader[8]))), SUPERP_TILE_X),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     roundUpTo(std::max(1, static_cast<int>(std::lround(weqHeader[5]))), SUPERP_TILE_Y),
                     numLayers
                 );
@@ -4738,6 +4862,7 @@ void subsecondWrapper(
             if (!(beam.raySpacing.x > 0.0f) || !(beam.raySpacing.y > 0.0f)) {
                 throw std::runtime_error(
                     "Legacy CPB path requires explicit beam.raySpacing; "
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     "doseResolution*0.5 fallback is not RTD-main-equivalent");
             }
             const float cpbResX = beam.raySpacing.x;
@@ -4766,7 +4891,9 @@ void subsecondWrapper(
             cpbCorner = make_vec3f(minGX / lenToMm, minGY / lenToMm, 0.0f);
             cpbResolution = make_vec3f(cpbResX, cpbResY, cpbResZ);
             cpbDims = make_vec3i(
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
                 std::max(1, (int)std::ceil(covX_cm / cpbResolution.x)),
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
                 std::max(1, (int)std::ceil(covY_cm / cpbResolution.y)),
                 numLayers
             );
@@ -4790,6 +4917,7 @@ void subsecondWrapper(
         }
 
         // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Gantry -> image/dose index transforms (mm)
         // ------------------------------------------------------------------------
         const vec3f ctRes_mm = make_vec3f(ctResolution.x * lenToMm, ctResolution.y * lenToMm, ctResolution.z * lenToMm);
@@ -4814,6 +4942,7 @@ void subsecondWrapper(
         const bool inferredSourceDist =
             estimateVirtualSourceDistancesFromSpots(beam, bmX, bmY, bmZ, sad_cm, inferredSadX, inferredSadY);
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Source distance in mm (per-axis). Prefer explicitly provided sourceDist.
         // Otherwise recover CarbonPBS's virtual source distances from the exported
         // spot-specific beam directions, which encode sadx/sady implicitly.
@@ -4875,6 +5004,7 @@ void subsecondWrapper(
         bool startZAlignedToWeq = false;
         bool startZAlignSkippedBogusHeader = false;
         float startZAlignDeltaMm = 0.0f;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (hasWeqVolume && weqHeader.size() >= 9) {
             // Task 0.21: align BEV start plane to the WEQ projected origin.
             // RayTraceDicom-main marches a ray tracer from the fan start plane
@@ -4889,6 +5019,7 @@ void subsecondWrapper(
             // The fix is to derive the BEV start plane from weqHeader[0] when
             // a WEQ volume is present, which keeps the k->weqVolume[k] contract
             // in the tracer kernel physically consistent and lets every
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // downstream stage (entry plane, pxSpMult, iddParams.corner,
             // primTransfDiv) inherit one aligned depth axis.
             const float meanSourceDistMm = 0.5f * (distX_mm + distY_mm);
@@ -4923,6 +5054,7 @@ void subsecondWrapper(
         }
         int tracerSteps = hasWeqVolume
             ? std::max(1, static_cast<int>(std::lround(weqHeader[2])))
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
             : std::max(1, (int)std::ceil((maxGZ - minGZ) / fabsf(stepLength_mm)) + 1);
 
         if (fineTiming) {
@@ -4947,6 +5079,7 @@ void subsecondWrapper(
             }
         }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // Fan grid definition (in gantry coords, mm).
         const vec3f fanCorner_mm = make_vec3f(cpbCorner.x * lenToMm, cpbCorner.y * lenToMm, startZ_mm);
         const vec3f fanDelta_mm  = make_vec3f(cpbResolution.x * lenToMm,
@@ -4977,7 +5110,7 @@ void subsecondWrapper(
                                                            energyData ? energyData->spScaleFact : 1.0f,
                                                            tracerSteps,
                                                            fanIdxToImIdx);
-        
+
         beamTiming.setupMs = perfElapsedMs(beamPerfStart);
         const auto rayWeightPerfStart = perfNow();
         size_t rayWeightsSize = (size_t)numLayers * rayDims.x * rayDims.y * sizeof(float);
@@ -5009,6 +5142,7 @@ void subsecondWrapper(
                 if (!buildPhysicalPBLatticeView(beam, physicalPbLattice, fineTiming || haloAudit)) {
                     throw std::runtime_error(
                         "nuclear_correction=true requires a physical PB lattice view when spotPositionsAreIndices=true. "
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         "Gate 9.41 upstream contract failed: " + physicalPbLattice.failureReason);
                 }
                 haloSpotLattice = std::move(physicalPbLattice);
@@ -5134,8 +5268,9 @@ void subsecondWrapper(
             const size_t headerPackedElems = weqRayCount * static_cast<size_t>(weqSteps);
             if (bodyCount < headerPackedElems) {
                 throw std::runtime_error(
-                    "water_equivalence payload is smaller than header-declared nx*ny*nStep");
+                    "water_equivalence payload is smaller than header-declared nx* ny* nStep");
             }
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // dosecal.py preallocates rayweq with nMaxStep=10000, but legacy
             // CarbonPBS only uploads the first nx*ny*header.nStep samples to the
             // 3D texture. The remaining tail is reserved capacity, not valid per-ray
@@ -5242,16 +5377,6 @@ void subsecondWrapper(
                 freeDeviceMemory(devWeqVolume);
             }
         } else {
-            // CT-direct ray tracing. The CT texture is only built when at least
-            // one beam needs it (see needCtTexture guard at wrapper entry); guard
-            // here so a contract mismatch fails loudly instead of silently
-            // producing zero dose from a null CT texture.
-            if (imVolTex == 0 && devCtLinear == nullptr) {
-                throw std::runtime_error(
-                    "CT-direct ray tracing requested for a beam without a WEQ volume, "
-                    "but the CT texture was skipped (needCtTexture=false). This is a "
-                    "WEQ-volume contract mismatch.");
-            }
             rayTracingBEVKernel<<<tracerGrid, tracerBlock>>>(
                 devBevDensity, devBevCumulSp, nullptr, nullptr,
                 devRayWeightsAllLayers, devBeamFirstInside, devFirstStepOutside, nullptr,
@@ -5261,7 +5386,6 @@ void subsecondWrapper(
             );
             checkCudaErrors(cudaDeviceSynchronize());
         }
-
         beamTiming.bevTraceMs += perfElapsedMs(bevTracePerfStart);
         if (heavyValidationAudit) {
             assertDeviceFloatBufferFinite(
@@ -5541,6 +5665,7 @@ void subsecondWrapper(
                           << " sum=" << st.sumFinite
                           << " max=" << st.maxFinite
                           << " nnz(>0)=" << st.countPositive << "/" << nRays
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                           << " nnz(>1e-6)=" << st.countGT << "/" << nRays
                           << " nan=" << st.countNaN
                           << " inf=" << st.countInf
@@ -5621,9 +5746,9 @@ void subsecondWrapper(
         float* devBevNucDoseScratch =
             runtimeNuclearEnabled ? (float*)allocateDeviceMemory(bevNucDoseSizeBeam) : nullptr;
 #endif
-        
+
         // process for each energy layer
-        
+
         for (size_t layerIdx = 0; layerIdx < beam.energies.size(); ++layerIdx) {
             float energy = beam.energies[layerIdx];
             LayerPerfTiming layerPerf;
@@ -5633,10 +5758,11 @@ void subsecondWrapper(
             layerPerf.rayDimsX = rayDims.x;
             layerPerf.rayDimsY = rayDims.y;
             const auto layerPerfStart = perfNow();
-            
+
             // Get rayWeights for current layer
             float* devRayWeights = devRayWeightsAllLayers + layerIdx * rayDims.x * rayDims.y;
-            
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Find energy index (float index for interpolation).
 // IMPORTANT: energiesPerU can be ascending or descending. The old patch8 logic clamped almost
 // everything when the LUT table was descending, making "changing energy has no effect".
@@ -5666,8 +5792,10 @@ if (nEnergies <= 1) {
     e0 = energyData->energiesPerU.front();
     e1 = energyData->energiesPerU.front();
 } else if (energy <= E_low) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Clamp to low-energy end (below LUT range)
     clampedLow = true;
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     energyIdx = (float)idxLow;
 
     floorIdxUsed = ascendingE ? 0 : (nEnergies - 2);
@@ -5676,8 +5804,10 @@ if (nEnergies <= 1) {
     e0 = energyData->energiesPerU[floorIdxUsed];
     e1 = energyData->energiesPerU[floorIdxUsed + 1];
 } else if (energy >= E_high) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Clamp to high-energy end (above LUT range)
     clampedHigh = true;
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     energyIdx = (float)idxHigh;
 
     floorIdxUsed = ascendingE ? (nEnergies - 2) : 0;
@@ -5686,6 +5816,7 @@ if (nEnergies <= 1) {
     e0 = energyData->energiesPerU[floorIdxUsed];
     e1 = energyData->energiesPerU[floorIdxUsed + 1];
 } else {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Find segment containing energy (inclusive)
     for (int i = 0; i < nEnergies - 1; ++i) {
         const float a = energyData->energiesPerU[i];
@@ -5708,6 +5839,7 @@ if (nEnergies <= 1) {
     energyIdx = float(floorIdxUsed) + corrUsed;
 }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
 // Warn when energy is truly outside LUT range (silent failure otherwise)
 const bool outOfRange = (energy < E_low) || (energy > E_high);
         if (outOfRange && fineTiming) {
@@ -5740,10 +5872,10 @@ if (fineTiming) {
                 float intPart;
                 float decimals = std::modf(energyIdx, &intPart);
                 int floorIdx = static_cast<int>(intPart);
-                energyScaleFact = energyData->scaleFacts[floorIdx] + 
+                energyScaleFact = energyData->scaleFacts[floorIdx] +
                                  (energyData->scaleFacts[floorIdx + 1] - energyData->scaleFacts[floorIdx]) * decimals;
             }
-            
+
             // Calculate peakDepth using vectorInterpolate
             float peakDepth = 10.0f;
             if (energyIdx <= 0.0f) {
@@ -5754,12 +5886,13 @@ if (fineTiming) {
                 float intPart;
                 float decimals = std::modf(energyIdx, &intPart);
                 int floorIdx = static_cast<int>(intPart);
-                peakDepth = energyData->peakDepths[floorIdx] + 
+                peakDepth = energyData->peakDepths[floorIdx] +
                            (energyData->peakDepths[floorIdx + 1] - energyData->peakDepths[floorIdx]) * decimals;
             }
 
             // ------------------------------------------------------------------------
             // Normalize energy depth units to mm so that:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             //   depthIdx = WEPL_mm * energyScaleFact + 0.5
             // matches the depth axis of cumulIddTex.
             // ------------------------------------------------------------------------
@@ -5779,12 +5912,16 @@ if (fineTiming) {
                           << "  (energyDepthToMm=" << energyDepthToMm << ")"
                           << std::endl;
             }
-            
+
             const HaloLatticePlan* layerHaloPlan =
                 runtimeNuclearEnabled ? &haloPlans[static_cast<size_t>(layerIdx)] : nullptr;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // [9.33] Expected dimensionless spotDistInRays = halo physical-PB spacing / CPB
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // ray spacing. Post-9.23 the halo lattice is the canonical PB grid (e.g. 5x5
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // at 5mm) while the primary helper lattice (rawSpotLattice) stays at the WEQ
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // texel grid (e.g. 80x60 at 1mm); therefore expected MUST come from
             // layerHaloPlan, not rawSpotLattice.
             const float expectedHaloSpotDistInRays =
@@ -5821,6 +5958,7 @@ if (fineTiming) {
             checkCudaErrors(cudaGetLastError());
             checkCudaErrors(cudaMemset(devFirstPassive, 0, rayPlaneElems * sizeof(int)));
             // [9.59] Pre-allocation nuclear spotDist gate.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Compute spotDistInRays here (same priority as the full computation below)
             // so we can fail-fast before allocating devNucIdd / devNucRSigmaEff.
             // If spotDist < 1.5 nuclear σ_eff will not be compressed and tileRadCalc
@@ -5835,9 +5973,12 @@ if (fineTiming) {
                 const float preCheckSpotDist = preCheckDeltaX / beam.raySpacing.x;
                 if (preCheckSpotDist < 1.5f) {
                     throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         "[9.59] Nuclear superposition gate: spotDistInRays=" +
                         std::to_string(preCheckSpotDist) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         " < 1.5 for layer=" + std::to_string(layerIdx) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         ". Nuclear sigma will not be compressed; tileRadCalc would exceed kMaxSuperpR=32. "
                         "Cause: canonical PB lattice inference failed or beam.spotDelta not set. "
                         "beam.spotDelta=(" + std::to_string(beam.spotDelta.x) + "," +
@@ -5877,7 +6018,7 @@ if (fineTiming) {
             }
 #endif
             layerPerf.allocMs += perfElapsedMs(layerAllocStart);
-            
+
             // Create IDD parameters
             FillIddAndSigmaParams iddParams;
             iddParams.energyIdx = energyIdx;  // Float index for texture interpolation
@@ -5890,6 +6031,7 @@ if (fineTiming) {
                 beamLayerPrefix(beamIdx, static_cast<int>(layerIdx), "IDD_SIGMA") + "rRlScale");
 
             // spotDist is **dimensionless**: spot spacing expressed in number of rays.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // RayTraceDicom reference: spotDistInRays = beam.spotDelta.x / beam.raySpacing.x
             // (kernel_wrapper.cu:941 — direct lookup, no inference needed when beam.spotDelta is
             // explicitly supplied by the caller with the canonical physical PB spacing).
@@ -5912,6 +6054,7 @@ if (fineTiming) {
             }
             iddParams.spotDist = spotDistInRays;
             if (runtimeNuclearEnabled && layerHaloPlan != nullptr) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // [9.24] Legacy diagnostic warning (NOT a hard fail). In the
                 // explicit CarbonPBS path, placement grid spacing and physical PB
                 // spacing are intentionally separate: idbeamxy drives rayweight
@@ -5927,10 +6070,14 @@ if (fineTiming) {
                     const bool ratioBad = !(ratioX >= 0.999f && ratioY >= 0.999f) ||
                                           std::fabs(ratioX - roundedX) > 0.25f ||
                                           std::fabs(ratioY - roundedY) > 0.25f ||
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                                           roundedX > 32.0f || roundedY > 32.0f;
                     if (ratioBad) {
                         static thread_local int s_ratioWarn = 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (s_ratioWarn++ < 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                             std::cerr << "  [9.24] WARN: halo/primary lattice ratio=("
                                       << ratioX << "," << ratioY
                                       << ") not a clean integer multiple; halo lateral profile may be off"
@@ -5941,6 +6088,8 @@ if (fineTiming) {
                 if (!(expectedHaloSpotDistInRays > 0.0f) ||
                     !approxEq(iddParams.spotDist, expectedHaloSpotDistInRays, 1.0e-3f)) {
                     static thread_local int s_distWarn = 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                     if (s_distWarn++ < 3) {
                         if (fineTiming) {
                             std::cerr << "  [HALO_AUDIT] WARN: site-1 spotDist=" << iddParams.spotDist
@@ -5953,13 +6102,18 @@ if (fineTiming) {
                 if (fineTiming || haloAudit) {
                     // [9.50] Lateral-profile audit: nucRayDims and paddedSpotWeights
                     // occupancy directly indicate lattice identity.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                     //   Pre-9.23 (broken): nucRayDims = padded(CPB grid), e.g. (96, 64);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                     //                      occupancy ~ 25/6144 = 0.4% (sparse-on-dense).
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                     //   Post-9.23 (fixed):  nucRayDims = padded(PB grid), e.g. (32, 32);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                     //                      occupancy ~ 25/1024 = 2.4% (sparse-on-coarse).
                     int paddedNonzero = 0;
                     double paddedWeightSum = 0.0;
                     for (float v : layerHaloPlan->paddedSpotWeights) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (v > 0.0f) ++paddedNonzero;
                         if (hostIsFinite(v)) paddedWeightSum += static_cast<double>(v);
                     }
@@ -6040,39 +6194,47 @@ if (fineTiming) {
             iddParams.first = 0;
             iddParams.afterLast = tracerSteps;
 
-	            // ------------------------------------------------------------
-	            // IMPORTANT (unit normalization):
-	            //   RayTraceDicom LUT peakDepths/scaleFacts are in **mm**.
-	            //   All "fan" geometry (corner/delta/dist) provided to the
-	            //   IDD/Sigma stage must match the geometry used by the ray
-	            //   tracer (DensityAndSpTracerParams).
-	            // ------------------------------------------------------------
+                // ------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                // IMPORTANT (unit normalization):
+                //   RayTraceDicom LUT peakDepths/scaleFacts are in **mm**.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                //   All "fan" geometry (corner/delta/dist) provided to the
+                //   IDD/Sigma stage must match the geometry used by the ray
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                //   tracer (DensityAndSpTracerParams).
+                // ------------------------------------------------------------
 
-	            // Spot sigma is expected in mm for RayTraceDicom. If the input
-	            // looks cm-like and sigma is very small (<1), treat it as cm.
-	            // entrySigmaSq is the **variance** at iso in air.
-	            // RTDBeamSettings stores spotSigmas as (sigmax, sigmay) per layer.
-	            float2 spotSigmaIso = make_float2(0.0f, 0.0f);
-	            if (layerIdx < beam.spotSigmas.size()) {
-	                spotSigmaIso = beam.spotSigmas[layerIdx];
-	            }
-	            float sigmaX_mm = spotSigmaIso.x;
-	            float sigmaY_mm = spotSigmaIso.y;
-	            if (lenToMm > 1.0f) {
-	                if (sigmaX_mm > 0.0f && sigmaX_mm < 1.0f) sigmaX_mm *= 10.0f;
-	                if (sigmaY_mm > 0.0f && sigmaY_mm < 1.0f) sigmaY_mm *= 10.0f;
-	            }
-	            iddParams.entrySigmaSq = 0.5f * (sigmaX_mm * sigmaX_mm + sigmaY_mm * sigmaY_mm);
-	            iddParams.stepLength = fabsf(fanDelta_mm.z);
-	            // These are recomputed in initStepAndAirDiv(); initialize to 0.
-	            iddParams.sigmaSqAirLin = 0.0f;
-	            iddParams.sigmaSqAirQuad = 0.0f;
-	            // Fan geometry (mm). Must match the tracer's fanIdxToFan settings.
-	            iddParams.dist = make_vec3f(sourceDistVec.x, sourceDistVec.y, 0.0f);
-	            iddParams.corner = fanCorner_mm;
-	            iddParams.delta = fanDelta_mm;
-            
+                // Spot sigma is expected in mm for RayTraceDicom. If the input
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                // looks cm-like and sigma is very small (<1), treat it as cm.
+                // entrySigmaSq is the **variance** at iso in air.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                // RTDBeamSettings stores spotSigmas as (sigmax, sigmay) per layer.
+                float2 spotSigmaIso = make_float2(0.0f, 0.0f);
+                if (layerIdx < beam.spotSigmas.size()) {
+                    spotSigmaIso = beam.spotSigmas[layerIdx];
+                }
+                float sigmaX_mm = spotSigmaIso.x;
+                float sigmaY_mm = spotSigmaIso.y;
+                if (lenToMm > 1.0f) {
+                    if (sigmaX_mm > 0.0f && sigmaX_mm < 1.0f) sigmaX_mm *= 10.0f;
+                    if (sigmaY_mm > 0.0f && sigmaY_mm < 1.0f) sigmaY_mm *= 10.0f;
+                }
+                iddParams.entrySigmaSq = 0.5f * (sigmaX_mm * sigmaX_mm + sigmaY_mm * sigmaY_mm);
+                iddParams.stepLength = fabsf(fanDelta_mm.z);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                // These are recomputed in initStepAndAirDiv(); initialize to 0.
+                iddParams.sigmaSqAirLin = 0.0f;
+                iddParams.sigmaSqAirQuad = 0.0f;
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+                // Fan geometry (mm). Must match the tracer's fanIdxToFan settings.
+                iddParams.dist = make_vec3f(sourceDistVec.x, sourceDistVec.y, 0.0f);
+                iddParams.corner = fanCorner_mm;
+                iddParams.delta = fanDelta_mm;
+
             // Calculate volConst, volLin, volSq for stepVol calculation
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Based on RayTracedicom formula: volPerDist(k) = volConst + k*volLin + k*k*volSq
             float deltaX = iddParams.delta.x;
             float deltaY = iddParams.delta.y;
@@ -6081,15 +6243,16 @@ if (fineTiming) {
             float distX = iddParams.dist.x;
             float distY = iddParams.dist.y;
             float deltaXYZ = fabsf(deltaX * deltaY * deltaZ);
-            
-            iddParams.volConst = deltaXYZ * (1.0f - cornerZ/distX - cornerZ/distY + 
-                                             (cornerZ*cornerZ + deltaZ*deltaZ/12.0f)/(distX*distY));
-            iddParams.volLin = deltaXYZ * deltaZ * (-1.0f/distX - 1.0f/distY + 2.0f*cornerZ/(distX*distY));
+
+            iddParams.volConst = deltaXYZ * (1.0f - cornerZ/distX - cornerZ/distY +
+                                             (cornerZ* cornerZ + deltaZ* deltaZ/12.0f)/(distX* distY));
+            iddParams.volLin = deltaXYZ * deltaZ * (-1.0f/distX - 1.0f/distY + 2.0f* cornerZ/(distX* distY));
             iddParams.volSq = deltaXYZ * deltaZ * deltaZ / (distX * distY);
-            
+
             // Initialize step and air division parameters
             iddParams.initStepAndAirDiv();
             validateIddSigmaPhysicalParams(beamIdx, static_cast<int>(layerIdx), iddParams);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
         // FillIddAndSigmaParams debug (helps diagnose rSigmaEff NaNs)
         if (rtdSigmaDebugEnabled()) {
             const float incDiv0 = iddParams.sigmaSqAirLin + (2.0f * static_cast<float>(iddParams.first) - 1.0f) * iddParams.sigmaSqAirQuad;
@@ -6121,13 +6284,16 @@ if (fineTiming) {
                           << std::endl;
             }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Entry sigma at entryZ (reference uses sigmaSqAirCoefs + spotSigma^2)
             const float entryZ = float(beamFirstInsideRT) * fanDelta_mm.z + fanCorner_mm.z;
             const vec2f sigmaSqCoefs = iddParams.sigmaSqAirCoefs(peakDepth);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // spot sigma at the isocenter plane (already converted to mm above)
             const float spotSigmaXmm = sigmaX_mm;
             iddParams.entrySigmaSq = sigmaSqCoefs.x * entryZ * entryZ + sigmaSqCoefs.y * entryZ + spotSigmaXmm * spotSigmaXmm;
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Spot distance in rays (used to cap effective sigma)
             if (fabsf(fanDelta_mm.x) > 1e-6f) {
                 // [9.48] RC2 fix companion site: layerHaloPlan->spotDelta is already in mm.
@@ -6143,17 +6309,24 @@ if (fineTiming) {
                     spotSpacingMm = (hasRawSpotLattice ? rawSpotLattice.spotDelta.x : beam.spotDelta.x) * lenToMm;
                 }
                 iddParams.spotDist = fabsf(spotSpacingMm / fanDelta_mm.x);
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // [9.55] Diagnostic warning (NOT a hard fail): dimensionless
                 // spotDist >= 1.5 is the upstream HPB regime. If WEQ-header
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // fallback is active (canonical PB inference failed), spotDist
                 // collapses to ~1 because the lattice equals the CPB grid.
                 // Halo lateral profile then degenerates to primary-width
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // Gaussians (RC3/RC4 not addressed); RC2 BEV fix still applies,
                 // so integrated halo dose returns to ~correct.
                 if (runtimeNuclearEnabled && !(iddParams.spotDist >= 1.5f)) {
                     static thread_local int s_warnCount = 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                     if (s_warnCount++ < 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         std::cerr << "  [9.55] WARN: halo spotDist=" << iddParams.spotDist
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                                   << " is < 1.5 (typical HPB regime is 2-16). Lateral profile "
                                   << "will not be upstream-equivalent. RC2 BEV fix still active."
                                   << std::endl;
@@ -6163,6 +6336,8 @@ if (fineTiming) {
                     if (!(expectedHaloSpotDistInRays > 0.0f) ||
                         !approxEq(iddParams.spotDist, expectedHaloSpotDistInRays, 1.0e-3f)) {
                         static thread_local int s_distWarn2 = 0;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (s_distWarn2++ < 3) {
                             if (fineTiming) {
                                 std::cerr << "  [HALO_AUDIT] WARN: site-2 spotDist=" << iddParams.spotDist
@@ -6252,7 +6427,7 @@ if (fineTiming) {
             // ============================================================================
             // Step 3b: IDD and Sigma Calculation using proper RayTracedicom algorithm
             // ============================================================================
-            
+
             // Launch fillIddAndSigmaKernel - uses energyIdx to query IDD lookup table
             const auto iddSigmaPerfStart = perfNow();
 #ifdef NUCLEAR_CORR
@@ -6282,10 +6457,13 @@ if (fineTiming) {
 #ifdef NUCLEAR_CORR
             // [9.49] Per-layer energy-conservation audit print.
             // Necessary-but-not-sufficient gate. Compares pre-deposition source totals:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             //   sum_rayWeight  : sum of primary spot weights for this layer (rasterized)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             //   sum_nucRayWeight: sum of halo paddedSpotWeights (same physical source)
             //   spotDistSq     : iddParams.spotDist^2; appears in nucRes denominator
             // The ratio diagnoses RC3/RC4 lattice/scaling regressions but is INSENSITIVE
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // to RC2 (BEV positioning) since both quantities exist before BEV-to-dose
             // transfer. Use 9.50 occupancy + runtime fixture comparisons for RC2/lateral
             // verdicts. See halo-energy-conservation.md section 6.
@@ -6475,6 +6653,7 @@ if (fineTiming) {
                 hasBeamParaData &&
                 profileRows > 0 &&
                 profileDepthN > 0 &&
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 profileChannels >= 3 &&
                 debugSigmaLayer;
             std::vector<CarbonSigmaDebugSample> sigmaDebugBefore;
@@ -6530,11 +6709,13 @@ if (fineTiming) {
                         std::cout << "  [INPUT_AUDIT][WRAPPER] profile row=" << row << " depth=" << d << " weights=[";
                         for (int g = 0; g < std::min(5, nGauss); ++g) {
                             std::cout << beam.profileData[base + static_cast<size_t>(g)];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                             if (g + 1 != std::min(5, nGauss)) std::cout << ", ";
                         }
                         std::cout << "] sigmas=[";
                         for (int g = 0; g < std::min(5, nGauss); ++g) {
                             std::cout << beam.profileData[base + static_cast<size_t>(nGauss + g)];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                             if (g + 1 != std::min(5, nGauss)) std::cout << ", ";
                         }
                         std::cout << "]";
@@ -6563,21 +6744,26 @@ if (fineTiming) {
                 profileTex != 0 &&
                 hasBeamParaData &&
                 profileDepthN > 0 &&
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 profileChannels >= 3) {
                 if (debugSigmaCompare) {
                     const int activeFirst = iddParams.first;
                     const int activeLast = std::max(activeFirst, static_cast<int>(iddParams.afterLast) - 1);
                     const int activeMid = activeFirst + (activeLast - activeFirst) / 2;
                     const std::vector<int> sampleXs = {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         std::max(0, rayDims.x / 8),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         std::max(0, rayDims.x / 8),
                         std::max(0, rayDims.x / 2),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         std::max(0, rayDims.x / 8)
                     };
                     const std::vector<int> sampleYs = {
                         std::max(0, rayDims.y / 10),
                         std::max(0, rayDims.y / 2),
                         std::max(0, rayDims.y / 2),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         std::max(0, (9 * rayDims.y) / 10)
                     };
                     const std::vector<int> sampleSteps = {
@@ -6777,7 +6963,7 @@ if (fineTiming) {
             }
             layerPerf.iddSigmaMs += perfElapsedMs(iddSigmaPerfStart);
             beamTiming.iddSigmaMs += layerPerf.iddSigmaMs;
-            
+
             if (fineTiming) {
                 std::vector<float> rayIddData(raySize);
                 std::vector<float> raySigmaData(raySize);
@@ -6818,21 +7004,26 @@ if (fineTiming) {
                         if (idd > 0.0f) {
                             iddPos++;
                             if (idd < minPosRayIdd) minPosRayIdd = idd;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                             if (idd > 1e-15f) iddGT1e15++;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                             if (idd > 1e-6f) iddGT1e6++;
                         }
                     }
 
                     if (hostIsNaN(sig)) {
                         sigmaNaN++;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (idd > 0.0f) sigmaBadOnIddPos++;
                     } else if (!hostIsFinite(sig)) {
                         sigmaInf++;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (idd > 0.0f) sigmaBadOnIddPos++;
                     } else {
                         sigmaFinite++;
                         if (sig > maxSigmaFinite) maxSigmaFinite = sig;
                         if (sig < minSigmaFinite) minSigmaFinite = sig;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (sig > 1e-6f) sigmaGT1e6++;
 
                         if (idd > 0.0f) {
@@ -6853,6 +7044,7 @@ if (fineTiming) {
                           << "  minPos=" << minPosRayIdd
                           << "  nnz(>0)=" << iddPos << "/" << raySize
                           << "  nnz(>1e-15)=" << iddGT1e15 << "/" << raySize
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                           << "  nnz(>1e-6)=" << iddGT1e6 << "/" << raySize
                           << "  nan=" << iddNaN
                           << "  inf=" << iddInf
@@ -6860,6 +7052,7 @@ if (fineTiming) {
                 std::cout << "    Ray Sigma- finiteCount=" << sigmaFinite << "/" << raySize
                           << "  minFinite=" << minSigmaFinite
                           << "  maxFinite=" << maxSigmaFinite
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                           << "  nnz(>1e-6)=" << sigmaGT1e6 << "/" << raySize
                           << "  nan=" << sigmaNaN
                           << "  inf=" << sigmaInf
@@ -6870,21 +7063,22 @@ if (fineTiming) {
                           << "  max=" << maxSigmaOnIddPos
                           << std::endl;
             }
-            
+
             // ============================================================================
             // Step 3c: Calculate beamFirstInside and beamFirstCalculatedPassive
             // ============================================================================
-            
+
             // beamFirstInside/beamFirstOutside are BEV-geometry properties already
             // reduced once at beam scope; only firstPassive is layer-dependent.
             int beamFirstInside = beamFirstInsideRT;
             int beamFirstOutside = beamFirstOutsideRT;
-            
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Calculate beamFirstCalculatedPassive (maximum passive step)
-            sliceMaxVar<int, 1024><<<1, 1024, 1024*sizeof(int)>>>(
+            sliceMaxVar<int, 1024><<<1, 1024, 1024* sizeof(int)>>>(
                 devFirstPassive, devBeamFirstPassiveMaxScratch, rayDims.x * rayDims.y);
             checkCudaErrors(cudaDeviceSynchronize());
-            
+
             int beamFirstPassive;
             checkCudaErrors(cudaMemcpy(&beamFirstPassive, devBeamFirstPassiveMaxScratch, sizeof(int), cudaMemcpyDeviceToHost));
 
@@ -6904,7 +7098,7 @@ if (fineTiming) {
             if (beamFirstCalculatedPassive > tracerSteps) {
                 beamFirstCalculatedPassive = tracerSteps;
             }
-            
+
             if (fineTiming) {
                 std::cout << "  Beam Entry/Exit Analysis:" << std::endl;
                 std::cout << "    beamFirstInside: " << beamFirstInside << std::endl;
@@ -6947,11 +7141,13 @@ if (fineTiming) {
                 std::cout << "    [GEOM] Rays with firstOutside found: " << outsideFound << "/" << nRays
                           << ", rays with firstPassive found: " << passiveFound << "/" << nRays << std::endl;
             }
-            
+
             // ============================================================================
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                         // Step 4: Complete Tile-Based Superposition (RayTracedicom algorithm)
 
             // RayTraceDicom superposition assumes rayDimsX/Y are exact multiples of SUPERP_TILE_X/Y.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // If not, we pad the per-ray (IDD, rSigmaEff) arrays to the next tile multiple.
             const int superpRayDimsX = ((rayDims.x + SUPERP_TILE_X - 1) / SUPERP_TILE_X) * SUPERP_TILE_X;
             const int superpRayDimsY = ((rayDims.y + SUPERP_TILE_Y - 1) / SUPERP_TILE_Y) * SUPERP_TILE_Y;
@@ -6983,6 +7179,7 @@ if (fineTiming) {
                 devRayRSigmaEffForSuperp = devRayRSigmaEffPaddedScratch;
             }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Allocate BEV dose array with proper padding (based on padded ray dims)
             const int bevDoseX = superpRayDimsX + 2 * maxSuperpR;
             const int bevDoseY = superpRayDimsY + 2 * maxSuperpR;
@@ -7087,6 +7284,7 @@ if (fineTiming) {
             }
 
             // Tile-based superposition: separate primary / nuclear functions, mirroring
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // RayTraceDicom-main kernel_wrapper.cu (lines 985-1108).
             //
             // Plan B layout: each branch owns its own tile counters and inOut idx scratch
@@ -7282,6 +7480,7 @@ if (fineTiming) {
                           << "  maxFinite=" << bevStats.maxFinite
                           << "  minPos=" << bevStats.minPositive
                           << "  nnz(>0)=" << bevStats.countPositive << "/" << hostBevDose.size()
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                           << "  nnz(>1e-6)=" << bevStats.countGT << "/" << hostBevDose.size()
                           << "  nan=" << bevStats.countNaN
                           << "  inf=" << bevStats.countInf
@@ -7289,9 +7488,10 @@ if (fineTiming) {
                 printZSliceSummary("BEV dose", hostBevDose, bevDoseX, bevDoseY, bevDoseZ, 1e-15f);
             }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // Step 5: Dose Transformation and Accumulation (3D BEV to Dose Grid)
             // ============================================================================
-            
+
             // Create BEV dose 3D texture
             const auto layerTexturePerfStart = perfNow();
             cudaTextureObject_t bevPrimDoseTex = create3DTexture(
@@ -7325,11 +7525,13 @@ if (fineTiming) {
 #endif
             layerPerf.textureMs += perfElapsedMs(layerTexturePerfStart);
             beamTiming.layerTextureMs += layerPerf.textureMs;
-            
+
             // --------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // BEV -> global dose grid transform (reference RayTraceDicom logic)
             // --------------------------------------------------------------------
             // Build rayIdx -> doseIdx fan transform and then invert it to get
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
             // doseIdx -> rayIdx (fan index) used by primTransfDiv.
             const Float3FromFanTransform primRayIdxToDoseIdx =
                 Float3FromFanTransform(fanIdxToFan, sourceDistVec, gantryToDoseIdx);
@@ -7376,6 +7578,7 @@ if (fineTiming) {
             };
 
             vec3i startIdx = make_vec3i(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 std::max((static_cast<int>(floorf(primMinPoint.x)) / 32) * 32, 0),
                 std::max(static_cast<int>(floorf(primMinPoint.y)), 0),
                 std::max(static_cast<int>(floorf(primMinPoint.z)), 0)
@@ -7392,6 +7595,7 @@ if (fineTiming) {
             const TransferParamStructDiv3 transferParams(doseIdxToPrimRayIdx);
             const bool transferAudit = rtdTransferAuditEnabled();
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             dim3 transfBlockDim(32, 8);
             dim3 transfGridDim(
                 roundUpTo(std::max(maxIdx.x - startIdx.x + 1, 0), transfBlockDim.x) / transfBlockDim.x,
@@ -7404,7 +7608,7 @@ if (fineTiming) {
             const int transferNy = std::max(maxIdx.y - startIdx.y + 1, 0);
             const int transferNz = std::max(maxIdx.z - startIdx.z + 1, 0);
             layerPerf.transferBoxVoxels = transferNx * transferNy * transferNz;
-            
+
             if (fineTiming) {
                 std::cout << "  Launching primTransfDiv kernel:" << std::endl;
                 std::cout << "    doseBox minIdx: (" << startIdx.x << ", " << startIdx.y << ", " << startIdx.z << ")" << std::endl;
@@ -7495,7 +7699,7 @@ if (fineTiming) {
                     probe(i1, j1, kB);
                 }
             }
-            
+
             const auto transferPerfStart = perfNow();
             if (startIdx.x <= maxIdx.x && startIdx.y <= maxIdx.y && startIdx.z <= maxIdx.z &&
                 transfGridDim.x > 0 && transfGridDim.y > 0) {
@@ -7524,19 +7728,23 @@ if (fineTiming) {
 #ifdef NUCLEAR_CORR
             if (runtimeNuclearEnabled) {
                 // [9.53] Halo lattice deltas/offsets must be in mm to match primary
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // fan transform (line ~3192) and upstream beam.getSpotIdxToGantry()
                 // contract. Catch unit-regressions early before constructing nucIdxToFan.
                 if (!(layerHaloPlan->spotDelta.x > 0.0f && layerHaloPlan->spotDelta.x < 100.0f) ||
                     !(layerHaloPlan->spotDelta.y > 0.0f && layerHaloPlan->spotDelta.y < 100.0f)) {
                     throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                         "[9.53] halo lattice spotDelta out of plausible mm range; "
                         "suspected unit regression (cm-vs-mm or stray *lenToMm)");
                 }
 
                 // [9.48] RC2 fix: layerHaloPlan->spotDelta/spotOffset are already in mm
                 // (sourced from weqHeader[7]/[4]/[6]/[3] which are mm). The primary path
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // at line ~3192 uses Float3IdxTransform fanIdxToFan(fanDelta_mm, fanCorner_mm)
                 // with no extra unit conversion. Upstream kernel_wrapper.cu:1240 uses
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
                 // beam.getSpotIdxToGantry() (mm) directly. Multiplying by lenToMm again
                 // here placed the halo BEV ~10x outside the dose volume and broke
                 // nucTransfDiv sampling for every voxel. See halo-energy-conservation.md.
@@ -7578,6 +7786,7 @@ if (fineTiming) {
                 }
 
                 const vec3i nucStartIdx = make_vec3i(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                     std::max((static_cast<int>(floorf(nucMinPoint.x)) / 32) * 32, 0),
                     std::max(static_cast<int>(floorf(nucMinPoint.y)), 0),
                     std::max(static_cast<int>(floorf(nucMinPoint.z)), 0)
@@ -7730,7 +7939,9 @@ if (fineTiming) {
                         deltaSum += static_cast<double>(d);
                         maxDelta = std::max(maxDelta, d);
                         minDelta = std::min(minDelta, d);
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (d > 1.0e-12f) ++positiveDeltaCount;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
                         if (d < -1.0e-12f) ++negativeDeltaCount;
                     }
                     if (finiteDeltaCount == 0) {
@@ -7754,19 +7965,19 @@ if (fineTiming) {
 #endif
             layerPerf.transferMs += perfElapsedMs(transferPerfStart);
             beamTiming.doseTransferMs += layerPerf.transferMs;
-            
+
             // Cleanup texture
             const auto layerCleanupPerfStart = perfNow();
             destroyTextureObjectAndArray(bevPrimDoseTex);
 #ifdef NUCLEAR_CORR
             destroyTextureObjectAndArray(bevNucDoseTex);
 #endif
-            
+
             if (fineTiming) {
                 std::cout << "  Dose transformation completed using primTransfDiv kernel" << std::endl;
                 std::cout << "  Dose accumulation completed" << std::endl;
             }
-            
+
             // devRayWeights and primary layer scratch are beam-scoped and cleaned
             // up after all layers.
 #ifdef NUCLEAR_CORR
@@ -7867,13 +8078,13 @@ if (fineTiming) {
         printStageVolumeSummary("DOSE_PRE_WRITEBACK", hDoseVol, doseDims.x, doseDims.y, doseDims.z, 1.0e-12f, "z");
         printDoseGridSupportSummary("DOSE_PRE_WRITEBACK", hDoseVol, doseDims.x, doseDims.y, doseDims.z, 1.0e-12f);
     }
-    
+
     // Copy accumulated dose from device to host
     copyToHost(doseData, devDoseVol, doseSize * sizeof(float));
-    
+
     // Clean up device memory
     freeDeviceMemory(devDoseVol);
-    
+
     // Clean up textures
     destroyTextureObjectAndArray(imVolTex);
     if (devCtLinear) freeDeviceMemory(devCtLinear);
@@ -7885,7 +8096,7 @@ if (fineTiming) {
     destroyTextureObjectAndArray(nucWeightTex);
     destroyTextureObjectAndArray(nucSqSigmaTex);
 #endif
-    
+
     CPU_TIMER_END("RTD Wrapper");
     CPU_TIMER_END_SUMMARY("RTD Wrapper");
 }

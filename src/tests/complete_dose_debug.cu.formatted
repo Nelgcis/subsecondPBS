@@ -1,0 +1,823 @@
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <random>
+#include <cmath>
+#include <cuda_runtime.h>
+
+#include "../include/core/common.cuh"
+#include "../include/core/raytracedicom_integration.h"
+#include "../include/algorithms/convolution.h"
+#include "../include/utils/backward_compatibility.h"
+#include "../include/utils/texture_ultra_optimized.h"
+#include "../include/utils/advanced_memory_texture.h"
+
+// Forward declarations
+void testSubspotToCPBConvolutionWithDebug();
+void testCompleteDoseCalculationWithCPBInput();
+
+// Function to create test subspot data
+std::vector<float> createTestSubspotData(int numLayers, int maxSubspotsPerLayer) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::vector<float> subspotData(numLayers * maxSubspotsPerLayer * 5);
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> deltaRange(-2.0f, 2.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::uniform_real_distribution<float> weightRange(1.0f, 5.0f);
+    std::uniform_real_distribution<float> sigmaRange(0.5f, 2.0f);
+
+    for (int layer = 0; layer < numLayers; layer++) {
+        for (int subspot = 0; subspot < maxSubspotsPerLayer; subspot++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            int baseIdx = (layer * maxSubspotsPerLayer + subspot) * 5;
+            subspotData[baseIdx + 0] = deltaRange(gen);
+            subspotData[baseIdx + 1] = deltaRange(gen);
+            subspotData[baseIdx + 2] = weightRange(gen);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 3] = sigmaRange(gen);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 4] = sigmaRange(gen);
+        }
+    }
+
+    for (int layer = 0; layer < numLayers; layer++) {
+        for (int subspot = 0; subspot < std::min(3, maxSubspotsPerLayer); subspot++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            int baseIdx = (layer * maxSubspotsPerLayer + subspot) * 5;
+            subspotData[baseIdx + 0] = 0.0f;  // Center position
+            subspotData[baseIdx + 1] = 0.0f;  // Center position
+            subspotData[baseIdx + 2] = 10.0f; // High weight
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 3] = 1.0f;  // Reasonable sigma
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            subspotData[baseIdx + 4] = 1.0f;  // Reasonable sigma
+        }
+    }
+
+    return subspotData;
+}
+
+// Debug function to analyze subspot data
+void debugSubspotData(const std::vector<float>& subspotData, int numLayers, int maxSubspotsPerLayer) {
+    std::cout << "\n=== Subspot Data Analysis ===" << std::endl;
+    std::cout << "Total data size: " << subspotData.size() << " elements" << std::endl;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::cout << "Expected size: " << numLayers * maxSubspotsPerLayer * 5 << " elements" << std::endl;
+    std::cout << "WEIGHT_CUTOFF: " << WEIGHT_CUTOFF << std::endl;
+
+    int validSubspots = 0;
+    int totalSubspots = 0;
+
+    for (int layer = 0; layer < numLayers; layer++) {
+        std::cout << "\nLayer " << layer << ":" << std::endl;
+        int layerValidSubspots = 0;
+
+        for (int subspot = 0; subspot < maxSubspotsPerLayer; subspot++) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            int baseIdx = (layer * maxSubspotsPerLayer + subspot) * 5;
+
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            if (baseIdx + 4 < (int)subspotData.size()) {
+                float deltaX = subspotData[baseIdx + 0];
+                float deltaY = subspotData[baseIdx + 1];
+                float weight = subspotData[baseIdx + 2];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                float sigmaX = subspotData[baseIdx + 3];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                float sigmaY = subspotData[baseIdx + 4];
+
+                float effectiveSigma = sqrtf(sigmaX * sigmaX + sigmaY * sigmaY);
+                bool isValid = weight > WEIGHT_CUTOFF && effectiveSigma > 1e-6f;
+
+                if (isValid) {
+                    layerValidSubspots++;
+                    validSubspots++;
+                }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+                if (subspot < 5) { // 只显示前5个subspot
+                    std::cout << "  Subspot " << subspot << ": "
+                              << "deltaX=" << deltaX << ", deltaY=" << deltaY
+                              << ", weight=" << weight << ", sigmaX=" << sigmaX
+                              << ", sigmaY=" << sigmaY << ", effectiveSigma=" << effectiveSigma
+                              << ", valid=" << (isValid ? "YES" : "NO") << std::endl;
+                }
+            }
+            totalSubspots++;
+        }
+
+        std::cout << "  Layer " << layer << " valid subspots: " << layerValidSubspots << "/" << maxSubspotsPerLayer << std::endl;
+    }
+
+    std::cout << "\nTotal valid subspots: " << validSubspots << "/" << totalSubspots << std::endl;
+}
+
+// Debug function to analyze CPB grid parameters
+void debugCPBGrid(const vec3f& cpbCorner, const vec3f& cpbResolution, const vec3i& cpbDims) {
+    std::cout << "\n=== CPB Grid Analysis ===" << std::endl;
+    std::cout << "CPB Corner: (" << cpbCorner.x << ", " << cpbCorner.y << ", " << cpbCorner.z << ")" << std::endl;
+    std::cout << "CPB Resolution: (" << cpbResolution.x << ", " << cpbResolution.y << ", " << cpbResolution.z << ")" << std::endl;
+    std::cout << "CPB Dimensions: " << cpbDims.x << "x" << cpbDims.y << "x" << cpbDims.z << std::endl;
+
+    vec3f upperCorner = vec3f(
+        cpbCorner.x + cpbDims.x * cpbResolution.x,
+        cpbCorner.y + cpbDims.y * cpbResolution.y,
+        cpbCorner.z + cpbDims.z * cpbResolution.z
+    );
+
+    std::cout << "CPB Upper Corner: (" << upperCorner.x << ", " << upperCorner.y << ", " << upperCorner.z << ")" << std::endl;
+    std::cout << "CPB Volume: " << (upperCorner.x - cpbCorner.x) * (upperCorner.y - cpbCorner.y) * (upperCorner.z - cpbCorner.z) << " cm³" << std::endl;
+}
+
+// Enhanced test function with detailed debugging
+void testSubspotToCPBConvolutionWithDebug() {
+    std::cout << "\n=== Enhanced Subspot to CPB Convolution Debug ===" << std::endl;
+
+    // Create test subspot data
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int numLayers = 3;
+    int maxSubspotsPerLayer = 2;
+    std::vector<float> subspotData = createTestSubspotData(numLayers, maxSubspotsPerLayer);
+
+    // Debug subspot data
+    debugSubspotData(subspotData, numLayers, maxSubspotsPerLayer);
+
+    // Create test beam parameters
+    vec3f beamDirection = vec3f(0.0f, 0.0f, -1.0f);
+    vec3f bmXDirection = vec3f(1.0f, 0.0f, 0.0f);
+    vec3f bmYDirection = vec3f(0.0f, 1.0f, 0.0f);
+    vec3f sourcePosition = vec3f(0.0f, 0.0f, 100.0f);
+    float sad = 100.0f;
+    float refPlaneZ = 0.0f;
+
+    // Create CPB grid parameters
+    vec3f cpbCorner = vec3f(-ROI_MARGIN_X, -ROI_MARGIN_Y, 0.0f);
+    vec3f cpbResolution = vec3f(0.5f, 0.5f, 1.0f);
+    vec3i cpbDims = vec3i(
+        (int)(2 * ROI_MARGIN_X / cpbResolution.x) + 1,
+        (int)(2 * ROI_MARGIN_Y / cpbResolution.y) + 1,
+        numLayers
+    );
+
+    // Debug CPB grid
+    debugCPBGrid(cpbCorner, cpbResolution, cpbDims);
+
+    // Allocate device memory
+    float* devSubspotData;
+    float* devCpbWeights;
+    size_t subspotDataSize = subspotData.size() * sizeof(float);
+    size_t cpbWeightsSize = cpbDims.x * cpbDims.y * cpbDims.z * sizeof(float);
+
+    cudaMalloc(&devSubspotData, subspotDataSize);
+    cudaMalloc(&devCpbWeights, cpbWeightsSize);
+
+    // Copy data to device
+    cudaMemcpy(devSubspotData, subspotData.data(), subspotDataSize, cudaMemcpyHostToDevice);
+    cudaMemset(devCpbWeights, 0, cpbWeightsSize);
+
+    // Create texture
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+    cudaArray* devArray;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    cudaExtent extent = make_cudaExtent(5, maxSubspotsPerLayer, numLayers);
+    cudaMalloc3DArray(&devArray, &channelDesc, extent);
+
+    // Copy subspot data to 3D array
+    cudaMemcpy3DParms copyParams = {};
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    copyParams.srcPtr = make_cudaPitchedPtr(devSubspotData, 5 * sizeof(float), 5, maxSubspotsPerLayer);
+    copyParams.dstArray = devArray;
+    copyParams.extent = extent;
+    copyParams.kind = cudaMemcpyDeviceToDevice;
+    cudaMemcpy3D(&copyParams);
+
+    // Create texture object
+    cudaResourceDesc resDesc = {};
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = devArray;
+
+    cudaTextureDesc texDesc = {};
+    texDesc.readMode = cudaReadModeElementType;
+    texDesc.normalizedCoords = false;
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.addressMode[0] = cudaAddressModeClamp;
+    texDesc.addressMode[1] = cudaAddressModeClamp;
+    texDesc.addressMode[2] = cudaAddressModeClamp;
+
+    cudaTextureObject_t subspotTexture;
+    cudaCreateTextureObject(&subspotTexture, &resDesc, &texDesc, nullptr);
+
+    std::cout << "\n=== Running Convolution ===" << std::endl;
+
+    // Run convolution
+    auto start = std::chrono::high_resolution_clock::now();
+    performSubspotToCPBConvolution(subspotTexture, numLayers, maxSubspotsPerLayer,
+                                  cpbCorner, cpbResolution, cpbDims, devCpbWeights,
+                                  beamDirection, bmXDirection, bmYDirection,
+                                  sourcePosition, sad, refPlaneZ);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // Copy results back
+    std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z);
+    cudaMemcpy(cpbWeights.data(), devCpbWeights, cpbWeightsSize, cudaMemcpyDeviceToHost);
+
+    // Analyze results
+    float totalWeight = 0.0f;
+    float maxWeight = 0.0f;
+    int nonZeroElements = 0;
+
+    for (size_t i = 0; i < cpbWeights.size(); i++) {
+        totalWeight += cpbWeights[i];
+        maxWeight = std::max(maxWeight, cpbWeights[i]);
+        if (cpbWeights[i] > 1e-6f) {
+            nonZeroElements++;
+        }
+    }
+
+    std::cout << "\n=== Convolution Results ===" << std::endl;
+    std::cout << "Execution time: " << duration.count() << " μs" << std::endl;
+    std::cout << "Total weight: " << totalWeight << std::endl;
+    std::cout << "Max weight: " << maxWeight << std::endl;
+    std::cout << "Non-zero elements: " << nonZeroElements << "/" << cpbWeights.size() << std::endl;
+
+    // Show first layer weights
+    std::cout << "\nCPB weights (layer 0, first 5x5):" << std::endl;
+    for (int y = 0; y < std::min(5, cpbDims.y); y++) {
+        for (int x = 0; x < std::min(5, cpbDims.x); x++) {
+            int idx = y * cpbDims.x + x;
+            std::cout << cpbWeights[idx] << "\t";
+        }
+        std::cout << std::endl;
+    }
+
+    // Cleanup
+    cudaDestroyTextureObject(subspotTexture);
+    cudaFreeArray(devArray);
+    cudaFree(devSubspotData);
+    cudaFree(devCpbWeights);
+
+    std::cout << "\n=== Debug Analysis Complete ===" << std::endl;
+}
+
+// Forward declaration for wrapper function
+void subsecondWrapper(
+    const float* imVolData,
+    const int3& imVolDims,
+    const float3& imVolSpacing,
+    const float3& imVolOrigin,
+    float* doseVolData,
+    const int3& doseVolDims,
+    const float3& doseVolSpacing,
+    const float3& doseVolOrigin,
+    const RTDBeamSettings* beamSettings, size_t numBeams,
+    const RTDEnergyStruct* energyData,
+    int gpuId, bool nuclearCorrection, int verbose
+);
+
+// Forward declarations
+void testCompleteDoseCalculation();
+void testSubspotToCPBConvolution();
+void testRayWeightInitialization();
+void testBEVRayTracing();
+void testSuperposition();
+void testDoseTransformation();
+
+// Test data generation
+RTDBeamSettings* createTestBeamSettings();
+RTDEnergyStruct* createTestEnergyStruct();
+std::vector<float> createTestCTData(int3 dims);
+std::vector<float> createTestSubspotData(int numLayers, int maxSubspotsPerLayer);
+
+int main() {
+    // 记录程序开始时间
+    auto programStart = std::chrono::high_resolution_clock::now();
+
+    // Initialize advanced memory pool and pre-compiled texture manager
+    initializeAdvancedMemoryPool();
+    initializePrecompiledTextureManager();
+
+    std::cout << "=== Complete RayTraceDicom Dose Calculation Debug ===" << std::endl;
+    std::cout << "Testing full workflow from subspot convolution to final dose" << std::endl;
+    std::cout << "Using CUDA 12.1 advanced memory pool and pre-compiled textures" << std::endl;
+    std::cout << "LUT tables loaded from /tables directory with texture dimensions" << std::endl;
+
+
+    testCompleteDoseCalculationWithCPBInput();
+
+
+    cleanupPrecompiledTextureManager();
+    cleanupAdvancedMemoryPool();
+
+    // 总耗时
+    auto programEnd = std::chrono::high_resolution_clock::now();
+    auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(programEnd - programStart);
+
+    std::cout << "\n=== Complete Debug Program Finished ===" << std::endl;
+    std::cout << "[TIMING] Total program execution time: " << totalDuration.count() << " ms" << std::endl;
+    return 0;
+}
+
+void testSubspotToCPBConvolution() {
+    std::cout << "\n=== Testing Subspot to CPB Convolution ===" << std::endl;
+
+    // Create test subspot data
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int numLayers = 3;
+    int maxSubspotsPerLayer = 2;
+    std::vector<float> subspotData = createTestSubspotData(numLayers, maxSubspotsPerLayer);
+
+    // CPB grid parameters - 基于ROI+margin范围
+    vec3f cpbCorner = make_vec3f(-ROI_MARGIN_X, -ROI_MARGIN_Y, 0.0f);
+    vec3f cpbResolution = make_vec3f(0.5f, 0.5f, 1.0f);
+    vec3i cpbDims = make_vec3i(
+        (int)(2 * ROI_MARGIN_X / cpbResolution.x) + 1,
+        (int)(2 * ROI_MARGIN_Y / cpbResolution.y) + 1,
+        numLayers
+    );
+
+    std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    int result = subspotToCPBConvolutionGPU(
+        subspotData.data(), numLayers, maxSubspotsPerLayer,
+        cpbCorner, cpbResolution, cpbDims,
+        cpbWeights.data(), 0
+    );
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    if (result == 1) {
+        std::cout << "Subspot to CPB convolution: SUCCESS (" << duration.count() << " μs)" << std::endl;
+
+        // 打印一些调试信息
+        std::cout << "  CPB grid dimensions: " << cpbDims.x << "x" << cpbDims.y << "x" << cpbDims.z << std::endl;
+        std::cout << "  CPB corner: (" << cpbCorner.x << ", " << cpbCorner.y << ", " << cpbCorner.z << ")" << std::endl;
+        std::cout << "  CPB resolution: (" << cpbResolution.x << ", " << cpbResolution.y << ", " << cpbResolution.z << ")" << std::endl;
+
+        // Print statistics
+        float totalWeight = 0.0f;
+        float maxWeight = 0.0f;
+        int nonZeroCount = 0;
+
+        for (int i = 0; i < cpbWeights.size(); i++) {
+            if (cpbWeights[i] > 0.0f) {
+                totalWeight += cpbWeights[i];
+                maxWeight = std::max(maxWeight, cpbWeights[i]);
+                nonZeroCount++;
+            }
+        }
+
+        std::cout << "  Total weight: " << totalWeight << std::endl;
+        std::cout << "  Max weight: " << maxWeight << std::endl;
+        std::cout << "  Non-zero elements: " << nonZeroCount << "/" << cpbWeights.size() << std::endl;
+
+        // Print sample CPB weights
+        std::cout << "  CPB weights (layer 0, first 5x5):" << std::endl;
+        for (int y = 0; y < std::min(5, cpbDims.y); y++) {
+            for (int x = 0; x < std::min(5, cpbDims.x); x++) {
+                std::cout << cpbWeights[y * cpbDims.x + x] << "\t";
+            }
+            std::cout << std::endl;
+        }
+    } else {
+        std::cout << "Subspot to CPB convolution: FAILED" << std::endl;
+    }
+}
+
+void testRayWeightInitialization() {
+    std::cout << "\n=== Testing Ray Weight Initialization ===" << std::endl;
+
+    // Ray grid parameters
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    vec3i rayDims = make_vec3i(32, 32, 1);
+    vec3f beamDirection = make_vec3f(0.0f, 0.0f, 1.0f);
+    vec3f bmXDirection = make_vec3f(1.0f, 0.0f, 0.0f);
+    vec3f bmYDirection = make_vec3f(0.0f, 1.0f, 0.0f);
+    vec3f sourcePosition = make_vec3f(0.0f, 0.0f, -100.0f);
+    float sad = 100.0f;
+    float refPlaneZ = 0.0f;
+
+    std::vector<float> rayWeights(rayDims.x * rayDims.y);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    int result = initializeRayWeightsFromSubspotDataGPU(
+        rayWeights.data(), rayDims,
+        beamDirection, bmXDirection, bmYDirection,
+        sourcePosition, sad, refPlaneZ, 0
+    );
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    if (result == 1) {
+        std::cout << "Ray weight initialization: SUCCESS (" << duration.count() << " μs)" << std::endl;
+
+        // Print statistics
+        float totalWeight = 0.0f;
+        float maxWeight = 0.0f;
+        int nonZeroCount = 0;
+
+        for (int i = 0; i < rayWeights.size(); i++) {
+            if (rayWeights[i] > 0.0f) {
+                totalWeight += rayWeights[i];
+                maxWeight = std::max(maxWeight, rayWeights[i]);
+                nonZeroCount++;
+            }
+        }
+
+        std::cout << "  Total weight: " << totalWeight << std::endl;
+        std::cout << "  Max weight: " << maxWeight << std::endl;
+        std::cout << "  Non-zero elements: " << nonZeroCount << "/" << rayWeights.size() << std::endl;
+
+        // Print sample ray weights
+        std::cout << "  Ray weights (first 8x8):" << std::endl;
+        for (int y = 0; y < std::min(8, rayDims.y); y++) {
+            for (int x = 0; x < std::min(8, rayDims.x); x++) {
+                std::cout << rayWeights[y * rayDims.x + x] << "\t";
+            }
+            std::cout << std::endl;
+        }
+    } else {
+        std::cout << "Ray weight initialization: FAILED" << std::endl;
+    }
+}
+
+void testCompleteDoseCalculation() {
+    std::cout << "\n=== Testing Complete Dose Calculation Workflow ===" << std::endl;
+
+    // Create test data
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 ctDims = make_int3(64, 64, 32);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 doseDims = make_int3(64, 64, 32);
+    float3 ctSpacing = make_float3(1.0f, 1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 ctOrigin = make_float3(-32.0f, -32.0f, -16.0f);
+    float3 doseSpacing = make_float3(1.0f, 1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 doseOrigin = make_float3(-32.0f, -32.0f, -16.0f);
+
+    std::vector<float> ctData = createTestCTData(ctDims);
+    std::vector<float> doseData(doseDims.x * doseDims.y * doseDims.z, 0.0f);
+
+    RTDBeamSettings* beamSettings = createTestBeamSettings();
+    RTDEnergyStruct* energyData = createTestEnergyStruct();
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Call the main wrapper function
+    subsecondWrapper(
+        ctData.data(), ctDims, ctSpacing, ctOrigin,
+        doseData.data(), doseDims, doseSpacing, doseOrigin,
+        beamSettings, 1, energyData, 0, false, 1
+    );
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    std::cout << "Complete dose calculation: SUCCESS (" << duration.count() << " μs)" << std::endl;
+
+    // Analyze results
+    float totalDose = 0.0f;
+    float maxDose = 0.0f;
+    int nonZeroCount = 0;
+
+    for (int i = 0; i < doseData.size(); i++) {
+        if (doseData[i] > 0.0f) {
+            totalDose += doseData[i];
+            maxDose = std::max(maxDose, doseData[i]);
+            nonZeroCount++;
+        }
+    }
+
+    std::cout << "  Total dose: " << totalDose << std::endl;
+    std::cout << "  Max dose: " << maxDose << std::endl;
+    std::cout << "  Non-zero voxels: " << nonZeroCount << "/" << doseData.size() << std::endl;
+
+    // Print dose distribution slice
+    std::cout << "  Dose distribution (z=16, first 8x8):" << std::endl;
+    int zSlice = 16;
+    for (int y = 0; y < std::min(8, doseDims.y); y++) {
+        for (int x = 0; x < std::min(8, doseDims.x); x++) {
+            int idx = zSlice * doseDims.x * doseDims.y + y * doseDims.x + x;
+            std::cout << doseData[idx] << "\t";
+        }
+        std::cout << std::endl;
+    }
+
+    // Cleanup
+    destroyRTDBeamSettings(beamSettings);
+    destroyRTDEnergyStruct(energyData);
+}
+
+RTDBeamSettings* createTestBeamSettings() {
+    RTDBeamSettings* beam = new RTDBeamSettings();
+    beam->energies = {150.0f, 140.0f, 130.0f};
+    beam->spotSigmas = {make_float2(2.0f, 2.0f), make_float2(2.0f, 2.0f), make_float2(2.0f, 2.0f)};
+    beam->raySpacing = make_float2(1.0f, 1.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam->steps = 50;
+    beam->sourceDist = make_float2(1000.0f, 1000.0f);
+    beam->spotOffset = make_float3(0.0f, 0.0f, 0.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    beam->spotDelta = make_float3(3.0f, 3.0f, 0.0f);
+    beam->gantryToImOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam->gantryToImMatrix = make_float3(1.0f, 0.0f, 0.0f);
+    beam->gantryToDoseOffset = make_float3(0.0f, 0.0f, 0.0f);
+    beam->gantryToDoseMatrix = make_float3(1.0f, 0.0f, 0.0f);
+
+    // ------------------------------------------------------------------------
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // CarbonPBS-compatible subspotData (required by the wrapper)
+    // ------------------------------------------------------------------------
+    beam->maxSubspotsPerLayer = 16;
+    const int numLayers = static_cast<int>(beam->energies.size());
+    beam->subspotData.resize(static_cast<size_t>(numLayers) * beam->maxSubspotsPerLayer * 5ull);
+    for (int l = 0; l < numLayers; ++l) {
+        const float2 sxy = (l < static_cast<int>(beam->spotSigmas.size())) ? beam->spotSigmas[l] : make_float2(2.0f, 2.0f);
+        for (int s = 0; s < beam->maxSubspotsPerLayer; ++s) {
+            const size_t base = (static_cast<size_t>(l) * beam->maxSubspotsPerLayer + static_cast<size_t>(s)) * 5ull;
+            const float ang = (2.0f * 3.14159265358979323846f) * (static_cast<float>(s) / static_cast<float>(beam->maxSubspotsPerLayer));
+            const float r = 0.25f; // cm
+            beam->subspotData[base + 0] = r * cosf(ang);
+            beam->subspotData[base + 1] = r * sinf(ang);
+            beam->subspotData[base + 2] = 1.0f / beam->maxSubspotsPerLayer;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam->subspotData[base + 3] = sxy.x;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            beam->subspotData[base + 4] = sxy.y;
+        }
+    }
+
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    // Beam geometry (synthetic)
+    beam->beamDirection  = make_float3(0.0f, 0.0f, 1.0f);
+    beam->bmXDirection   = make_float3(1.0f, 0.0f, 0.0f);
+    beam->bmYDirection   = make_float3(0.0f, 1.0f, 0.0f);
+    beam->sad            = beam->sourceDist.x;
+    beam->sourcePosition = make_float3(0.0f, 0.0f, -beam->sad);
+    beam->refPlaneZ      = 0.0f;
+    return beam;
+}
+
+RTDEnergyStruct* createTestEnergyStruct() {
+    RTDEnergyStruct* energy = new RTDEnergyStruct();
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nEnergySamples = 50;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nEnergies = 3;
+    energy->energiesPerU = {150.0f, 140.0f, 130.0f};
+    energy->peakDepths = {15.0f, 14.0f, 13.0f};
+    energy->scaleFacts = {1.0f, 1.0f, 1.0f};
+
+    // Create test CIDD matrix
+    energy->ciddMatrix.resize(energy->nEnergySamples * energy->nEnergies);
+    for (int e = 0; e < energy->nEnergies; e++) {
+        for (int s = 0; s < energy->nEnergySamples; s++) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+            float depth = (float)s / energy->nEnergySamples * 20.0f;
+            float peakDepth = energy->peakDepths[e];
+            float value = exp(-(depth - peakDepth) * (depth - peakDepth) / (2.0f * 2.0f));
+            energy->ciddMatrix[e * energy->nEnergySamples + s] = value;
+        }
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nDensitySamples = 50;
+    energy->densityScaleFact = 1.0f;
+    energy->densityVector.resize(energy->nDensitySamples);
+    for (int i = 0; i < energy->nDensitySamples; i++) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+        energy->densityVector[i] = 0.8f + 0.4f * (float)i / energy->nDensitySamples;
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nSpSamples = 50;
+    energy->spScaleFact = 1.0f;
+    energy->spVector.resize(energy->nSpSamples);
+    for (int i = 0; i < energy->nSpSamples; i++) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+        energy->spVector[i] = 1.0f + 0.2f * (float)i / energy->nSpSamples;
+    }
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    energy->nRRlSamples = 50;
+    energy->rRlScaleFact = 1.0f;
+    energy->rRlVector.resize(energy->nRRlSamples);
+    for (int i = 0; i < energy->nRRlSamples; i++) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
+        energy->rRlVector[i] = 0.1f + 0.05f * (float)i / energy->nRRlSamples;
+    }
+
+    return energy;
+}
+
+std::vector<float> createTestCTData(int3 dims) {
+    std::vector<float> ctData(dims.x * dims.y * dims.z);
+    // RayTraceDicom kernels expect HU+1000 in the image volume texture.
+    // Create a simple phantom:
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    //   - air everywhere (HU=-1000 -> HU+1000=0)
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
+    //   - a central water box (HU=0 -> HU+1000=1000)
+    const int cx0 = dims.x / 4;
+    const int cx1 = 3 * dims.x / 4;
+    const int cy0 = dims.y / 4;
+    const int cy1 = 3 * dims.y / 4;
+    const int cz0 = dims.z / 4;
+    const int cz1 = 3 * dims.z / 4;
+
+    for (int z = 0; z < dims.z; z++) {
+        for (int y = 0; y < dims.y; y++) {
+            for (int x = 0; x < dims.x; x++) {
+                int idx = z * dims.x * dims.y + y * dims.x + x;
+                float huPlus1000 = 0.0f; // air
+                if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1 && z >= cz0 && z < cz1) {
+                    huPlus1000 = 1000.0f; // water
+                }
+                ctData[idx] = huPlus1000;
+            }
+        }
+    }
+
+    return ctData;
+}
+
+// 连贯的完整剂量计算测试函数
+void testCompleteDoseCalculationWithCPBInput() {
+    std::cout << "\n=== Complete Dose Calculation with CPB Input ===" << std::endl;
+
+    // step 1
+    std::cout << "Step 1: Subspot to CPB Convolution" << std::endl;
+
+    // for test
+    int numLayers = 1;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int maxSubspotsPerLayer = 3;
+    std::vector<float> subspotData = createTestSubspotData(numLayers, maxSubspotsPerLayer);
+
+    // set roi
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    vec3f roiMinCorner = make_vec3f(-50.0f, -50.0f, 0.0f);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    vec3f roiMaxCorner = make_vec3f(50.0f, 50.0f, 5.0f);
+
+    vec3f cpbCorner = make_vec3f(roiMinCorner.x, roiMinCorner.y, 0.0f);
+    vec3f cpbResolution = make_vec3f(0.5f, 0.5f, 1.0f);
+    vec3i cpbDims = make_vec3i(
+        (int)((roiMaxCorner.x - roiMinCorner.x) / cpbResolution.x),
+        (int)((roiMaxCorner.y - roiMinCorner.y) / cpbResolution.y),
+        numLayers
+    );
+
+    std::vector<float> cpbWeights(cpbDims.x * cpbDims.y * cpbDims.z);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    int result = subspotToCPBConvolutionGPU(
+        subspotData.data(), numLayers, maxSubspotsPerLayer,
+        cpbCorner, cpbResolution, cpbDims,
+        cpbWeights.data(), 0  // gpuId=0
+    );
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    if (result != 1) {
+        std::cout << "Error: Subspot to CPB convolution failed with code " << result << std::endl;
+        return;
+    }
+
+    // 分析CPB权重
+    float totalWeight = 0.0f;
+    float maxWeight = 0.0f;
+    int nonZeroCount = 0;
+
+    for (float weight : cpbWeights) {
+        if (weight > 1e-6f) {
+            nonZeroCount++;
+            totalWeight += weight;
+            maxWeight = std::max(maxWeight, weight);
+        }
+    }
+
+    std::cout << "CPB Convolution Results:" << std::endl;
+    std::cout << "  Total weight: " << totalWeight << std::endl;
+    std::cout << "  Max weight: " << maxWeight << std::endl;
+    std::cout << "  Non-zero elements: " << nonZeroCount << "/" << cpbWeights.size() << std::endl;
+    std::cout << "  Execution time: " << duration.count() << " μs" << std::endl;
+
+    // Step 2: CPB权重映射到Ray权重
+    std::cout << "\nStep 2: CPB to Ray Weight Mapping" << std::endl;
+
+    // Ray网格参数
+    vec3i rayDims = make_vec3i(cpbDims.x, cpbDims.y, numLayers);
+    std::vector<float> rayWeights(rayDims.x * rayDims.y * rayDims.z);
+
+    start = std::chrono::high_resolution_clock::now();
+
+    // 调用CPB到Ray权重映射函数
+    performCPBToRayWeightMapping(
+        cpbWeights.data(), cpbDims, cpbCorner, cpbResolution,
+        rayWeights.data(), rayDims,
+        cpbCorner, cpbResolution,
+        0,  // layerIdx
+        make_vec3f(0.0f, 0.0f, 1.0f),  // beamDirection
+        make_vec3f(1.0f, 0.0f, 0.0f),  // bmXDirection
+        make_vec3f(0.0f, 1.0f, 0.0f),  // bmYDirection
+        make_vec3f(0.0f, 0.0f, -100.0f), // sourcePosition
+        100.0f,  // sad
+        0.0f     // refPlaneZ
+    );
+
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // 分析Ray权重
+    float totalRayWeight = 0.0f;
+    float maxRayWeight = 0.0f;
+    int nonZeroRayCount = 0;
+
+    for (float weight : rayWeights) {
+        if (weight > 1e-6f) {
+            nonZeroRayCount++;
+            totalRayWeight += weight;
+            maxRayWeight = std::max(maxRayWeight, weight);
+        }
+    }
+
+    std::cout << "Ray Weight Mapping Results:" << std::endl;
+    std::cout << "  Total ray weight: " << totalRayWeight << std::endl;
+    std::cout << "  Max ray weight: " << maxRayWeight << std::endl;
+    std::cout << "  Non-zero ray elements: " << nonZeroRayCount << "/" << rayWeights.size() << std::endl;
+    std::cout << "  Weight conservation ratio: " << (totalRayWeight / totalWeight) * 100.0f << "%" << std::endl;
+    std::cout << "  Execution time: " << duration.count() << " μs" << std::endl;
+
+    // Step 3: 基于Ray权重进行完整的剂量计算
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    std::cout << "\nStep 3: Complete Dose Calculation with Ray Weights" << std::endl;
+
+    // 创建测试数据
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 imVolDims = {64, 64, 32};
+    float3 imVolSpacing = {0.1f, 0.1f, 0.1f};
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 imVolOrigin = {-3.2f, -3.2f, 0.0f};
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    int3 doseVolDims = {400, 400, 32}; // Match rayDims for proper dose accumulation
+    float3 doseVolSpacing = {0.1f, 0.1f, 0.1f};
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    float3 doseVolOrigin = {-3.2f, -3.2f, 0.0f};
+
+    std::vector<float> imVolData = createTestCTData(imVolDims);
+    std::vector<float> doseVolData(doseVolDims.x * doseVolDims.y * doseVolDims.z, 0.0f);
+
+    RTDBeamSettings* beam = createTestBeamSettings();
+    RTDEnergyStruct* energy = createTestEnergyStruct();
+
+    start = std::chrono::high_resolution_clock::now();
+
+    // 调用完整的wrapper函数
+    subsecondWrapper(
+        imVolData.data(), imVolDims, imVolSpacing, imVolOrigin,
+        doseVolData.data(), doseVolDims, doseVolSpacing, doseVolOrigin,
+        beam, 1, energy,
+        0, false, true  // gpuId=0, nuclearCorrection=false, fineTiming=true
+    );
+
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // 分析最终剂量
+    float totalDose = 0.0f;
+    float maxDose = 0.0f;
+    int nonZeroDoseCount = 0;
+
+    for (float dose : doseVolData) {
+        if (dose > 1e-6f) {
+            nonZeroDoseCount++;
+            totalDose += dose;
+            maxDose = std::max(maxDose, dose);
+        }
+    }
+
+    std::cout << "Final Dose Calculation Results:" << std::endl;
+    std::cout << "  Total dose: " << totalDose << std::endl;
+    std::cout << "  Max dose: " << maxDose << std::endl;
+    std::cout << "  Non-zero dose voxels: " << nonZeroDoseCount << "/" << doseVolData.size() << std::endl;
+    std::cout << "  Execution time: " << duration.count() << " μs" << std::endl;
+
+    // 清理内存
+    delete beam;
+    delete energy;
+
+    std::cout << "\n=== Complete Workflow Finished Successfully ===" << std::endl;
+}

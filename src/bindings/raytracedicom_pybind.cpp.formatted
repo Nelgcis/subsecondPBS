@@ -29,10 +29,12 @@ namespace py = pybind11;
 // Helpers
 // -----------------------------
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static inline int3 to_int3(const std::array<int, 3>& v) {
     return make_int3(v[0], v[1], v[2]);
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static inline float3 to_float3(const std::array<float, 3>& v) {
     return make_float3(v[0], v[1], v[2]);
 }
@@ -77,6 +79,7 @@ static std::vector<int> to_int_vector(const py::handle& obj) {
 }
 
 static std::vector<float2> to_float2_vector_from_nx2(const py::handle& obj) {
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Accept: list[tuple(x,y)], list[list], or numpy array shape (N,2)
     if (py::isinstance<py::array>(obj)) {
         py::array_t<float, py::array::c_style | py::array::forcecast> arr = py::cast<py::array>(obj);
@@ -114,17 +117,22 @@ static float3 to_float3_from_seq(const py::handle& obj) {
         py::array_t<float, py::array::forcecast> arr = py::cast<py::array>(obj);
         py::buffer_info info = arr.request();
         const float* ptr = static_cast<const float*>(info.ptr);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (info.ndim == 1 && info.size >= 3) {
             return make_float3(ptr[0], ptr[1], ptr[2]);
         }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (info.ndim == 2 && info.shape[0] == 3 && info.shape[1] >= 1) {
             return make_float3(ptr[0 * info.shape[1]], ptr[1 * info.shape[1]], ptr[2 * info.shape[1]]);
         }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (info.ndim == 2 && info.shape[1] == 3 && info.shape[0] >= 1) {
             return make_float3(ptr[0], ptr[1], ptr[2]);
         }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("Expected 3-vector input");
     }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<float, 3> v = py::cast<std::array<float, 3>>(obj);
     return to_float3(v);
 }
@@ -147,7 +155,9 @@ static std::vector<float> to_float3_columns(const py::handle& obj, size_t expect
 
     std::vector<float> out;
     if (info.ndim == 1) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if ((info.size % 3) != 0) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             throw std::runtime_error("Expected flattened 3-vector array with length multiple of 3");
         }
         const size_t n = static_cast<size_t>(info.size);
@@ -155,29 +165,41 @@ static std::vector<float> to_float3_columns(const py::handle& obj, size_t expect
         out.assign(ptr, ptr + n);
     } else if (info.ndim == 2) {
         const float* ptr = static_cast<const float*>(info.ptr);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (info.shape[1] == 3) {
             const size_t n = static_cast<size_t>(info.shape[0]);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             out.resize(n * 3);
             for (size_t i = 0; i < n; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 0] = ptr[i * 3 + 0];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 1] = ptr[i * 3 + 1];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 2] = ptr[i * 3 + 2];
             }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         } else if (info.shape[0] == 3) {
             const size_t n = static_cast<size_t>(info.shape[1]);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             out.resize(n * 3);
             for (size_t i = 0; i < n; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 0] = ptr[0 * n + i];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 1] = ptr[1 * n + i];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 out[i * 3 + 2] = ptr[2 * n + i];
             }
         } else {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             throw std::runtime_error("Expected shape (N,3) or (3,N) for 3-vector array");
         }
     } else {
         throw std::runtime_error("Expected 1D or 2D float array");
     }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (expected_count > 0 && out.size() != expected_count * 3) {
         throw std::runtime_error("3-vector array length does not match expected count");
     }
@@ -227,14 +249,18 @@ static std::vector<float> to_float2_columns(const py::handle& obj, size_t expect
 
 static float3 first_float3_from_columns(const py::handle& obj) {
     const std::vector<float> flat = to_float3_columns(obj);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (flat.size() < 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("Expected at least one 3-vector");
     }
     return make_float3(flat[0], flat[1], flat[2]);
 }
 
 static float3 normalized_mean_direction(const std::vector<float>& dirs) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (dirs.empty() || (dirs.size() % 3) != 0) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("Direction array must contain one or more 3-vectors");
     }
 
@@ -243,8 +269,11 @@ static float3 normalized_mean_direction(const std::vector<float>& dirs) {
     double sz = 0.0;
     const size_t n = dirs.size() / 3;
     for (size_t i = 0; i < n; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         sx += dirs[i * 3 + 0];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         sy += dirs[i * 3 + 1];
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         sz += dirs[i * 3 + 2];
     }
 
@@ -299,6 +328,7 @@ static std::string strides_to_string(const py::buffer_info& info) {
     return os.str();
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static void print_float_sample_values(const float* ptr, size_t n, size_t max_values = 6) {
     std::cout << "[";
     const size_t show = std::min(n, max_values);
@@ -317,6 +347,7 @@ static void print_float_sample_values(const float* ptr, size_t n, size_t max_val
     std::cout << "]";
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static void print_int_sample_values(const int* ptr, size_t n, size_t max_values = 6) {
     std::cout << "[";
     const size_t show = std::min(n, max_values);
@@ -355,7 +386,9 @@ static void print_float_vector_audit(const std::string& name, const std::vector<
             continue;
         }
         ++finite;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (x > 0.0f) ++positive;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (x == 0.0f) ++zeros;
         sum += static_cast<double>(x);
         min_v = std::min(min_v, x);
@@ -387,7 +420,9 @@ static void print_int_vector_audit(const std::string& name, const std::vector<in
     int max_v = std::numeric_limits<int>::min();
     for (int x : v) {
         sum += x;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (x > 0) ++positive;
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
         if (x == 0) ++zeros;
         min_v = std::min(min_v, x);
         max_v = std::max(max_v, x);
@@ -446,10 +481,14 @@ static void print_weq_contract_audit(const std::string& name, const std::vector<
     std::cout << " header=(depth0=" << weq[0]
               << ",depthStep=" << weq[1]
               << ",depthN=" << depth_n
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
               << ",y0=" << weq[3]
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
               << ",yStep=" << weq[4]
               << ",yN=" << y_n
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
               << ",x0=" << weq[6]
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
               << ",xStep=" << weq[7]
               << ",xN=" << x_n
               << ") expectedBody=" << expected_body
@@ -616,6 +655,7 @@ static void apply_explicit_spot_spacing_if_present(RTDBeamSettings& beam,
                 "spotSpacingX is too small for nuclear halo spacing at layer=" +
                 std::to_string(layer) + ": value=" + std::to_string(dx) +
                 " raySpacing.x=" + std::to_string(beam.raySpacing.x) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 " required>=1.5*raySpacing"
             );
         }
@@ -624,6 +664,7 @@ static void apply_explicit_spot_spacing_if_present(RTDBeamSettings& beam,
                 "spotSpacingZ is too small for nuclear halo spacing at layer=" +
                 std::to_string(layer) + ": value=" + std::to_string(dz) +
                 " raySpacing.y=" + std::to_string(beam.raySpacing.y) +
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 " required>=1.5*raySpacing"
             );
         }
@@ -784,10 +825,13 @@ static void print_cidd_audit(const char* tag, const RTDEnergyStruct& energy) {
                   << " energy=" << (row < static_cast<int>(energy.energiesPerU.size()) ? energy.energiesPerU[static_cast<size_t>(row)] : 0.0f)
                   << " peakDepth=" << (row < static_cast<int>(energy.peakDepths.size()) ? energy.peakDepths[static_cast<size_t>(row)] : 0.0f)
                   << " cidd_head=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         print_sample_window(row_data, 0, std::min(8, energy.nEnergySamples));
         std::cout << " cidd_peak=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         print_sample_window(row_data, std::max(0, peak_idx - 4), std::min(8, energy.nEnergySamples));
         std::cout << " cidd_tail=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         print_sample_window(row_data, std::max(0, energy.nEnergySamples - 8), std::min(8, energy.nEnergySamples));
         std::cout << std::endl;
     }
@@ -795,12 +839,15 @@ static void print_cidd_audit(const char* tag, const RTDEnergyStruct& energy) {
 
 static void print_profile_audit(const char* tag, const RTDBeamSettings& beam) {
     if (!rtd_input_audit_enabled()) return;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (beam.profileSetting.size() < 3 || beam.profileData.empty()) return;
     const int depth_n = std::max(1, static_cast<int>(std::lround(beam.profileSetting[2])));
     int rows = 0;
     if (!beam.profileEnergies.empty()) {
         rows = static_cast<int>(beam.profileEnergies.size());
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     } else if (!beam.beamParaData.empty() && (beam.beamParaData.size() % 3) == 0) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         rows = static_cast<int>(beam.beamParaData.size() / 3);
     } else if (depth_n > 0) {
         rows = static_cast<int>(beam.profileData.size() / static_cast<size_t>(depth_n));
@@ -827,15 +874,20 @@ static void print_profile_audit(const char* tag, const RTDBeamSettings& beam) {
                   << " energy=" << layer_energy
                   << " profileRowIdx=" << profile_row_idx
                   << " beamPara=("
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                   << (row * 3 + 0 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 0)] : 0.0f) << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                   << (row * 3 + 1 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 1)] : 0.0f) << ","
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                   << (row * 3 + 2 < static_cast<int>(beam.beamParaData.size()) ? beam.beamParaData[static_cast<size_t>(row * 3 + 2)] : 0.0f) << ")"
                   << std::endl;
         for (int depth : depth_sel) {
             const size_t base = (static_cast<size_t>(row) * static_cast<size_t>(depth_n) + static_cast<size_t>(depth)) * static_cast<size_t>(channels);
             std::cout << "    depth=" << depth << " weights=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             print_sample_window(beam.profileData, static_cast<int>(base), std::min(5, n_gauss));
             std::cout << " sigmas=";
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             print_sample_window(beam.profileData, static_cast<int>(base) + n_gauss, std::min(5, n_gauss));
             std::cout << std::endl;
         }
@@ -921,6 +973,7 @@ static RTDEnergyStruct build_energy_from_carbonpbs(
 
     const std::vector<float> iddSetting = to_float_vector(iddsetting_obj);
     std::cerr << "[DEBUG][cuFinalDose] build_energy_from_carbonpbs iddsetting.size=" << iddSetting.size() << std::endl;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (iddSetting.size() < 3) {
         throw std::runtime_error("iddsetting must provide [start, step, nSamples]");
     }
@@ -969,8 +1022,10 @@ static RTDEnergyStruct build_energy_from_carbonpbs(
     const float observedDepthSpanRaw =
         (cols > 1) ? ((cols - 1) * stepRaw * sliceDepthScale) : (stepRaw * sliceDepthScale);
     const float maxEnergy = *std::max_element(out.energiesPerU.begin(), out.energiesPerU.end());
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (!compactedDepthAxis && stepRaw > 0.0f && stepRaw < 1.0f && observedDepthSpanRaw < 20.0f) {
         iddDepthUnitToMm = 10.0f;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     } else if (!compactedDepthAxis && maxEnergy >= 250.0f && observedDepthSpanRaw > 20.0f && observedDepthSpanRaw <= 100.0f) {
         iddDepthUnitToMm = 10.0f;
     }
@@ -1031,11 +1086,14 @@ static std::vector<float2> derive_layer_sigmas_from_subspots(
     std::vector<float2> out(static_cast<size_t>(n_layers), make_float2(0.0f, 0.0f));
     for (int layer = 0; layer < n_layers; ++layer) {
         const size_t base = (static_cast<size_t>(layer) * max_subspots) * 5;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (base + 4 >= subspot_flat.size()) {
             break;
         }
         out[static_cast<size_t>(layer)] = make_float2(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             subspot_flat[base + 3],
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             subspot_flat[base + 4]
         );
     }
@@ -1223,6 +1281,7 @@ static void maybe_fill_nuclear_tables(RTDEnergyStruct& out,
 }
 
 struct CarbonPBSDoseContext {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<int, 3> dims = {0, 0, 0};
     std::vector<float> corner;
     std::vector<float> resolution;
@@ -1235,10 +1294,12 @@ struct DoseOutputBinding {
     py::array_t<float> nativeDose;
     float* wrapperPtr = nullptr;
     float* outPtr = nullptr;
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<int, 3> dims = {0, 0, 0};
     bool copyToXyz = false;
 };
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static std::vector<int> to_roi_linear_indices(const py::handle& obj, const std::array<int, 3>& dims) {
     py::array arr = py::cast<py::array>(obj);
     py::buffer_info info = arr.request();
@@ -1264,6 +1325,7 @@ static std::vector<int> to_roi_linear_indices(const py::handle& obj, const std::
         py::array_t<int, py::array::forcecast> flat_arr = py::cast<py::array>(obj);
         py::buffer_info flat_info = flat_arr.request();
         const int* ptr = static_cast<const int*>(flat_info.ptr);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if ((flat_info.size % 3) == 0) {
             bool looks_like_xyz_triplets = flat_info.size > 0;
             for (ssize_t i = 0; i < flat_info.size; i += 3) {
@@ -1276,6 +1338,7 @@ static std::vector<int> to_roi_linear_indices(const py::handle& obj, const std::
                 }
             }
             if (looks_like_xyz_triplets) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 return xyz_triplets_to_linear(ptr, static_cast<size_t>(flat_info.size / 3));
             }
         }
@@ -1296,13 +1359,16 @@ static std::vector<int> to_roi_linear_indices(const py::handle& obj, const std::
     py::buffer_info roi_info = roi_arr.request();
     const int* ptr = static_cast<const int*>(roi_info.ptr);
     if (roi_info.ndim != 2) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("roi_index must be 1D xyz triplets or 2D (N,3)/(3,N)");
     }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (roi_info.shape[1] == 3) {
         return xyz_triplets_to_linear(ptr, static_cast<size_t>(roi_info.shape[0]));
     }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (roi_info.shape[0] == 3) {
         const size_t n = static_cast<size_t>(roi_info.shape[1]);
         out.reserve(n);
@@ -1315,6 +1381,7 @@ static std::vector<int> to_roi_linear_indices(const py::handle& obj, const std::
         return out;
     }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     throw std::runtime_error("roi_index must have shape (N,3) or (3,N)");
 }
 
@@ -1353,6 +1420,7 @@ static bool is_c_contiguous(const py::buffer_info& info) {
     return true;
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static DoseOutputBinding bind_output_dose_array(py::array out_final_dose, const std::array<int, 3>& dims) {
     DoseOutputBinding binding;
     binding.outArray = py::cast<py::array>(out_final_dose);
@@ -1374,6 +1442,7 @@ static DoseOutputBinding bind_output_dose_array(py::array out_final_dose, const 
         return binding;
     }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (info.ndim == 3 && is_c_contiguous(info)) {
         if (info.shape[0] == dims[0] && info.shape[1] == dims[1] && info.shape[2] == dims[2]) {
             binding.nativeDose = py::array_t<float>({dims[2], dims[1], dims[0]});
@@ -1430,16 +1499,19 @@ static FloatBufferSummary summarize_float_buffer(const float* data, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         const float v = data[i];
         if (std::isnan(v)) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             ++s.nanCount;
             continue;
         }
         if (!std::isfinite(v)) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             ++s.infCount;
             continue;
         }
         s.sum += static_cast<double>(v);
         s.max = std::max(s.max, v);
         if (std::fabs(v) > 1.0e-20f) {
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
             ++s.nonZero;
         }
     }
@@ -1550,7 +1622,9 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     const std::vector<int> dims_vec = to_int_vector(dims);
     print_py_array_audit("dims", dims);
     print_int_vector_audit("dims converted", dims_vec);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (dims_vec.size() != 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("dims must contain exactly 3 integers; got length " + std::to_string(dims_vec.size()));
     }
     ctx.dims = {dims_vec[0], dims_vec[1], dims_vec[2]};
@@ -1564,8 +1638,10 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     print_float_vector_audit("corner converted", ctx.corner);
     print_py_array_audit("resolution", resolution);
     print_float_vector_audit("resolution converted", ctx.resolution);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (ctx.corner.size() != 3 || ctx.resolution.size() != 3) {
         throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             "corner and resolution must contain exactly 3 floats; got corner length " +
             std::to_string(ctx.corner.size()) + " resolution length " + std::to_string(ctx.resolution.size())
         );
@@ -1585,14 +1661,17 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     ctx.beamSettings.waterEquivalence = flatten_float_array(rayweq);
     print_py_array_audit("rayweq", rayweq);
     print_weq_contract_audit("rayweq converted", ctx.beamSettings.waterEquivalence);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (ctx.beamSettings.waterEquivalence.size() < 9) {
         throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             "rayweq must include the 9-value CarbonPBS header; got flattened length " +
             std::to_string(ctx.beamSettings.waterEquivalence.size())
         );
     }
     ctx.beamSettings.rayWeqHeader.assign(
         ctx.beamSettings.waterEquivalence.begin(),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         ctx.beamSettings.waterEquivalence.begin() + 9
     );
     if (debug) {
@@ -1603,9 +1682,12 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         }
         std::cout << ")" << std::endl;
     }
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     ctx.beamSettings.raySpacing = make_float2(ctx.beamSettings.rayWeqHeader[7], ctx.beamSettings.rayWeqHeader[4]);
     // spotDelta is the PHYSICAL PB spacing, not the CPB/WEQ spacing. Do not default to
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // raySpacing here — that would produce spotDist=1 and disable nuclear σ compression.
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Leave as (0,0,0); the wrapper infers spotDelta via buildPhysicalPBLatticeView().
     // Callers with known PB spacing should set beamSettings.spotDelta directly after this call.
     ctx.beamSettings.spotDelta = make_float3(0.0f, 0.0f, 0.0f);
@@ -1705,6 +1787,7 @@ static CarbonPBSDoseContext build_carbonpbs_context(
         print_float_vector_audit("profiledata converted", ctx.beamSettings.profileData);
         if (profile_info.ndim >= 1) profile_rows = static_cast<int>(profile_info.shape[0]);
         if (profile_info.ndim >= 2) profile_depth_n = static_cast<int>(profile_info.shape[1]);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (profile_info.ndim >= 3) profile_channels = static_cast<int>(profile_info.shape[2]);
     }
     if (!profilesetting_obj.is_none()) {
@@ -1740,8 +1823,10 @@ static CarbonPBSDoseContext build_carbonpbs_context(
     py::array_t<float, py::array::c_style | py::array::forcecast> subspot_arr = py::cast<py::array>(subspotdata);
     py::buffer_info subspot_info = subspot_arr.request();
     print_py_array_audit("subspotdata", subspot_arr);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (subspot_info.ndim != 3 || subspot_info.shape[2] != 5) {
         throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             "subspotdata must have shape (num_layers, max_subspots_per_layer, 5); got shape " +
             shape_to_string(subspot_info)
         );
@@ -1954,11 +2039,10 @@ static py::object run_carbonpbs_final_dose(
     bool debug,
     py::object spotSpacingX_obj,
     py::object spotSpacingZ_obj,
-    std::string tables_dir,
-    bool ctDirect = false
+    std::string tables_dir
 ) {
     if (debug) {
-        std::cout << "[DEBUG][cuFinalDose] entered run_carbonpbs_final_dose ctDirect=" << (ctDirect ? 1 : 0) << std::endl;
+        std::cout << "[DEBUG][cuFinalDose] entered run_carbonpbs_final_dose" << std::endl;
         debug_print_array_info("finalDose", finalDose);
         debug_print_array_info("ct_data", ct_data);
         debug_print_array_info("rayweq", rayweq);
@@ -2021,26 +2105,8 @@ static py::object run_carbonpbs_final_dose(
         tables_dir,
         debug
     );
-    if (ctDirect) {
-        // CT-direct mode: drop the WEQ volume *body* but keep the 9-element
-        // header. The wrapper geometry (raySpacing/steps/start-plane align) is
-        // derived from the header; the body is what makes hasWeqVolume==true and
-        // routes the tracer through fillBevFromWeqVolumeKernel. By truncating to
-        // exactly 9 elements, hasWeqVolume becomes false in subsecondWrapper and
-        // rayTracingBEVKernel integrates SPR along the *real divergent BEV rays*
-        // straight from the CT — removing the WEQ start-plane realignment and the
-        // parallel->divergent lateral resampling that perturbed the Bragg peak.
-        if (ctx.beamSettings.waterEquivalence.size() > 9) {
-            ctx.beamSettings.waterEquivalence.resize(9);
-        }
-        // rayWeqHeader already holds the 9 header values (assigned in
-        // build_carbonpbs_context); keep it intact for geometry.
-        if (debug) {
-            std::cout << "[DEBUG][cuFinalDose] ctDirect: truncated waterEquivalence to header-only ("
-                      << ctx.beamSettings.waterEquivalence.size() << " elems); CT ray tracing will run." << std::endl;
-        }
-    }
     if (debug) {
+        std::cout << "[DEBUG][cuFinalDose] build_carbonpbs_context succeeded" << std::endl;
         std::cout << "[DEBUG][cuFinalDose] beamSettings summary:" << std::endl;
         std::cout << "  energies=" << ctx.beamSettings.energies.size()
                   << " layerSpotCounts=" << ctx.beamSettings.layerSpotCounts.size()
@@ -2111,6 +2177,7 @@ static py::object run_carbonpbs_final_dose(
     return finalDose;
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static py::array_t<float> make_dummy_ct_from_dims(const std::array<int, 3>& dims) {
     const size_t total = static_cast<size_t>(dims[0]) * dims[1] * dims[2];
     py::array_t<float> ct_arr({static_cast<ssize_t>(total)});
@@ -2120,6 +2187,7 @@ static py::array_t<float> make_dummy_ct_from_dims(const std::array<int, 3>& dims
     return ct_arr;
 }
 
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
 static py::array_t<float> make_ct_from_roi_mask(const std::array<int, 3>& dims,
                                                 const std::vector<int>& roi_linear_indices) {
     const size_t total = static_cast<size_t>(dims[0]) * dims[1] * dims[2];
@@ -2156,11 +2224,17 @@ static py::array_t<float> make_ct_from_roi_mask(const std::array<int, 3>& dims,
  */
 py::array_t<float> raytracedicom_wrapper_py(
     py::array ct,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<int, 3> ct_dims,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<float, 3> ct_resolution,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<float, 3> ct_corner,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<int, 3> dose_dims,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<float, 3> dose_resolution,
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     std::array<float, 3> dose_corner,
     py::dict beam,
     py::dict energy,
@@ -2190,6 +2264,7 @@ py::array_t<float> raytracedicom_wrapper_py(
         );
     }
 
+    // FORMAT-WARN: 疑似注释掉的代码，见 format_changes.log
     // Allocate output dose array with shape (Z,Y,X) for natural linear indexing.
     const size_t dose_size = static_cast<size_t>(dose_dims[0]) * dose_dims[1] * dose_dims[2];
     py::array_t<float> dose_arr({dose_dims[2], dose_dims[1], dose_dims[0]});
@@ -2268,9 +2343,11 @@ py::array_t<float> raytracedicom_wrapper_py(
         beamSettings.waterEquivalence = to_float_vector(beam["water_equivalence"]);
         print_float_vector_audit("beam.water_equivalence converted", beamSettings.waterEquivalence);
         print_weq_contract_audit("beam.water_equivalence", beamSettings.waterEquivalence);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (beamSettings.waterEquivalence.size() >= 9) {
             beamSettings.rayWeqHeader.assign(
                 beamSettings.waterEquivalence.begin(),
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
                 beamSettings.waterEquivalence.begin() + 9
             );
         }
@@ -2278,6 +2355,7 @@ py::array_t<float> raytracedicom_wrapper_py(
     if (beam.contains("ray_weq_header")) {
         beamSettings.rayWeqHeader = py::cast<std::vector<float>>(beam["ray_weq_header"]);
         print_float_vector_audit("beam.ray_weq_header converted", beamSettings.rayWeqHeader);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         if (beamSettings.waterEquivalence.size() < 9 && beamSettings.rayWeqHeader.size() >= 9) {
             beamSettings.waterEquivalence = beamSettings.rayWeqHeader;
         }
@@ -2306,8 +2384,10 @@ py::array_t<float> raytracedicom_wrapper_py(
     py::array_t<float, py::array::c_style | py::array::forcecast> subspot = py::cast<py::array>(beam["subspot_data"]);
     py::buffer_info ss_info = subspot.request();
     print_py_array_audit("beam.subspot_data", subspot);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (ss_info.ndim != 3 || ss_info.shape[2] != 5) {
         throw std::runtime_error(
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
             "subspot_data must have shape (num_layers, max_subspots_per_layer, 5); got shape " +
             shape_to_string(ss_info)
         );
@@ -2437,45 +2517,21 @@ py::object cu_final_dose_py(
     bool debug,
     py::object spotSpacingX_obj,
     py::object spotSpacingZ_obj,
-    std::string tables_dir = std::string("tables/"),
-    py::object ct_data_obj = py::none(),
-    bool use_ct_raytrace = false
+    std::string tables_dir = std::string("tables/")
 ) {
     CPU_TIMER_START_SUMMARY();
     (void)cutoff_obj;  // Kept for CarbonPBS cuFinalDose contract parity; current RTD final-dose path does not consume it.
     const std::vector<int> dims_vec = to_int_vector(dims);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (dims_vec.size() != 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("dims must contain exactly 3 integers");
     }
     const std::array<int, 3> dims_arr = {dims_vec[0], dims_vec[1], dims_vec[2]};
-    const size_t ct_expected = static_cast<size_t>(dims_arr[0]) *
-                               static_cast<size_t>(dims_arr[1]) *
-                               static_cast<size_t>(dims_arr[2]);
-
-    // CT-direct mode is engaged when use_ct_raytrace is set AND a real CT volume
-    // is supplied. The CT carries the patient SPR/density grid (dosecal's
-    // doseGrid.data) and the wrapper integrates WEPL along divergent BEV rays.
-    // Otherwise fall back to the legacy WEQ-transport path, which only needs the
-    // ROI-mask placeholder CT for interface compatibility.
-    const bool ctDirect = use_ct_raytrace && !ct_data_obj.is_none();
-    py::array_t<float> ct_data;
-    if (ctDirect) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> ct_in =
-            py::cast<py::array>(ct_data_obj);
-        py::buffer_info ct_info = ct_in.request();
-        if (static_cast<size_t>(ct_info.size) != ct_expected) {
-            throw std::runtime_error(
-                "use_ct_raytrace=True but ct_data size (" + std::to_string(ct_info.size) +
-                ") does not match dims product (" + std::to_string(ct_expected) +
-                "). Pass the resampled patient grid (doseGrid.data) flattened to match dims.");
-        }
-        ct_data = ct_in;
-    } else {
-        const std::vector<int> roi_linear = to_roi_linear_indices(roiIdx, dims_arr);
-        ct_data = roi_linear.empty()
-            ? make_dummy_ct_from_dims(dims_arr)
-            : make_ct_from_roi_mask(dims_arr, roi_linear);
-    }
+    const std::vector<int> roi_linear = to_roi_linear_indices(roiIdx, dims_arr);
+    py::array_t<float> ct_data = roi_linear.empty()
+        ? make_dummy_ct_from_dims(dims_arr)
+        : make_ct_from_roi_mask(dims_arr, roi_linear);
 
     py::object result = run_carbonpbs_final_dose(
         finalDose,
@@ -2510,8 +2566,7 @@ py::object cu_final_dose_py(
         debug,
         spotSpacingX_obj,
         spotSpacingZ_obj,
-        tables_dir,
-        ctDirect
+        tables_dir
     );
     CPU_TIMER_END_SUMMARY("cuFinalDose");
     return result;
@@ -2563,7 +2618,9 @@ py::object cu_cal_dose3_py(
     zero_numeric_array(out_nnz_arr);
 
     const std::vector<int> dims_vec = to_int_vector(dims);
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
     if (dims_vec.size() != 3) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
         throw std::runtime_error("dims must contain exactly 3 integers");
     }
     const std::array<int, 3> dims_arr = {dims_vec[0], dims_vec[1], dims_vec[2]};
@@ -2651,6 +2708,7 @@ static py::dict rtd_support_matrix_py() {
 }
 
 PYBIND11_MODULE(cudaCalDoseRTD, m) {
+    // FORMAT-WARN: 疑似 C 风格类型转换，建议改为 static_cast/dynamic_cast 等，见 format_changes.log
     m.doc() = "RayTraceDicom (CUDA) dose calculation wrapper (pybind11)";
 
     m.def(
@@ -2731,8 +2789,6 @@ np.ndarray
         py::arg("spotSpacingX") = py::none(),
         py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
-        py::arg("ct_data") = py::none(),
-        py::arg("use_ct_raytrace") = false,
         R"pbdoc(
 Compute the full dose distribution in-place into `dose_grid`.
 
@@ -2835,8 +2891,6 @@ verbose : int, optional
         py::arg("spotSpacingX") = py::none(),
         py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
-        py::arg("ct_data") = py::none(),
-        py::arg("use_ct_raytrace") = false,
         R"pbdoc(
 CarbonPBS-style compatibility alias for the wrapper-backed RTD final-dose path.
 
@@ -2886,8 +2940,6 @@ verbose : int, optional
         py::arg("spotSpacingX") = py::none(),
         py::arg("spotSpacingZ") = py::none(),
         py::arg("tables_dir") = std::string("tables/"),
-        py::arg("ct_data") = py::none(),
-        py::arg("use_ct_raytrace") = false,
         R"pbdoc(
 CarbonPBS-style compatibility wrapper for the RTD final-dose pipeline.
 
@@ -2930,6 +2982,7 @@ the current RTD wrapper-backed final-dose implementation.
         R"pbdoc(
 Build and inspect the CarbonPBSDoseContext without executing the GPU wrapper.
 
+    // FORMAT-WARN: 含自增/自减复合表达式，需人工拆分，见 format_changes.log
 This helper lets you verify that Python-to-C++ input conversion succeeds and
 examine key beam/energy bookkeeping before `subsecondWrapper` is invoked.
 )pbdoc"

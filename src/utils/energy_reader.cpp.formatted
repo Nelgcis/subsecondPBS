@@ -1,0 +1,185 @@
+/**
+ * \file
+ * \brief energyReader function implementation
+ */
+#include <string>
+#include <fstream>
+#include <vector>
+#include <stdexcept>
+#include <iostream>
+#include <sys/stat.h>
+#include "../include/utils/debug_tools.h"
+#include "energy_reader.h"
+#include "energy_struct.h"
+#include "nuclear_table_utils.h"
+
+static bool file_exists(const std::string& path) {
+    struct stat st;
+    return (stat(path.c_str(), &st) == 0);
+}
+
+EnergyStruct energyReader(const std::string& dataPath) {
+    const auto resolveTablePath = [&](const std::string& filename) {
+        if (dataPath.empty()) {
+            return filename;
+        }
+        std::string path = dataPath;
+        if (!path.empty() && path.back() != '/' && path.back() != '\\') {
+            path.push_back('/');
+        }
+        return path + filename;
+    };
+
+    EnergyStruct eStr;
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] dataPath='" << dataPath << "'" << std::endl;
+    std::ifstream fileReader;
+    fileReader.exceptions(std::ifstream::failbit);
+
+    const std::string protonFile = resolveTablePath("proton_cumul_ddd_data.txt");
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] protonFile='" << protonFile << "' exists=" << file_exists(protonFile) << std::endl;
+    try {
+        fileReader.open(protonFile.c_str());
+    }
+    catch (const std::exception& e) {
+        std::string msg = "Failed to open " + protonFile + ": " + e.what();
+        std::cerr << "[ERROR][energyReader] " << msg << std::endl;
+        throw std::runtime_error(msg.c_str());
+    }
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] opened protonFile" << std::endl;
+
+    fileReader >> eStr.nEnergySamples >> eStr.nEnergies;
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] proton file header nEnergySamples=" << eStr.nEnergySamples
+              << " nEnergies=" << eStr.nEnergies << std::endl;
+
+    eStr.energiesPerU.resize(eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> eStr.energiesPerU[i];
+    }
+
+    eStr.peakDepths.resize(eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> eStr.peakDepths[i];
+    }
+
+    eStr.scaleFacts.resize(eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> eStr.scaleFacts[i];
+    }
+
+    eStr.ciddMatrix.resize(eStr.nEnergySamples* eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergySamples* eStr.nEnergies; ++i) {
+        fileReader >> eStr.ciddMatrix[i];
+    }
+    fileReader.close();
+
+    const std::string densityFile = resolveTablePath("density_Schneider2000_adj.txt");
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] densityFile='" << densityFile << "' exists=" << file_exists(densityFile) << std::endl;
+    try {
+        fileReader.open(densityFile.c_str());
+    }
+    catch (const std::runtime_error& e) {
+        std::string msg = "Failed to open " + densityFile + ": " + e.what();
+        std::cerr << "[ERROR][energyReader] " << msg << std::endl;
+        throw std::runtime_error(msg.c_str());
+    }
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] opened densityFile" << std::endl;
+    fileReader >> eStr.nDensitySamples >> eStr.densityScaleFact;
+    eStr.densityVector.resize(eStr.nDensitySamples);
+    for (int i=0; i<eStr.nDensitySamples; ++i) {
+        fileReader >> eStr.densityVector[i];
+    }
+    fileReader.close();
+
+    const std::string spFile = resolveTablePath("HU_to_SP_H& N_adj.txt");
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] spFile='" << spFile << "' exists=" << file_exists(spFile) << std::endl;
+    try {
+        fileReader.open(spFile.c_str());
+    }
+    catch (const std::runtime_error& e) {
+        std::string msg = "Failed to open " + spFile + ": " + e.what();
+        std::cerr << "[ERROR][energyReader] " << msg << std::endl;
+        throw std::runtime_error(msg.c_str());
+    }
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] opened spFile" << std::endl;
+    fileReader >> eStr.nSpSamples >> eStr.spScaleFact;
+    eStr.spVector.resize(eStr.nSpSamples);
+    for (int i=0; i<eStr.nSpSamples; ++i) {
+        fileReader >> eStr.spVector[i];
+    }
+    fileReader.close();
+
+#ifdef WATER_CUBE_TEST
+    const std::string rrlFile = resolveTablePath("radiation_length_inc_water.txt");
+#else // WATER_CUBE_TEST
+    const std::string rrlFile = resolveTablePath("radiation_length.txt");
+#endif // WATER_CUBE_TEST
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] rrlFile='" << rrlFile << "' exists=" << file_exists(rrlFile) << std::endl;
+    try {
+        fileReader.open(rrlFile.c_str());
+    }
+    catch (const std::runtime_error& e) {
+        std::string msg = "Failed to open " + rrlFile + ": " + e.what();
+        std::cerr << "[ERROR][energyReader] " << msg << std::endl;
+        throw std::runtime_error(msg.c_str());
+    }
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] opened rrlFile" << std::endl;
+
+    fileReader >> eStr.nRRlSamples >> eStr.rRlScaleFact;
+    eStr.rRlVector.resize(eStr.nRRlSamples);
+    for (int i=0; i<eStr.nRRlSamples; ++i) {
+        fileReader >> eStr.rRlVector[i];
+    }
+    fileReader.close();
+    if (rtdVerboseFineTiming()) std::cerr << "[DEBUG][energyReader] finished loading energy tables" << std::endl;
+
+#ifdef NUCLEAR_CORR
+    std::string nucParamFileName = "nuclear_weights_and_sigmas_fit.txt";
+    try {
+        fileReader.open(resolveTablePath(nucParamFileName).c_str());
+    }
+    catch (const std::runtime_error&) {
+        std::string msg = "Failed to open " + resolveTablePath(nucParamFileName);
+        throw std::runtime_error(msg.c_str());
+    }
+    int nSamples, nEnergies;
+    float energyPerU, peakDepth, scaleFact;
+    fileReader >> nSamples >> nEnergies;
+    if (eStr.nEnergySamples != nSamples || eStr.nEnergies != nEnergies) {
+        std::string msg = "Number of samples or energies in " + nucParamFileName + " different from proton_cumul_ddd_data.txt";
+        throw std::runtime_error(msg.c_str());
+    }
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> energyPerU;
+        if ( abs(eStr.energiesPerU[i]-energyPerU) > 0.01 ) {
+            std::string msg = "Energies in " + nucParamFileName + " different from proton_cumul_ddd_data.txt";
+            throw std::runtime_error(msg.c_str());
+        }
+    }
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> peakDepth;
+        if ( abs(eStr.peakDepths[i]-peakDepth) > 0.01 ) {
+            std::string msg = "Peak depths in " + nucParamFileName + " different from proton_cumul_ddd_data.txt";
+            throw std::runtime_error(msg.c_str());
+        }
+    }
+    for (int i=0; i<eStr.nEnergies; ++i) {
+        fileReader >> scaleFact;
+        if ( abs(eStr.scaleFacts[i]-scaleFact) > 0.01f ) {
+            std::string msg = "Scale facts in " + nucParamFileName + " different from proton_cumul_ddd_data.txt";
+            throw std::runtime_error(msg.c_str());
+        }
+    }
+    eStr.nucWeightMatrix.resize(eStr.nEnergySamples* eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergySamples* eStr.nEnergies; ++i) {
+        fileReader >> eStr.nucWeightMatrix[i];
+    }
+    eStr.nucSqSigmaMatrix.resize(eStr.nEnergySamples* eStr.nEnergies);
+    for (int i=0; i<eStr.nEnergySamples* eStr.nEnergies; ++i) {
+        fileReader >> eStr.nucSqSigmaMatrix[i];
+    }
+    fileReader.close();
+    rtd::nuclear::setNuclearMetadataToPrimaryAxis(eStr, false);
+#endif // NUCLEAR_CORR
+
+    return eStr;
+}

@@ -1,0 +1,108 @@
+#include <cuda_runtime.h>
+#include <texture_types.h>
+#include <vector>
+#include <iostream>
+
+// Simple kernel to test basic texture access
+__global__ void simpleTextureTest(cudaTextureObject_t texture, float* output, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+
+    // Test simple 1D access first
+    float val = tex1D<float>(texture, float(idx) + 0.5f);
+    output[idx] = val;
+
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    if (idx < 5) {
+        printf("GPU: idx=%d, val=%.6f\n", idx, val);
+    }
+}
+
+int main() {
+    std::cout << "=== Simple Texture Debug Test ===" << std::endl;
+
+    // Create simple 1D test data
+    int size = 10;
+    std::vector<float> hostData(size);
+    for (int i = 0; i < size; ++i) {
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+        hostData[i] = float(i * 10); // 0, 10, 20, 30, ...
+    }
+
+    std::cout << "Host data: ";
+    for (int i = 0; i < size; ++i) {
+        std::cout << hostData[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // Allocate CUDA array
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+    cudaArray* devArray;
+    cudaMallocArray(&devArray, &channelDesc, size);
+
+    // Copy host data to CUDA array
+    cudaMemcpyToArray(devArray, 0, 0, hostData.data(), size * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Create texture object
+    cudaResourceDesc resDesc = {};
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = devArray;
+
+    cudaTextureDesc texDesc = {};
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.addressMode[0] = cudaAddressModeClamp;
+    texDesc.readMode = cudaReadModeElementType;
+    texDesc.normalizedCoords = 0;
+
+    cudaTextureObject_t textureObject = 0;
+    cudaCreateTextureObject(&textureObject, &resDesc, &texDesc, nullptr);
+
+    // Allocate output array
+    float* d_output;
+    cudaMalloc(&d_output, size * sizeof(float));
+
+    // Launch kernel
+    // FORMAT-WARN: 疑似魔鬼数字，建议定义为具名 const 常量，见 format_changes.log
+    dim3 blockSize(256);
+    dim3 gridSize((size + blockSize.x - 1) / blockSize.x);
+    std::cout << "Launching kernel with gridSize=" << gridSize.x << ", blockSize=" << blockSize.x << std::endl;
+
+    simpleTextureTest<<<gridSize, blockSize>>>(textureObject, d_output, size);
+
+    // Check for errors
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cout << "Kernel launch error: " << cudaGetErrorString(err) << std::endl;
+    }
+
+    cudaDeviceSynchronize();
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cout << "Kernel execution error: " << cudaGetErrorString(err) << std::endl;
+    }
+
+    // Copy results back
+    std::vector<float> results(size);
+    cudaMemcpy(results.data(), d_output, size * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::cout << "GPU results: ";
+    for (int i = 0; i < size; ++i) {
+        std::cout << results[i] << " ";
+    }
+    std::cout << std::endl;
+
+    // Cleanup
+    cudaFree(d_output);
+    cudaDestroyTextureObject(textureObject);
+    cudaFreeArray(devArray);
+
+    std::cout << "=== Test Complete ===" << std::endl;
+    return 0;
+}
+
+
+
+
+
+
